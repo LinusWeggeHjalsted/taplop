@@ -4297,9 +4297,17 @@ pub fn handleAnytimeInput(
         mission_io.pollMissionImportMarker(history);
         if (anytime.scroll_delta != 0) {
             const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
-            history.session.ui_state.editor_mission_scroll_offset -= delta_rows;
-            if (history.session.ui_state.editor_mission_scroll_offset < 0) {
-                history.session.ui_state.editor_mission_scroll_offset = 0;
+            // The ACTIVE kind's list scrolls (the mission rows and the
+            // campaign rows ride separate offsets - scrolling one while
+            // the other is on screen was the campaign-tab wheel's dead
+            // state).
+            const scroll_target: *i32 = switch (history.session.ui_state.editor_browser_kind) {
+                .mission => &history.session.ui_state.editor_mission_scroll_offset,
+                .campaign => &history.session.ui_state.editor_campaign_scroll_offset,
+            };
+            scroll_target.* -= delta_rows;
+            if (scroll_target.* < 0) {
+                scroll_target.* = 0;
             }
         }
         return;

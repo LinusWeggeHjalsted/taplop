@@ -22843,9 +22843,10 @@ campaign map), and the return button at (432,0) next to redo. The
 mission editor's own Tab + Digit keys regression-checked live after
 the stepper extraction.
 
-Drive-authors' note: the campaign browser row order is mtime-sorted,
-so the local campaigns precede the official one below the fold - the
-scroll-wheel does not currently move the campaign list in a piped
-drive (the console's remembered-pointer scroll merge - same family as
-the known console pointer-position re-merge item in TODO). Scrolling
-to the official campaign row needs a human hand for now.
+Drive-authors' note (corrected after a probe): the local campaign
+list fits its window (max scroll 0), which masqueraded as a dead
+scroll-wheel in the session's first drives - the console scroll merge
+works, and the real find behind it was the kind-routing bug above.
+The official campaign row still sits below the fold with 7+ local
+campaigns, so reaching it in a drive needs a scroll the test data's
+list length finally exceeds.
