@@ -8,6 +8,7 @@ const std = @import("std");
 const types = @import("../types.zig");
 const ui_element = @import("element.zig");
 const emit = @import("emit.zig");
+const session_log = @import("../session_log.zig");
 
 const Rectangle = types.Rectangle;
 const Color = types.Color;
@@ -137,18 +138,38 @@ pub fn buildLoadSavePanel(
                 .action = .load_save_row,
                 .payload = .{ .save_row = @intCast(index) },
             } });
-            // Label: filename minus extension, centered like a panel button
-            // label (horizontal via measurement, vertical via the glyph cell).
+            // The name sits LEFT (filename minus extension); the file's
+            // mtime (UTC - the session-log convention) sits right-aligned
+            // in the zone left of the delete button's reserve.
             const file = save_files[index];
             const label = file.name[0 .. file.name.len - ".txt".len];
-            const label_width = font_metrics.measureSpanWidth(text(label), load_save_row_font_size);
-            const label_box = cell.placeCenter(label_width, load_save_row_font_size);
             try elements.append(allocator, .{ .text_label = .{
                 .text = label,
-                .screen_position = label_box.position(),
+                .screen_position = .{
+                    .x = cell.x + ui_gap,
+                    .y = cell.y + @divFloor(load_save_row_height - load_save_row_font_size, 2),
+                },
                 .font_size = load_save_row_font_size,
                 .blocks_input = false,
             } });
+            if (file.mtime_ns > 0) {
+                const stamp = session_log.formatMtimeTimestamp(allocator, file.mtime_ns);
+                const stamp_width = font_metrics.measureSpanWidth(text(stamp), load_save_row_font_size);
+                const stamp_zone_width = cell.width - ui_element.close_button_size - 3 * ui_gap;
+                if (stamp_width <= stamp_zone_width) {
+                    try elements.append(allocator, .{ .text_label = .{
+                        .text = stamp,
+                        .screen_position = .{
+                            .x = cell.x + cell.width - ui_element.close_button_size - 2 * ui_gap - stamp_width,
+                            .y = cell.y + @divFloor(load_save_row_height - load_save_row_font_size, 2),
+                        },
+                        .font_size = load_save_row_font_size,
+                        .blocks_input = false,
+                    } });
+                } else {
+                    allocator.free(stamp);
+                }
+            }
         }
 
         // Scrollbar: track + thumb along the rows region, the shared
@@ -585,15 +606,40 @@ fn buildListBrowserContent(
                 .action = config.row_action,
                 .payload = @unionInit(types.ButtonPayload, @tagName(config.row_payload_tag), @as(u32, @intCast(index))),
             } });
+            // The name sits LEFT-aligned; the recency timestamp (the
+            // entry's max mtime, UTC - the session-log convention) sits
+            // right-aligned in the zone left of the delete button's
+            // reserve (the x lands with the delete slice; the timestamp
+            // keeps its final position from the start). Official entries
+            // carry mtime 0 - no timestamp.
             const label = entries[index].name;
-            const label_width = font_metrics.measureSpanWidth(text(label), load_save_row_font_size);
-            const label_box = cell.placeCenter(label_width, load_save_row_font_size);
             try elements.append(allocator, .{ .text_label = .{
                 .text = label,
-                .screen_position = label_box.position(),
+                .screen_position = .{
+                    .x = cell.x + ui_gap,
+                    .y = cell.y + @divFloor(load_save_row_height - load_save_row_font_size, 2),
+                },
                 .font_size = load_save_row_font_size,
                 .blocks_input = false,
             } });
+            if (entries[index].mtime_ns > 0) {
+                const stamp = session_log.formatMtimeTimestamp(allocator, entries[index].mtime_ns);
+                const stamp_width = font_metrics.measureSpanWidth(text(stamp), load_save_row_font_size);
+                const stamp_zone_width = cell.width - ui_element.close_button_size - 3 * ui_gap;
+                if (stamp_width <= stamp_zone_width) {
+                    try elements.append(allocator, .{ .text_label = .{
+                        .text = stamp,
+                        .screen_position = .{
+                            .x = cell.x + cell.width - ui_element.close_button_size - 2 * ui_gap - stamp_width,
+                            .y = cell.y + @divFloor(load_save_row_height - load_save_row_font_size, 2),
+                        },
+                        .font_size = load_save_row_font_size,
+                        .blocks_input = false,
+                    } });
+                } else {
+                    allocator.free(stamp);
+                }
+            }
         }
 
         // Scrollbar: track + thumb, the shared emission.

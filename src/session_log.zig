@@ -100,6 +100,29 @@ pub fn formatSessionTimestamp(
     ) catch @panic("failed to format session-log timestamp");
 }
 
+/// Format a file mtime (ns since the epoch) as "YYYY-MM-DD HH:MM" (UTC -
+/// the codebase's no-timezone-handling convention, see
+/// `formatSessionTimestamp`) - the browser rows' recency display. PURE over
+/// its input (no clock read): live paths pass a scanned mtime.
+pub fn formatMtimeTimestamp(allocator: std.mem.Allocator, mtime_ns: i128) []const u8 {
+    const seconds: u64 = @intCast(@max(0, @divFloor(mtime_ns, std.time.ns_per_s)));
+    const epoch_seconds = std.time.epoch.EpochSeconds{ .secs = seconds };
+    const year_day = epoch_seconds.getEpochDay().calculateYearDay();
+    const month_day = year_day.calculateMonthDay();
+    const day_seconds = epoch_seconds.getDaySeconds();
+    return std.fmt.allocPrint(
+        allocator,
+        "{d:0>4}-{d:0>2}-{d:0>2} {d:0>2}:{d:0>2}",
+        .{
+            year_day.year,
+            month_day.month.numeric(),
+            @as(u32, month_day.day_index) + 1,
+            day_seconds.getHoursIntoDay(),
+            day_seconds.getMinutesIntoHour(),
+        },
+    ) catch @panic("failed to format mtime timestamp");
+}
+
 /// Serialize an event history (+ a created timestamp) into a session-log file
 /// body. `created` is expected as "YYYYMMDD_HHMMSS" but is written verbatim.
 pub fn writeEventLog(
@@ -671,6 +694,15 @@ fn parseScalarTokens(
         },
         else => @compileError("unsupported event field type: " ++ @typeName(T)),
     }
+}
+
+test "formatMtimeTimestamp: UTC display format over a scanned mtime" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    // 2026-11-14 18:45:33 UTC - ns since the epoch (checked against
+    // `date -u -d @1794681933`).
+    const stamp = formatMtimeTimestamp(arena.allocator(), 1794681933 * std.time.ns_per_s);
+    try std.testing.expectEqualStrings("2026-11-14 18:45", stamp);
 }
 
 test "writeEventLog serializes representative event shapes" {
