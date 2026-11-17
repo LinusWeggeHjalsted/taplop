@@ -588,17 +588,22 @@ pub fn view(
                 campaign_editor,
                 active_theme,
                 button_color,
-                // The transient right-drag pan offset + the focused text
-                // field (both session-side, replay-irrelevant).
-                session.camera_pan,
-                if (session.ui_state.text_edit != null) &session.ui_state.text_edit.? else null,
-                drag_override,
-                session.campaign_background_stems,
-                mission_draw,
-                pointer_map_position,
-                reattach_end,
-                session.editor_local_missions,
-                &session.ui_state,
+                .{
+                    // The transient right-drag pan offset + the focused
+                    // text field (both session-side, replay-irrelevant).
+                    .pan = session.camera_pan,
+                    .text_edit = if (session.ui_state.text_edit != null)
+                        &session.ui_state.text_edit.?
+                    else
+                        null,
+                    .drag_override = drag_override,
+                    .background_stems = session.campaign_background_stems,
+                    .mission_draw = mission_draw,
+                    .pointer_map_position = pointer_map_position,
+                    .reattach_end = reattach_end,
+                    .local_missions = session.editor_local_missions,
+                    .ui_state = &session.ui_state,
+                },
             ) catch @panic("failed to build campaign editor view");
             ui.buildCampaignEditorPrimaryActions(
                 &ui_elements,

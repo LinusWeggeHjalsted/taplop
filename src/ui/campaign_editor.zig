@@ -407,6 +407,40 @@ fn campaignMissionInspectorEntries(
     return entries.toOwnedSlice(allocator);
 }
 
+/// The session-side inputs to buildCampaignEditorView - everything the
+/// pure builder reads beyond the authored state. An options struct (the
+/// settled no-default-params answer - see TODO → Tech Debt, the
+/// GameStateHistory.init item) so test call sites pass `.{}`-shaped
+/// literals instead of eight positional nulls.
+pub const CampaignEditorViewOptions = struct {
+    /// The transient right-drag pan offset (session-side,
+    /// replay-irrelevant).
+    pan: ?types.Vector2 = null,
+    /// The focused text field, if one is being edited (the metadata
+    /// sidebar reads it; the inspector's shared renderer re-derives its
+    /// own from `ui_state`).
+    text_edit: ?*const text_input.TextEditState = null,
+    /// The hub-drag preview override (the pointer gesture's live state).
+    drag_override: ?HubPositionOverride = null,
+    /// The campaign's own PNG stems, for the background picker's rows
+    /// (session-side scan).
+    background_stems: []const []const u8 = &.{},
+    /// The mission tool's armed draw (the start hub handle), for the
+    /// arrow preview.
+    mission_draw: ?u32 = null,
+    /// The pointer's live map position (the preview's target end).
+    pointer_map_position: ?Vector2 = null,
+    /// The active re-attach pick's end (the button labels' hint state).
+    reattach_end: ?types.CampaignMissionEnd = null,
+    /// The local-mission list (the import picker's rows - session-side
+    /// scan).
+    local_missions: []const file_source.FileSource.MissionEntry = &.{},
+    /// The session's UI state - the shared inspector renderer's inputs
+    /// (scroll offset + section expansion); it clamps the scroll in
+    /// place.
+    ui_state: *UiState,
+};
+
 pub fn buildCampaignEditorView(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -415,24 +449,7 @@ pub fn buildCampaignEditorView(
     editor: types.CampaignEditor,
     active_theme: types.ActiveColorTheme,
     button_color: Color,
-    pan: ?types.Vector2,
-    text_edit: ?*const text_input.TextEditState,
-    drag_override: ?HubPositionOverride,
-    background_stems: []const []const u8,
-    /// The mission tool's armed draw (the start hub handle), for the
-    /// arrow preview.
-    mission_draw: ?u32,
-    /// The pointer's live map position (the preview's target end).
-    pointer_map_position: ?Vector2,
-    /// The active re-attach pick's end (the button labels' hint state).
-    reattach_end: ?types.CampaignMissionEnd,
-    /// The local-mission list (the import picker's rows - session-side
-    /// scan).
-    local_missions: []const @import("../file_source.zig").FileSource.MissionEntry,
-    /// The session's UI state - the shared inspector renderer's inputs
-    /// (scroll offset + section expansion); it clamps the scroll in
-    /// place.
-    ui_state: *UiState,
+    options: CampaignEditorViewOptions,
 ) !void {
     // The surface: a full-screen dark fill - NON-blocking (a screen
     // background, not an overlay: map clicks must fall through to the
@@ -456,7 +473,7 @@ pub fn buildCampaignEditorView(
                 editor.background_stem,
                 allocator,
             );
-            const center = pannedMapToScreen(.{ .x = 0, .y = 0 }, pan);
+            const center = pannedMapToScreen(.{ .x = 0, .y = 0 }, options.pan);
             try elements.append(allocator, .{ .image = .{
                 .sprite_id = sprite_id,
                 .screen_position = .{
@@ -477,11 +494,11 @@ pub fn buildCampaignEditorView(
     // existing hub selects, never places; placing is the empty-canvas
     // click, resolved by the input layer).
     for (editor.hubs) |hub| {
-        const hub_position = if (drag_override) |override|
+        const hub_position = if (options.drag_override) |override|
             (if (override.hub == hub.handle) override.position else hub.position)
         else
             hub.position;
-        const center = pannedMapToScreen(hub_position, pan);
+        const center = pannedMapToScreen(hub_position, options.pan);
         const icon_rect = Rectangle{
             .x = center.x - @divTrunc(hub_icon_size, 2),
             .y = center.y - @divTrunc(hub_icon_size, 2),
@@ -518,9 +535,9 @@ pub fn buildCampaignEditorView(
     // click targets + the selection rim live in the loop below.
     const lightest = active_theme.lightest;
     for (editor.missions) |mission| {
-        const geometry = missionGeometry(editor, mission, drag_override);
+        const geometry = missionGeometry(editor, mission, options.drag_override);
         const orphaned = mission.start == null or mission.destination == null;
-        const pan_offset = pan orelse types.Vector2{ .x = 0, .y = 0 };
+        const pan_offset = options.pan orelse types.Vector2{ .x = 0, .y = 0 };
         const panned = campaign_geometry.EdgeGeometry{
             .start = .{ .x = geometry.start.x + pan_offset.x, .y = geometry.start.y + pan_offset.y },
             .control_start = .{ .x = geometry.control_start.x + pan_offset.x, .y = geometry.control_start.y + pan_offset.y },
@@ -581,8 +598,8 @@ pub fn buildCampaignEditorView(
     // The mission tool's arrow PREVIEW: an armed draw renders the arrow
     // from the armed start hub toward the pointer's live map position
     // (transient, view-side - the stroke pair, no click target).
-    if (mission_draw) |start_handle| {
-        if (pointer_map_position) |cursor| {
+    if (options.mission_draw) |start_handle| {
+        if (options.pointer_map_position) |cursor| {
             if (editor.active_tool == .mission) {
                 var start_position = Vector2{ .x = 0, .y = 0 };
                 for (editor.hubs) |hub| {
@@ -594,7 +611,7 @@ pub fn buildCampaignEditorView(
                     0,
                     .{ .index = 1, .count = 1 },
                 );
-                const pan_offset = pan orelse types.Vector2{ .x = 0, .y = 0 };
+                const pan_offset = options.pan orelse types.Vector2{ .x = 0, .y = 0 };
                 // One baked-arrow arrow (the drag preview re-bakes per
                 // 8px length bucket - a straight bake is ~3 segments of
                 // pixel math, trivially cheap).
@@ -806,15 +823,15 @@ pub fn buildCampaignEditorView(
                         allocator,
                         editor,
                         hub,
-                        &ui_state.editor_inspector_section_expanded,
+                        &options.ui_state.editor_inspector_section_expanded,
                     )
                 else if (selected_mission) |mission|
                     try campaignMissionInspectorEntries(
                         allocator,
                         editor,
                         mission,
-                        reattach_end,
-                        &ui_state.editor_inspector_section_expanded,
+                        options.reattach_end,
+                        &options.ui_state.editor_inspector_section_expanded,
                     )
                 else
                     &[_]editor_inspector.EditorInspectorEntry{};
@@ -829,7 +846,7 @@ pub fn buildCampaignEditorView(
                 entries,
                 .{ .button_color = strip_button_color },
                 active_theme,
-                ui_state,
+                options.ui_state,
             );
         }
     }
@@ -894,7 +911,7 @@ pub fn buildCampaignEditorView(
                 .height = panel_rect.height - 2 * ui_element.ui_gap,
             };
             const campaign_section_expanded =
-                ui_state.editor_inspector_section_expanded[@backingInt(types.EditorInspectorSectionId.campaign_metadata)];
+                options.ui_state.editor_inspector_section_expanded[@backingInt(types.EditorInspectorSectionId.campaign_metadata)];
             try inspector.emitInspectorSectionStrip(
                 elements,
                 allocator,
@@ -909,7 +926,7 @@ pub fn buildCampaignEditorView(
                     elements,
                     allocator,
                     font_metrics,
-                    text_edit,
+                    options.text_edit,
                     .{ .id = .campaign_name, .target = .campaign },
                     editor.campaign_name,
                     .{
@@ -989,7 +1006,7 @@ pub fn buildCampaignEditorView(
         // then one row per scanned stem.
         var rows: std.ArrayList([]const u8) = .empty;
         rows.append(allocator, "") catch @panic("failed to append the picker's None row");
-        rows.appendSlice(allocator, background_stems) catch @panic("failed to append the picker's stem rows");
+        rows.appendSlice(allocator, options.background_stems) catch @panic("failed to append the picker's stem rows");
         var row_y = panel.y + ui_element.ui_gap + editor_shell.editor_header_strip_height + ui_element.ui_gap;
         for (rows.items) |stem| {
             const row_rect = Rectangle{
@@ -1079,7 +1096,7 @@ pub fn buildCampaignEditorView(
             .blocks_input = false,
         } });
         var row_y = panel.y + ui_element.ui_gap + editor_shell.editor_header_strip_height + ui_element.ui_gap;
-        for (local_missions) |entry| {
+        for (options.local_missions) |entry| {
             const row_rect = Rectangle{
                 .x = panel.x + ui_element.ui_gap,
                 .y = row_y,
@@ -1285,15 +1302,7 @@ test "buildCampaignEditorView: surface, background, hubs, and the edge classes i
         editor,
         test_theme,
         test_button_color,
-        null,
-        null,
-        null,
-        &.{},
-        null,
-        null,
-        null,
-        &.{},
-        &ui_state,
+        .{ .ui_state = &ui_state },
     );
 
     // Derived total: the map (1 surface + 1 background + per hub an icon
@@ -1480,15 +1489,7 @@ test "buildCampaignEditorView: the selected-hub inspector - name field, start-hu
         editor,
         test_theme,
         test_button_color,
-        null,
-        null,
-        null,
-        &.{},
-        null,
-        null,
-        null,
-        &.{},
-        &ui_state,
+        .{ .ui_state = &ui_state },
     );
 
     var field_refs: usize = 0;
@@ -1638,15 +1639,7 @@ test "buildCampaignEditorView: the selected-hub inspector - name field, start-hu
         editor,
         test_theme,
         test_button_color,
-        .{ .x = 64, .y = -32 },
-        null,
-        null,
-        &.{},
-        null,
-        null,
-        null,
-        &.{},
-        &ui_state,
+        .{ .pan = .{ .x = 64, .y = -32 }, .ui_state = &ui_state },
     );
     const alpha_icon = elements.items[try findHubIcon(elements.items, "Alpha")].image;
     const panned_alpha_icon = panned_elements.items[try findHubIcon(panned_elements.items, "Alpha")].image;
@@ -1674,15 +1667,7 @@ test "buildCampaignEditorView: the background picker - None + stems, current hig
         editor,
         test_theme,
         test_button_color,
-        null,
-        null,
-        null,
-        &stems,
-        null,
-        null,
-        null,
-        &.{},
-        &ui_state,
+        .{ .background_stems = &stems, .ui_state = &ui_state },
     );
 
     // One payload-carrying pick row per stem PLUS the None row (empty
@@ -1748,15 +1733,7 @@ test "buildCampaignEditorView: the mission inspector + edge buttons + the draw p
         editor,
         test_theme,
         test_button_color,
-        null,
-        null,
-        null,
-        &.{},
-        null,
-        null,
-        null,
-        &.{},
-        &ui_state,
+        .{ .ui_state = &ui_state },
     );
 
     var mission_name_field: ?ui_element.TextFieldUi = null;
@@ -1806,15 +1783,7 @@ test "buildCampaignEditorView: the mission inspector + edge buttons + the draw p
         editor,
         test_theme,
         test_button_color,
-        null,
-        null,
-        null,
-        &.{},
-        null,
-        null,
-        null,
-        &.{},
-        &ui_state,
+        .{ .ui_state = &ui_state },
     );
     try std.testing.expectEqual(@as(i32, 2), ui_state.editor_inspector_scroll);
     open_mission_button = null;
@@ -1893,15 +1862,7 @@ test "buildCampaignEditorView: the mission inspector + edge buttons + the draw p
             editor,
             test_theme,
             test_button_color,
-            null,
-            null,
-            null,
-            &.{},
-            null,
-            null,
-            null,
-            &.{},
-            &ui_state,
+            .{ .ui_state = &ui_state },
         );
         var mission_tool_edge_buttons: usize = 0;
         for (mission_tool_elements.items) |element| switch (element) {
@@ -1932,15 +1893,11 @@ test "buildCampaignEditorView: the mission inspector + edge buttons + the draw p
         editor,
         test_theme,
         test_button_color,
-        null,
-        null,
-        null,
-        &.{},
-        0,
-        .{ .x = 600, .y = -400 },
-        null,
-        &.{},
-        &ui_state,
+        .{
+            .mission_draw = 0,
+            .pointer_map_position = .{ .x = 600, .y = -400 },
+            .ui_state = &ui_state,
+        },
     );
     // Derived total for the preview build: the map (1 surface + 1
     // background + 2/hub + 1 arrow/mission - NO edge buttons under the

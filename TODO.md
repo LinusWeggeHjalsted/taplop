@@ -924,7 +924,10 @@ Done items in DONE.md. Open:
   optional args so the DEFAULT is `.{}` at test call sites (the established
   Zig answer to no-default-params). Fold into the next field addition or
   do as its own rider; the handler-tests call-shape item above is the same
-  family for `handleAnytimeInput`.
+  family for `handleAnytimeInput`. `buildCampaignEditorView` adopted the
+  shape (`CampaignEditorViewOptions` - the panel-bounds guard session): its
+  8 test call sites now pass `.{ .ui_state = ... }` literals, so it is no
+  longer part of this ripple; init/view remain.
 - **`AnytimeInput.options_action` rename (meaning drift).** The umbrella
   field now carries every overlay-surface action (settings, tips, the
   editor picker clicks), not just the options menu - the name lags the
