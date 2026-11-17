@@ -1267,9 +1267,9 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .select_editor_all,
         => .{ .editor = true, .hub_editor = true },
         // The editor browser + its in-window controls - EDITOR-FAMILY:
-        // the browser opens over BOTH editors (the keyboard shortcuts
-        // fire on either editor screen; from the main menu only its
-        // buttons reach it - clicks bypass the context gate, the
+        // the browser opens over ALL THREE editors (the keyboard
+        // shortcuts fire on any editor screen; from the main menu only
+        // its buttons reach it - clicks bypass the context gate, the
         // consumption sites keep their `editorBrowserReachableScreen`
         // gate for those).
         .toggle_editor_browser,
@@ -1279,7 +1279,7 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .select_editor_campaign_tab,
         .open_editor_campaign_row,
         .import_editor_mission,
-        => .{ .editor = true, .campaign_editor = true },
+        => .{ .editor = true, .campaign_editor = true, .hub_editor = true },
         // The tool-cycling chords (Tab / shift+Tab) - all THREE editors
         // (the hub editor's cycle rides the same consumption arm in
         // handleAnytimeInput). Split from the browser family: the browser

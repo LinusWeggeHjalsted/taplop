@@ -1128,6 +1128,7 @@ fn rescanHubSprites(
 fn editorBrowserReachableScreen(current_state: *const state.GameState) bool {
     if (current_state.screen == .editor) return current_state.editor != null;
     if (current_state.screen == .campaign_editor) return current_state.campaign_editor != null;
+    if (current_state.screen == .hub_editor) return current_state.campaign_editor != null;
     return current_state.screen == .main_menu;
 }
 

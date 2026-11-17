@@ -342,9 +342,9 @@ pub const AnytimeInput = struct {
     options_action: ?types.Action = null,
     /// Open/close the editor browser (the main-menu Editor button, the
     /// options-menu Open Mission button, the browser's Back button, and
-    /// the ctrl+O binding). The consumption site accepts the editor +
-    /// main-menu screens; the keybind ships editor-context, so on the
-    /// main menu only the button path can set this.
+    /// the ctrl+O binding). The consumption site accepts the three
+    /// editor screens + the main menu; the keybind ships editor-context,
+    /// so on the main menu only the button path can set this.
     toggle_editor_browser: bool = false,
     /// Import a mission .zip (the mission browser's Import button + the
     /// ctrl+I binding). Web-only effect at the consumption site (the
@@ -1908,6 +1908,36 @@ test "translateInput: ctrl+S is save_campaign on the campaign editor set, save_e
     // The cross-editor same-combo pair is legal (never co-fires - the
     // load-time conflict predicate).
     try std.testing.expect(!types.bindingContextsCoFire(.{ .editor = true }, .{ .campaign_editor = true }));
+}
+
+test "translateInput: ctrl+O opens the editor browser on all three editor sets" {
+    // The browser family is editor-wide (editor + campaign_editor +
+    // hub_editor contexts - the same chord on every editor screen, the
+    // open gate `editorBrowserReachableScreen` mirroring the contexts).
+    const bindings = [_]InputBinding{
+        .{ .input = .{ .key = "KeyO" }, .modifiers = .{ .ctrl = true }, .action = .toggle_editor_browser },
+    };
+    const settings: Settings = .{ .input_bindings = &bindings };
+    const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
+    const chord = PlatformInput{
+        .events = &.{ .{ .key_down = "ControlLeft" }, .{ .key_down = "KeyO" } },
+        .viewport = .{ .width = 2560, .height = 2160 },
+    };
+    for ([_]types.BindingContextSet{
+        .{ .anytime = true, .editor = true },
+        .{ .anytime = true, .campaign_editor = true },
+        .{ .anytime = true, .hub_editor = true },
+    }) |contexts| {
+        var input_state: InputState = .{};
+        const result = translateInput(chord, &input_state, settings, camera, 0, null, null, contexts);
+        try std.testing.expect(result.anytime.toggle_editor_browser);
+    }
+    // In-game the chord is dormant.
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(chord, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .game = true });
+        try std.testing.expect(!result.anytime.toggle_editor_browser);
+    }
 }
 
 test "translateInput: hub tool keybinds bridge onto the hub palette's click actions" {
