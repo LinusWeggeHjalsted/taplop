@@ -4097,9 +4097,10 @@ as their own screen-gated family.
     the save resolves the campaign through the memo machinery - a
     fresh or official-origin campaign mints + memos its identity AT
     the hub save (the official-origin root carry rides the same
-    helper the full save uses; writeFile mkdir-p materializes the
-    dirs), so there is no "save the campaign first" gate and
-    hub.txt carries the real campaign_uuid. A campaign dir without
+    helper the full save uses, minus campaign.txt - a carried one
+    would make the fork LIST under the opened campaign's stale
+    graph; writeFile mkdir-p materializes the dirs), so there is no
+    "save the campaign first" gate. A campaign dir without
     campaign.txt stays unlisted in the browsers until the first
     full save - the piecemeal materialization is invisible. Exit
     entries whose mission or destination hub is still UNSAVED are

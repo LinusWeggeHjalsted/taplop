@@ -439,12 +439,6 @@ work:
         surface settle stands: only the save target + the world-map
         return button differ, export unchanged; autosave-on-exit
         settled NO - DONE.md):
-    - [ ] 5-0. Warm-up: the drill-in save rule for the HUB editor -
-          drop the "save the campaign first" gate
-          (resolveCampaignIdentity self-serve + the official-origin
-          root carry + the real campaign_uuid in hub.txt) - the
-          identity machinery 5b repeats, exercised first at the
-          existing save site.
     - [ ] 5a. The hand-off framing: the open_mission_editor
           orchestrator (graph-name adoption, reconstruction-cache
           read, fresh-mission temp-anchor branch) + the campaign

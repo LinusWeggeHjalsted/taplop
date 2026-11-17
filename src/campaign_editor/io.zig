@@ -144,6 +144,7 @@ fn copyDirFiles(
     allocator: std.mem.Allocator,
     source_dir: []const u8,
     destination_dir: []const u8,
+    exclude_name: ?[]const u8,
 ) bool {
     // Both read tiers of the source dir's direct files in one listing
     // (persistent + embedded; subdirs belong to their own carries - see
@@ -151,9 +152,17 @@ fn copyDirFiles(
     // the same tiers, so the listing and the byte source can't disagree.
     // A listing failure aborts the carry (the save surfaces its popup) -
     // an unreadable source dir is already fatal for the forked copy.
+    // `exclude_name` drops one file from the carry: the hub-only save
+    // excludes campaign.txt (the full save may carry it - its fresh
+    // write lands on top immediately; the hub save has no such write,
+    // so a carried one would make the fork LIST under a stale graph,
+    // breaking the no-campaign.txt-means-unlisted rule).
     const file_names = history.file_source.listDirFiles(allocator, source_dir) catch return false;
     defer file_source_mod.freeDirFiles(allocator, file_names);
     for (file_names) |file_name| {
+        if (exclude_name) |excluded| {
+            if (std.mem.eql(u8, file_name, excluded)) continue;
+        }
         if (!copyOneDirFile(history, allocator, source_dir, destination_dir, file_name)) return false;
     }
     return true;
@@ -454,7 +463,7 @@ pub fn saveCampaignEditor(
             @panic("failed to build carried campaign.txt path");
         defer allocator.free(carried_campaign_txt);
         if (!file_source_mod.persistentFileExists(history.file_source, carried_campaign_txt)) {
-            if (!copyDirFiles(history, allocator, editor.campaign_dir, campaign_memo.dir)) {
+            if (!copyDirFiles(history, allocator, editor.campaign_dir, campaign_memo.dir, null)) {
                 surfaceSaveError(history, "failed to carry the opened campaign's files into the new campaign dir");
                 return null;
             }
@@ -496,7 +505,7 @@ pub fn saveCampaignEditor(
             const carry_destination = std.fmt.allocPrint(allocator, "{s}/missions/{s}", .{ campaign_memo.dir, memo.dir }) catch
                 @panic("failed to build mission carry destination");
             defer allocator.free(carry_destination);
-            if (!copyDirFiles(history, allocator, carry_source, carry_destination)) {
+            if (!copyDirFiles(history, allocator, carry_source, carry_destination, null)) {
                 surfaceSaveError(history, "failed to carry the opened mission's files into the fork");
                 return null;
             }
@@ -523,7 +532,7 @@ pub fn saveCampaignEditor(
             const carry_destination = std.fmt.allocPrint(allocator, "{s}/hubs/{s}", .{ campaign_memo.dir, memo.dir }) catch
                 @panic("failed to build hub carry destination");
             defer allocator.free(carry_destination);
-            if (!copyDirFiles(history, allocator, carry_source, carry_destination)) {
+            if (!copyDirFiles(history, allocator, carry_source, carry_destination, null)) {
                 surfaceSaveError(history, "failed to carry the opened hub's files into the fork");
                 return null;
             }
@@ -851,28 +860,35 @@ pub fn saveHubEditor(history: *GameStateHistory) void {
         surfaceSaveError(history, "the drilled-in hub no longer resolves - nothing saved");
         return;
     };
-    // The campaign's CURRENT on-disk dir: the save MEMO when this
-    // session saved or forked (the editor state's dir lags a side
-    // effect - the full save never mutates replayed state), else the
-    // opened dir. The write target must be a real folder: a FRESH
-    // campaign's anchor has none, and an official campaign's files are
-    // embedded + read-only (writing one requires the fork, which is
-    // full-save business). Both cases surface as no campaign.txt under
-    // the resolved dir - checked through the persistent layer, which
-    // embedded files never satisfy.
-    const campaign_dir: []const u8 = if (campaignSaveMemoFor(history, types.campaign_save_memo_handle)) |memo|
-        memo.dir
-    else
-        editor.campaign_dir;
-    {
-        const campaign_txt_path = std.fmt.allocPrint(
+    // The campaign's save target, SELF-SERVED (the drill-in save
+    // rule): resolveCampaignIdentity returns the session's memo when
+    // one exists, the state identity when the opened campaign is on
+    // disk, and otherwise MINTS + memos a fresh identity right here -
+    // so a hub-only save never gates on a prior full save. A fresh or
+    // official-origin campaign gets the root carry (the full save's
+    // own fork carry, same helper); writeFile mkdir-p materializes the
+    // target dirs. The fork's transient hub.txt may reference mission
+    // uuids that resolve only under the opened original - inert: a
+    // campaign dir without campaign.txt never lists, and the next full
+    // save rewrites the file with the resolved identities.
+    const campaign_memo = resolveCampaignIdentity(history, allocator, editor);
+    const campaign_dir = campaign_memo.dir;
+    if (!std.mem.eql(u8, campaign_memo.dir, editor.campaign_dir)) {
+        const carried_campaign_txt = std.fmt.allocPrint(
             allocator,
             "{s}/campaign.txt",
-            .{campaign_dir},
-        ) catch @panic("failed to format campaign.txt path");
-        if (!file_source_mod.persistentFileExists(history.file_source, campaign_txt_path)) {
-            surfaceSaveError(history, "this campaign has no folder on disk yet (it was never saved, or it is an official campaign that has not been forked) - save the campaign first (ctrl+S on the campaign map)");
-            return;
+            .{campaign_memo.dir},
+        ) catch @panic("failed to build carried campaign.txt path");
+        defer allocator.free(carried_campaign_txt);
+        if (!file_source_mod.persistentFileExists(history.file_source, carried_campaign_txt)) {
+            // campaign.txt is excluded (the carry's exclude_name contract):
+            // this save writes no campaign.txt, so a carried one would
+            // make the fork LIST under the opened campaign's stale graph
+            // (art files are the carry's real job - the background).
+            if (!copyDirFiles(history, allocator, editor.campaign_dir, campaign_memo.dir, "campaign.txt")) {
+                surfaceSaveError(history, "failed to carry the opened campaign's files into the new campaign dir");
+                return;
+            }
         }
     }
 

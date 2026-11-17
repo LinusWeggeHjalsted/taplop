@@ -382,6 +382,7 @@ working rules).
 - [swap_hands: the last untested named primitive gets its drain test](#swaphands-the-last-untested-named-primitive-gets-its-drain-test)
 - [Hub editor: the mission-editor mirrors - Tab cycle, Digit1-5, ctrl+O, the options menu, the return button](#hub-editor-the-mission-editor-mirrors---tab-cycle-digit1-5-ctrlo-the-options-menu-the-return-button)
 - [The browser lists: newest-first everywhere, recency timestamps, + the recoverable delete](#the-browser-lists-newest-first-everywhere-recency-timestamps--the-recoverable-delete)
+- [campaign-editor slice 5-0: the hub editor's save self-serves the campaign identity](#campaign-editor-slice-5-0-the-hub-editors-save-self-serves-the-campaign-identity)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -22907,3 +22908,46 @@ A one-off oddity logged but not chased: one drive's `report ui` counted
 27 visible save rows where every other run (four attempts) shows 14 -
 not reproducible, current behavior deterministic; if it recurs, suspect
 the report's previous-view-state handoff, not the builder.
+
+## campaign-editor slice 5-0: the hub editor's save self-serves the campaign identity
+
+The drill-in save rule's warm-up for slice 5 (the mission-editor
+hand-off save repeats this machinery): `saveHubEditor` no longer
+gates on a prior full save. The old gate refused a hub save whenever
+the campaign had no folder on disk (a fresh campaign, or an official
+one never forked) with "save the campaign first"; the save now
+resolves the campaign identity through `resolveCampaignIdentity`
+itself - a fresh or official-origin campaign mints + memos its
+identity AT the hub save, writeFile mkdir-p materializes the dirs,
+and the official-origin root carry re-creates the campaign's direct
+files under the fork. campaign.txt is EXCLUDED from that carry (the
+new `exclude_name` param on `copyDirFiles`): a carried one would
+make the fork LIST under the opened campaign's stale graph - the hub
+save writes no fresh campaign.txt to land on top of it, while the
+full save may carry it because its own write replaces it immediately.
+
+The fork stays unlisted until its first full save (a dir without a
+readable campaign.txt never lists) - the piecemeal materialization is
+invisible, and the full save reconciles under the SAME identities
+(memo-first precedence): the drilled hub keeps its hub-save-minted
+uuid, every mission forks with a fresh identity, and the rewritten
+hub.txt references them. The transient fork's hub.txt may reference
+mission uuids that resolve only under the opened original - inert
+for the same reason (nothing loads a campaign dir without
+campaign.txt).
+
+Two harness tests (the fork-test pattern): the fresh-campaign hub
+save (mints, materializes, carries the real hub identity in hub.txt,
+stays unlisted, then a full save reconciles under the same dirs) and
+the official-origin hub save (forks with the root carry, the
+official dir never shadowed, then the full save heals the
+references). The first test drive caught the campaign.txt carry bug
+before it shipped: the fork listed with the official campaign's
+stale graph because `probeCampaignDir` happily reads the carried
+bytes. Runtime-verified over the console channel end to end: the
+official campaign's hub drilled in, ctrl+S wrote the fork (map.png +
+hubs/<uuid>_.../hub.txt, no campaign.txt, exit clean) where the old
+build refused.
+
+The settle it lands is recorded in DESIGN (The hub editor surface's
+save-granularity bullet + The mission-editor hand-off). 1043 green.

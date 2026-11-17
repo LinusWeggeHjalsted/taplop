@@ -2654,3 +2654,178 @@ test "hub editor: the metadata sidebar's gradient rows - world pick, enemy auto 
     try testing.expect(history.undo(event_handlers.processEvent));
     try testing.expectEqual(@as(u32, 0), history.current_state.campaign_editor.?.hubs[0].grid.color_wheel_index);
 }
+
+test "saveHubEditor: the drill-in save self-serves a fresh campaign's identity (no full save needed)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    const campaign_editor_io = @import("campaign_editor/io.zig");
+    const file_source_mod = @import("file_source.zig");
+
+    // A FRESH campaign (no uuid, no dir) with one hub drilled in.
+    var history = harness.newHistory(.{
+        .screen = .campaign_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "Fresh",
+            .start_hub = 0,
+            .hubs = &.{.{
+                .handle = 0,
+                .name = "Alpha",
+                .position = .{ .x = 0, .y = 0 },
+                .grid = .{
+                    .level_tiles = &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } },
+                    .player_start = .{ .x = 0, .y = 0 },
+                },
+            }},
+            .next_handle = 1,
+        },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    runToIdle(&history);
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_hub_editor = .{
+            .hub = 0,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // The hub-only save succeeds on the never-saved campaign (the old
+    // "save the campaign first" gate is gone): the identities mint HERE
+    // and writeFile mkdir-p materializes the dirs.
+    campaign_editor_io.saveHubEditor(&history);
+    try testing.expect(history.session.pending_error == null);
+    const campaign_memo = campaign_editor_io.campaignSaveMemoFor(&history, types.campaign_save_memo_handle).?;
+    const campaign_dir = try arena.dupe(u8, campaign_memo.dir);
+    const campaign_uuid = try arena.dupe(u8, campaign_memo.uuid);
+    try testing.expect(campaign_uuid.len > 0);
+    try testing.expect(std.mem.startsWith(u8, campaign_dir, "campaigns/"));
+    const hub_memo = campaign_editor_io.campaignSaveMemoFor(&history, 0).?;
+    const hub_dir = try arena.dupe(u8, hub_memo.dir);
+    try testing.expect(std.mem.startsWith(u8, hub_dir, hub_memo.uuid));
+
+    // The hub file landed under the minted campaign dir, carrying its
+    // minted identity; the campaign itself stays UNLISTED (no
+    // campaign.txt - the first full save's business; a dir without one
+    // never lists).
+    const hub_txt = try harness.file_source.readFile(
+        arena,
+        try std.fmt.allocPrint(arena, "{s}/hubs/{s}/hub.txt", .{ campaign_dir, hub_dir }),
+    );
+    {
+        const sections = try parser.parseConfigFile(hub_txt, arena, &parser.hub_sections);
+        try testing.expectEqualStrings(
+            hub_memo.uuid,
+            parser.findValue(parser.findSection(sections, "Metadata").?.entry_groups[0].pairs, "hub_uuid") orelse "",
+        );
+    }
+    try testing.expect(!file_source_mod.persistentFileExists(
+        &harness.file_source,
+        try std.fmt.allocPrint(arena, "{s}/campaign.txt", .{campaign_dir}),
+    ));
+    try testing.expectEqual(@as(usize, 0), (try harness.file_source.listCampaigns(arena)).len);
+
+    // The subsequent FULL save reconciles under the SAME identities (the
+    // memos win): campaign.txt lands on the minted dir, the hub keeps
+    // its hub-save minted dir, the campaign lists.
+    _ = campaign_editor_io.saveCampaignEditor(&history);
+    try testing.expect(history.session.pending_error == null);
+    try testing.expect(file_source_mod.persistentFileExists(
+        &harness.file_source,
+        try std.fmt.allocPrint(arena, "{s}/campaign.txt", .{campaign_dir}),
+    ));
+    const hub_memo_after = campaign_editor_io.campaignSaveMemoFor(&history, 0).?;
+    try testing.expectEqualStrings(hub_dir, hub_memo_after.dir);
+    try testing.expectEqual(@as(usize, 1), (try harness.file_source.listCampaigns(arena)).len);
+}
+
+test "saveHubEditor: an official-origin hub save forks (the root carry) and the later full save heals it" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    const campaign_editor_io = @import("campaign_editor/io.zig");
+    const file_source_mod = @import("file_source.zig");
+
+    // Open the REAL official campaign (embedded content - its files do
+    // not exist in the harness's persistent dir, which is what makes it
+    // official-origin) and drill into its single hub.
+    var history = harness.newHistory(null);
+    runToIdle(&history);
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+            .campaign_dir = "campaigns/main_campaign",
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    const opened = history.current_state.campaign_editor orelse return error.TestUnexpectedResult;
+    const official_hub_uuid = try arena.dupe(u8, opened.hubs[0].uuid);
+
+    // The hub-only save FORKS instead of refusing (the old gate): a
+    // fresh campaign identity + the root carry, the hub minted under it,
+    // the official dir never shadowed.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_hub_editor = .{
+            .hub = opened.hubs[0].handle,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    campaign_editor_io.saveHubEditor(&history);
+    try testing.expect(history.session.pending_error == null);
+    const campaign_memo = campaign_editor_io.campaignSaveMemoFor(&history, types.campaign_save_memo_handle).?;
+    const fork_dir = try arena.dupe(u8, campaign_memo.dir);
+    try testing.expect(!std.mem.eql(u8, fork_dir, "campaigns/main_campaign"));
+    // The root carry: the background PNG re-created under the fork.
+    try testing.expect(file_source_mod.persistentFileExists(
+        &harness.file_source,
+        try std.fmt.allocPrint(arena, "{s}/map.png", .{fork_dir}),
+    ));
+    const hub_memo = campaign_editor_io.campaignSaveMemoFor(&history, opened.hubs[0].handle).?;
+    const hub_uuid = try arena.dupe(u8, hub_memo.uuid);
+    const hub_dir = try arena.dupe(u8, hub_memo.dir);
+    try testing.expect(!std.mem.eql(u8, hub_uuid, official_hub_uuid));
+    try testing.expect(file_source_mod.persistentFileExists(
+        &harness.file_source,
+        try std.fmt.allocPrint(arena, "{s}/hubs/{s}/hub.txt", .{ fork_dir, hub_dir }),
+    ));
+    try testing.expect(!file_source_mod.persistentFileExists(&harness.file_source, "campaigns/main_campaign/campaign.txt"));
+    // The fork is unlisted until its first full save (no campaign.txt).
+    try testing.expectEqual(@as(usize, 0), (try harness.file_source.listCampaigns(arena)).len);
+
+    // The later FULL save heals the fork: campaign.txt lands, every
+    // mission forks with a fresh identity, the drilled hub KEEPS its
+    // hub-save identity (the memo wins), and the rewritten hub.txt
+    // references the forked missions.
+    _ = campaign_editor_io.saveCampaignEditor(&history);
+    try testing.expect(history.session.pending_error == null);
+    try testing.expect(file_source_mod.persistentFileExists(
+        &harness.file_source,
+        try std.fmt.allocPrint(arena, "{s}/campaign.txt", .{fork_dir}),
+    ));
+    try testing.expectEqual(@as(usize, 1), (try harness.file_source.listCampaigns(arena)).len);
+    const hub_memo_after = campaign_editor_io.campaignSaveMemoFor(&history, opened.hubs[0].handle).?;
+    try testing.expectEqualStrings(hub_uuid, hub_memo_after.uuid);
+    const healed_hub_txt = try harness.file_source.readFile(
+        arena,
+        try std.fmt.allocPrint(arena, "{s}/hubs/{s}/hub.txt", .{ fork_dir, hub_memo_after.dir }),
+    );
+    for (opened.missions) |official_mission| {
+        const mission_memo = campaign_editor_io.campaignSaveMemoFor(&history, official_mission.handle).?;
+        try testing.expect(!std.mem.eql(u8, mission_memo.uuid, official_mission.uuid));
+        try testing.expect(std.mem.indexOf(u8, healed_hub_txt, mission_memo.uuid) != null);
+    }
+}
