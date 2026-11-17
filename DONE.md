@@ -384,6 +384,7 @@ working rules).
 - [The browser lists: newest-first everywhere, recency timestamps, + the recoverable delete](#the-browser-lists-newest-first-everywhere-recency-timestamps--the-recoverable-delete)
 - [campaign-editor slice 5-0: the hub editor's save self-serves the campaign identity](#campaign-editor-slice-5-0-the-hub-editors-save-self-serves-the-campaign-identity)
 - [campaign-editor slice 5a: the mission-editor hand-off framing](#campaign-editor-slice-5a-the-mission-editor-hand-off-framing)
+- [campaign-editor slice 5b: the campaign-context mission save](#campaign-editor-slice-5b-the-campaign-context-mission-save)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -23009,3 +23010,65 @@ survival, close return, undo restore, the foreign-open clear), the
 fresh-template branch (graph name + anchor path), the options-menu
 variant (World Map present/absent by context), and the inspector
 button's payload. 1047 green.
+
+## campaign-editor slice 5b: the campaign-context mission save
+
+ctrl+S / Save Mission in the mission editor's campaign context now
+writes into the CAMPAIGN's missions/ instead of the standalone
+missions/ - the hand-off's save target. The shape (the drill-in save
+rule, the hub save's 5-0 pattern):
+
+- **Identity self-serve** (`campaignMissionSaveTarget` in the campaign
+  io): the campaign identity resolves + (for fresh or official-origin
+  campaigns) mints HERE with the root carry minus campaign.txt; the
+  mission's identity resolves through the memo machinery
+  (memo-first, state-if-in-place, else the canonical
+  `<uuid>_<name>` mint). The mission memo records in the campaign's
+  table, so the next full save resolves the same identity in place
+  and skips the fresh-mission template (the memo-existence check -
+  an authored level_1.txt is never overwritten with the default
+  template).
+- **The write**: the same projection + write loop + art carry as the
+  standalone save - the config-write loop extracted into the shared
+  `writeMissionFiles` (both branches), and the branch dispatches at
+  the top of `saveEditorMission`, so Export + Validate ride it too
+  (they call through the save-first contract). The returned dir path
+  is backing-allocated + session-lifetime (no replacing slot to
+  free).
+- **Name dual-write**: the mission editor's `editor_set_mission_name`
+  also writes the campaign graph's entry (by handle) while the
+  context is live - one recorded event, two mirrored writes, the
+  names never diverge.
+- **The mission dir tidy** at full save, mirroring the hub loop's
+  (cosmetic, rename-in-passing when the target is free).
+
+**The 5b correction - the lean-write skip was REJECTED at
+implementation.** The design settle ("the campaign save skips its
+lean mission.txt write for hand-off-owned missions") rested on a
+false premise: mission.txt is NOT richer from the mission editor -
+both writers emit exactly version + uuid + name, and both resolve
+the uuid through the same memo, so the lean write is
+content-equivalent and can never clobber anything. Worse, the skip
+would BREAK the map-rename flow: after the hand-off returns (the
+payload is gone), the graph is the sole name-editing site, and the
+load denormalizes the name FROM mission.txt - a skipped sync means
+a post-hand-off map rename reverts on reopen. The regression test
+pins exactly that flow (hand-off save -> return -> map rename -> full
+save -> mission.txt carries the map's name). DESIGN's marker bullet
+was rewritten to record the correction; the marker machinery never
+landed (built, found wrong, removed before commit).
+
+Tests: the fresh-campaign round trip (identity self-serve, memo
+recording, the authored level surviving the full save, the
+dual-write), the official-origin fork at the hand-off save (fresh
+mission identity + the root carry + no shadow), and the map-rename
+regression. Runtime-verified over the console channel: New Campaign
+-> place a self-loop mission -> Open Mission Editor -> ctrl+S ->
+mission.txt + player.txt + level_1.txt under the minted
+campaigns/<uuid>_New Campaign/missions/<uuid>_New Mission/ (no
+campaign.txt - the full save had not run), return via the world-map
+button, clean exit; the drive artifact removed. The session also
+pruned a 99 GB .zig-cache (disk full - the AGENTS growth note fired
+for real).
+
+1050 green.

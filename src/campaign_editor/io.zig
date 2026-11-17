@@ -252,6 +252,65 @@ pub fn effectiveCampaignDir(history: *GameStateHistory, editor: types.CampaignEd
     return editor.campaign_dir;
 }
 
+/// The campaign-context mission save's identity + target (the drill-in
+/// save rule, the hand-off save's half - DESIGN → Campaigns & the
+/// Campaign Editor → The mission-editor hand-off): resolves the
+/// campaign identity (a fresh or official-origin campaign mints + memos
+/// HERE, with the official-origin root carry minus campaign.txt - the
+/// hub save's exact shape) + the mission's own identity through the
+/// memo machinery (memo-first, the state identity when in-place, else a
+/// fresh mint with the canonical `<uuid>_<name>` dir). Returns the
+/// uuid (for mission.txt) + the full dir path under the campaign's
+/// missions/.
+pub const CampaignMissionSave = struct {
+    uuid: []const u8,
+    dir_path: []const u8,
+};
+
+pub fn campaignMissionSaveTarget(
+    history: *GameStateHistory,
+    allocator: std.mem.Allocator,
+    campaign: types.CampaignEditor,
+    mission: types.CampaignMissionEdit,
+) ?CampaignMissionSave {
+    const campaign_memo = resolveCampaignIdentity(history, allocator, campaign);
+    // The official-origin / fresh fork's root carry, minus campaign.txt
+    // (a carried one would make the fork LIST under the opened
+    // campaign's stale graph - the hub save's rule).
+    if (!std.mem.eql(u8, campaign_memo.dir, campaign.campaign_dir)) {
+        const carried_campaign_txt = std.fmt.allocPrint(
+            allocator,
+            "{s}/campaign.txt",
+            .{campaign_memo.dir},
+        ) catch @panic("failed to build carried campaign.txt path");
+        if (!file_source_mod.persistentFileExists(history.file_source, carried_campaign_txt)) {
+            if (!copyDirFiles(history, allocator, campaign.campaign_dir, campaign_memo.dir, "campaign.txt")) {
+                return null;
+            }
+        }
+    }
+    const mission_memo = resolveContentIdentity(
+        history,
+        allocator,
+        .{
+            .opened_campaign_dir = campaign.campaign_dir,
+            .save_target_dir = campaign_memo.dir,
+            .kind_dir = "missions",
+            .config_name = "mission.txt",
+        },
+        mission.handle,
+        mission.uuid,
+        mission.dir,
+        mission.name,
+    );
+    const dir_path = std.fmt.allocPrint(
+        allocator,
+        "{s}/missions/{s}",
+        .{ campaign_memo.dir, mission_memo.dir },
+    ) catch @panic("failed to format campaign mission dir path");
+    return .{ .uuid = mission_memo.uuid, .dir_path = dir_path };
+}
+
 /// The mission-editor hand-off's read path (the input layer's
 /// memo-aware computation - a RECORDED handler must never read the
 /// session memos, so the resolved path rides the open event's payload
@@ -565,10 +624,15 @@ pub fn saveCampaignEditor(
         }
     }
 
-    // 1. Missions first (mission.txt name sync always; a FRESH mission
-    //    additionally gets level_1.txt - the default template, verbatim -
-    //    and deliberately NO player.txt: the loader's max-default
-    //    fallback, the loadout authored via the hand-off (slice 5)).
+    // 1. Missions first (the lean mission.txt - the name sync; it is
+    //    CONTENT-EQUIVALENT to the mission editor's own mission.txt,
+    //    which writes exactly the same three keys: version + uuid +
+    //    name, both resolving the uuid through the same memo - so this
+    //    write never clobbers the hand-off save's file, it only lands
+    //    map-side renames into it. A FRESH mission additionally gets
+    //    level_1.txt - the default template, verbatim - and
+    //    deliberately NO player.txt: the loader's max-default fallback,
+    //    the loadout authored via the hand-off).
     for (editor.missions, 0..) |mission, mission_index| {
         const mission_dir_path = std.fmt.allocPrint(
             allocator,
@@ -586,6 +650,17 @@ pub fn saveCampaignEditor(
             surfaceSaveError(history, "failed to write the campaign's mission file");
             return null;
         };
+        // The cosmetic dir tidy (the hub loop's mirror): a loaded dir
+        // whose resolved dir differs is renamed in passing, only when
+        // the target is free (a collision keeps the old name).
+        if (mission.dir.len > 0 and !std.mem.eql(u8, mission.dir, mission_dirs.items[mission_index])) {
+            const old_path = std.fmt.allocPrint(
+                allocator,
+                "{s}/missions/{s}",
+                .{ campaign_memo.dir, mission.dir },
+            ) catch @panic("failed to format mission tidy old path");
+            history.file_source.renameDir(old_path, mission_dir_path) catch {};
+        }
         if (mission_needs_template.items[mission_index]) {
             const default_level = history.file_source.readFile(allocator, "data/default_level.txt") catch {
                 surfaceSaveError(history, "failed to read the default level template");

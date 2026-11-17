@@ -4159,14 +4159,19 @@ the sections above; this section is the hand-off's own wiring).
   template (the memo-existence check). A fresh campaign mints its
   campaign identity AT the hand-off save; an official-origin
   campaign does the root carry. No "save the campaign first" gate.
-- **The mission-editor-owned marker**: a session-side set of
-  hand-off-saved handles. The full campaign save skips its lean
-  mission.txt write for owned missions - the mission editor's saved
-  files are the file of record. The memo alone cannot be this
-  marker: a full save memos EVERY mission it resolves, so
-  memo-existence would stop the lean write from syncing graph
-  renames into mission.txt (the load denormalizes the name FROM
-  mission.txt - an unsynced rename reverts on reopen).
+- **No mission-editor-owned marker (the 5b correction)**: the full
+  save's lean mission.txt write STAYS for hand-off-saved missions.
+  It looked like a clobber (the mission editor "owns" the file),
+  but the two writers are content-equivalent - mission.txt is
+  exactly version + uuid + name in both, and both resolve the uuid
+  through the same memo - so the lean write never loses anything;
+  it only lands MAP-side renames into the file (the graph is the
+  sole name-editing site once the hand-off returns - the payload is
+  gone - and the load denormalizes the name FROM mission.txt, so a
+  skip would revert a post-hand-off map rename on reopen). The real
+  protections are the memo-based fresh-template skip (a hand-off
+  save mints the memo, so the full save never re-writes level_1.txt
+  over the authored one) and the name dual-write below.
 - **Name sync on edit, not on save**: the mission editor's name-edit
   event dual-writes the campaign's mission entry (by handle) while
   context is active, so the names never diverge. The save side effect

@@ -21,6 +21,7 @@ const zip_reader = @import("../zip_reader.zig");
 const session_log = @import("../session_log.zig");
 const validation_replay = @import("../validation_replay.zig");
 const content_hash = @import("../content_hash.zig");
+const campaign_io = @import("../campaign_editor/io.zig");
 
 const GameStateHistory = state.GameStateHistory;
 
@@ -150,6 +151,12 @@ pub fn sanitizeMissionNameForPath(name: []const u8, allocator: std.mem.Allocator
 /// identity.
 pub fn saveEditorMission(history: *GameStateHistory) ?[]const u8 {
     const editor = if (history.current_state.editor) |*some_editor| some_editor else return null;
+    // The campaign-context branch (the slice-5 hand-off): the same save
+    // verb, a different target + identity resolution (the campaign's
+    // missions/ + the campaign memo machinery). Export + validate ride
+    // this branch too (they call through saveEditorMission's
+    // save-first contract).
+    if (editor.campaign_mission != null) return saveCampaignContextMission(history, editor);
     const scratch = history.current_arena.allocator();
     const durable = history.backing_allocator;
 
@@ -207,46 +214,12 @@ pub fn saveEditorMission(history: *GameStateHistory) ?[]const u8 {
         return null;
     };
 
-    // 3. Write into missions/<uuid>_<name>/.
-    const mission_path = std.fmt.allocPrint(scratch, "{s}/mission.txt", .{dir_path}) catch
-        @panic("failed to allocate mission.txt path");
-    const player_path = std.fmt.allocPrint(scratch, "{s}/player.txt", .{dir_path}) catch
-        @panic("failed to allocate player.txt path");
-    history.file_source.writeFile(mission_path, written.mission_txt) catch {
-        history.session.setPendingError(
-            history.history_arena.allocator(),
-            "failed to save: could not write mission.txt",
-        );
+    // 3. Write into missions/<uuid>_<name>/ (the shared config-write
+    //    loop).
+    if (!writeMissionFiles(history, written, dir_path, scratch)) {
         durable.free(dir_path);
         if (minted_uuid) |minted| durable.free(minted);
         return null;
-    };
-    history.file_source.writeFile(player_path, written.player_txt) catch {
-        history.session.setPendingError(
-            history.history_arena.allocator(),
-            "failed to save: could not write player.txt",
-        );
-        durable.free(dir_path);
-        if (minted_uuid) |minted| durable.free(minted);
-        return null;
-    };
-    for (written.level_txts, 0..) |level_txt, level_index| {
-        const level_path = std.fmt.allocPrint(
-            scratch,
-            "{s}/level_{d}.txt",
-            .{ dir_path, level_index + 1 },
-        ) catch @panic("failed to allocate level path");
-        history.file_source.writeFile(level_path, level_txt) catch {
-            const message = std.fmt.allocPrint(
-                history.history_arena.allocator(),
-                "failed to save: could not write level_{d}.txt",
-                .{level_index + 1},
-            ) catch @panic("failed to format save failure message");
-            history.session.setPendingError(history.history_arena.allocator(), message);
-            durable.free(dir_path);
-            if (minted_uuid) |minted| durable.free(minted);
-            return null;
-        };
     }
 
     // 3b. Carry the referenced custom art into the save target (the
@@ -284,6 +257,120 @@ pub fn saveEditorMission(history: *GameStateHistory) ?[]const u8 {
         .dir_path = dir_path,
     };
     return dir_path;
+}
+
+/// The campaign-context save (the slice-5 hand-off - DESIGN → Campaigns
+/// & the Campaign Editor → The mission-editor hand-off): the same
+/// projection + write loop + art carry as the standalone save, but the
+/// identity + target resolve through the campaign memo machinery
+/// (campaignMissionSaveTarget - a fresh or forked campaign self-serves
+/// HERE, no "save the campaign first" gate) and the mission memo
+/// (handle -> uuid + dir) records in the campaign's memo table instead
+/// of editor_saved_mission, so the next full campaign save resolves
+/// the same identity in place + skips the lean mission.txt write. The
+/// returned dir path is backing-allocated and deliberately never freed
+/// (the session-lifetime class - the standalone return borrows a slot
+/// the next save frees; the campaign branch has no replacing slot).
+fn saveCampaignContextMission(
+    history: *GameStateHistory,
+    editor: *types.Editor,
+) ?[]const u8 {
+    const campaign = history.current_state.campaign_editor orelse {
+        history.session.setPendingError(
+            history.history_arena.allocator(),
+            "failed to save: the campaign below the mission editor was lost",
+        );
+        return null;
+    };
+    const handle = editor.campaign_mission.?;
+    var entry: ?types.CampaignMissionEdit = null;
+    for (campaign.missions) |mission| {
+        if (mission.handle == handle) entry = mission;
+    }
+    const mission = entry orelse {
+        history.session.setPendingError(
+            history.history_arena.allocator(),
+            "failed to save: the campaign's mission entry no longer resolves",
+        );
+        return null;
+    };
+    const scratch = history.current_arena.allocator();
+    const durable = history.backing_allocator;
+
+    // 1. Identity + target + the campaign-side recording (the root
+    //    carry for a fork, the mission memo, the owned marker).
+    const target = campaign_io.campaignMissionSaveTarget(history, scratch, campaign, mission) orelse {
+        history.session.setPendingError(
+            history.history_arena.allocator(),
+            "failed to save: could not carry the opened campaign's files into the new campaign dir",
+        );
+        return null;
+    };
+
+    // 2. Project the editor into file contents (transient - the scratch
+    //    arena reclaims them at the next idle point), then write.
+    const written = writers.writeEditorMission(editor.*, target.uuid, target.dir_path, scratch) catch |write_error| {
+        const message = switch (write_error) {
+            error.TooManyLayoutCodes => "failed to save: a single level places more distinct tools than the layout char set provides",
+            else => "failed to save: out of memory",
+        };
+        history.session.setPendingError(history.history_arena.allocator(), message);
+        return null;
+    };
+    if (!writeMissionFiles(history, written, target.dir_path, scratch)) return null;
+
+    // 3. The art carry (the single-dir rule, same as standalone).
+    if (!copyReferencedCustomSprites(history, editor, target.dir_path)) return null;
+
+    return durable.dupe(u8, target.dir_path) catch
+        @panic("failed to dupe the campaign mission dir path");
+}
+
+/// The shared config-write loop (mission.txt + player.txt + level_N
+/// into the save target): the standalone + campaign-context saves'
+/// common body. A write failure surfaces the popup + returns false
+/// (the caller aborts; nothing to revert - state is fine).
+fn writeMissionFiles(
+    history: *GameStateHistory,
+    written: writers.WrittenEditorMission,
+    dir_path: []const u8,
+    scratch: std.mem.Allocator,
+) bool {
+    const mission_path = std.fmt.allocPrint(scratch, "{s}/mission.txt", .{dir_path}) catch
+        @panic("failed to allocate mission.txt path");
+    const player_path = std.fmt.allocPrint(scratch, "{s}/player.txt", .{dir_path}) catch
+        @panic("failed to allocate player.txt path");
+    history.file_source.writeFile(mission_path, written.mission_txt) catch {
+        history.session.setPendingError(
+            history.history_arena.allocator(),
+            "failed to save: could not write mission.txt",
+        );
+        return false;
+    };
+    history.file_source.writeFile(player_path, written.player_txt) catch {
+        history.session.setPendingError(
+            history.history_arena.allocator(),
+            "failed to save: could not write player.txt",
+        );
+        return false;
+    };
+    for (written.level_txts, 0..) |level_txt, level_index| {
+        const level_path = std.fmt.allocPrint(
+            scratch,
+            "{s}/level_{d}.txt",
+            .{ dir_path, level_index + 1 },
+        ) catch @panic("failed to allocate level path");
+        history.file_source.writeFile(level_path, level_txt) catch {
+            const message = std.fmt.allocPrint(
+                history.history_arena.allocator(),
+                "failed to save: could not write level_{d}.txt",
+                .{level_index + 1},
+            ) catch @panic("failed to format save failure message");
+            history.session.setPendingError(history.history_arena.allocator(), message);
+            return false;
+        };
+    }
+    return true;
 }
 
 /// Copy every REFERENCED custom sprite PNG - entity + decoration palette

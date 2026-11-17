@@ -131,8 +131,13 @@ pub fn buildOptionsMenu(
     // campaign Export Save path above, which is hidden in the editor.
     // Also on ctrl+S (the binding ships in default_settings.txt).
     if (current_screen == .editor) {
+        // The campaign-context hand-off saves into the campaign's
+        // missions/ (slice 5b) - the tooltip says where.
         const save_body = if (persistent_dir_path) |dir|
-            try std.fmt.allocPrint(allocator, "Ctrl+S - saves to {s}/missions/", .{dir})
+            if (mission_campaign_context)
+                try std.fmt.allocPrint(allocator, "Ctrl+S - saves to {s}/campaigns/", .{dir})
+            else
+                try std.fmt.allocPrint(allocator, "Ctrl+S - saves to {s}/missions/", .{dir})
         else
             "Ctrl+S - saves to the browser's persistent storage";
         buttons[button_count] = .{

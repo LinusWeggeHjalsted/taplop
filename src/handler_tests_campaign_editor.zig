@@ -2993,3 +2993,239 @@ test "mission editor hand-off: a never-saved mission opens the fresh template at
     try testing.expectEqualStrings("campaigns/local/missions/New Mission", editor.mission.path);
     try testing.expectEqual(@as(usize, 1), editor.levels.len);
 }
+
+test "mission editor hand-off save: campaign-context ctrl+S writes into the campaign, the full save never clobbers it" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    const campaign_editor_io = @import("campaign_editor/io.zig");
+    const mission_io = @import("editor/mission_io.zig");
+    const editor_handlers_mod = @import("editor/handlers.zig");
+    const file_source_mod = @import("file_source.zig");
+
+    // A FRESH campaign (no dir) with one hub + one never-saved mission.
+    var history = harness.newHistory(.{
+        .screen = .campaign_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "Fresh",
+            .start_hub = 0,
+            .hubs = &.{.{
+                .handle = 0,
+                .name = "Alpha",
+                .position = .{ .x = 0, .y = 0 },
+                .grid = .{
+                    .level_tiles = &.{.{ .x = 0, .y = 0 }},
+                    .player_start = .{ .x = 0, .y = 0 },
+                },
+            }},
+            .missions = &.{.{ .handle = 3, .dir = "New Mission", .name = "First Steps", .start = 0, .destination = 0 }},
+            .next_handle = 4,
+        },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    runToIdle(&history);
+
+    // The hand-off: the fresh-template branch.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_mission_editor = .{
+            .mission = 3,
+            .mission_path = null,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.editor.?.campaign_mission != null);
+
+    // Author content in the hand-off: paint a tile (a level the
+    // default template does not have) + rename the mission (the
+    // dual-write path).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_set_tile = .{
+            .level_index = 0,
+            .position = .{ .x = 5, .y = 5 },
+            .is_floor = true,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_set_mission_name = .{
+            .name = "First Steps Renamed",
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // The dual-write: the campaign graph's entry tracks the editor's
+    // rename (both live).
+    {
+        var graph_name: ?[]const u8 = null;
+        for (history.current_state.campaign_editor.?.missions) |mission| {
+            if (mission.handle == 3) graph_name = mission.name;
+        }
+        try testing.expectEqualStrings("First Steps Renamed", graph_name.?);
+    }
+
+    // The campaign-context save: the identity self-serves (the campaign
+    // mints HERE), the mission lands under the campaign's missions/,
+    // and the mission memo records (the full save resolves the same
+    // identity in place).
+    const saved_dir = mission_io.saveEditorMission(&history);
+    try testing.expect(saved_dir != null);
+    try testing.expect(history.session.pending_error == null);
+    const campaign_memo = campaign_editor_io.campaignSaveMemoFor(&history, types.campaign_save_memo_handle).?;
+    const campaign_dir = try arena.dupe(u8, campaign_memo.dir);
+    try testing.expect(std.mem.startsWith(u8, campaign_dir, "campaigns/"));
+    const mission_memo = campaign_editor_io.campaignSaveMemoFor(&history, 3).?;
+    const mission_uuid = try arena.dupe(u8, mission_memo.uuid);
+    const mission_dir_name = try arena.dupe(u8, mission_memo.dir);
+    try testing.expect(std.mem.startsWith(u8, mission_dir_name, mission_uuid));
+    try testing.expectEqualStrings(
+        saved_dir.?,
+        try std.fmt.allocPrint(arena, "{s}/missions/{s}", .{ campaign_dir, mission_dir_name }),
+    );
+    // The written files: mission.txt (the rich projection - the graph
+    // name via the dual-write), player.txt, and the AUTHORED level_1.
+    try testing.expect(file_source_mod.persistentFileExists(
+        &harness.file_source,
+        try std.fmt.allocPrint(arena, "{s}/mission.txt", .{saved_dir.?}),
+    ));
+    try testing.expect(file_source_mod.persistentFileExists(
+        &harness.file_source,
+        try std.fmt.allocPrint(arena, "{s}/player.txt", .{saved_dir.?}),
+    ));
+    const saved_level = try harness.file_source.readFile(
+        arena,
+        try std.fmt.allocPrint(arena, "{s}/level_1.txt", .{saved_dir.?}),
+    );
+    try testing.expect(std.mem.indexOf(u8, saved_level, "Layout") != null);
+
+    // The full save: campaign.txt lands, the mission keeps its memo
+    // identity (no re-mint), and the AUTHORED level is not clobbered
+    // with the default template (the memo-existence skip) - the
+    // hand-off's own level_1 (with the painted 5 5 tile) survives.
+    _ = campaign_editor_io.saveCampaignEditor(&history);
+    try testing.expect(history.session.pending_error == null);
+    try testing.expect(file_source_mod.persistentFileExists(
+        &harness.file_source,
+        try std.fmt.allocPrint(arena, "{s}/campaign.txt", .{campaign_dir}),
+    ));
+    const mission_memo_after = campaign_editor_io.campaignSaveMemoFor(&history, 3).?;
+    try testing.expectEqualStrings(mission_uuid, mission_memo_after.uuid);
+    const full_saved_level = try harness.file_source.readFile(
+        arena,
+        try std.fmt.allocPrint(arena, "{s}/level_1.txt", .{saved_dir.?}),
+    );
+    try testing.expectEqualStrings(saved_level, full_saved_level);
+
+    // The map-rename sync (the regression a lean-write skip would
+    // break): return from the hand-off, rename ON THE MAP, full save -
+    // mission.txt carries the map's name (the graph is the sole
+    // name-editing site once the payload is gone; the load
+    // denormalizes the name FROM mission.txt).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .{ .close_mission_editor = {} } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .campaign_editor_event = .{ .editor_campaign_set_mission_name = .{
+            .mission = 3,
+            .name = "Map Rename",
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    _ = campaign_editor_io.saveCampaignEditor(&history);
+    const mission_txt = try harness.file_source.readFile(
+        arena,
+        try std.fmt.allocPrint(arena, "{s}/mission.txt", .{saved_dir.?}),
+    );
+    {
+        const sections = try parser.parseConfigFile(mission_txt, arena, &parser.mission_sections);
+        const loaded = try @import("loaders.zig").loadMission(sections, arena);
+        try testing.expectEqualStrings("Map Rename", loaded.name);
+        try testing.expectEqualStrings(mission_uuid, loaded.uuid);
+    }
+    _ = editor_handlers_mod;
+}
+
+test "mission editor hand-off save: an official-origin campaign forks at the hand-off save" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    const campaign_editor_io = @import("campaign_editor/io.zig");
+    const mission_io = @import("editor/mission_io.zig");
+    const file_source_mod = @import("file_source.zig");
+
+    // Open the REAL official campaign, hand off its first mission.
+    var history = harness.newHistory(null);
+    runToIdle(&history);
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+            .campaign_dir = "campaigns/main_campaign",
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    const opened = history.current_state.campaign_editor orelse return error.TestUnexpectedResult;
+    const official_mission = opened.missions[0];
+    const official_uuid = try arena.dupe(u8, official_mission.uuid);
+
+    const mission_path = campaign_editor_io.campaignMissionEditorPath(
+        &history,
+        opened,
+        official_mission,
+        arena,
+    ).?;
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_mission_editor = .{
+            .mission = official_mission.handle,
+            .mission_path = mission_path,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // The hand-off save FORKS: a fresh campaign identity (the official
+    // dir is embedded + read-only), the root carry lands the map under
+    // the fork, and the mission re-homes with a FRESH uuid (the
+    // official identity never shadows - the campaign-editor fork rule).
+    const saved_dir = mission_io.saveEditorMission(&history);
+    try testing.expect(saved_dir != null);
+    try testing.expect(history.session.pending_error == null);
+    const campaign_memo = campaign_editor_io.campaignSaveMemoFor(&history, types.campaign_save_memo_handle).?;
+    const fork_dir = try arena.dupe(u8, campaign_memo.dir);
+    try testing.expect(!std.mem.eql(u8, fork_dir, "campaigns/main_campaign"));
+    try testing.expect(std.mem.startsWith(u8, saved_dir.?, fork_dir));
+    try testing.expect(file_source_mod.persistentFileExists(
+        &harness.file_source,
+        try std.fmt.allocPrint(arena, "{s}/map.png", .{fork_dir}),
+    ));
+    const mission_memo = campaign_editor_io.campaignSaveMemoFor(&history, official_mission.handle).?;
+    try testing.expect(!std.mem.eql(u8, mission_memo.uuid, official_uuid));
+    try testing.expect(std.mem.startsWith(u8, saved_dir.?, try std.fmt.allocPrint(
+        arena,
+        "{s}/missions/",
+        .{fork_dir},
+    )));
+
+    // The official campaign's own files stay embedded-only.
+    try testing.expect(!file_source_mod.persistentFileExists(&harness.file_source, "campaigns/main_campaign/campaign.txt"));
+}

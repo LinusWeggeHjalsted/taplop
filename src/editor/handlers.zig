@@ -1357,6 +1357,21 @@ pub fn handleEditorEvent(
         },
         .editor_set_mission_name => |set| {
             editor.mission.name = set.name;
+            // The campaign-context dual-write (the hand-off): the names
+            // never diverge - the campaign graph's denormalized name (map
+            // labels, the full save's lean mission.txt sync) tracks the
+            // mission editor's live edit. One event, two mirrored writes,
+            // both deterministic (the names agree at every save).
+            if (editor.campaign_mission) |mission_handle| {
+                if (current.campaign_editor) |*campaign| {
+                    for (@constCast(campaign.missions)) |*mission| {
+                        if (mission.handle == mission_handle) {
+                            mission.name = allocator.dupe(u8, set.name) catch
+                                @panic("failed to dupe campaign mission name");
+                        }
+                    }
+                }
+            }
         },
         .editor_set_level_color_wheel => |set| {
             if (set.level_index >= editor.levels.len) {
