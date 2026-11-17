@@ -174,6 +174,15 @@ pub const MetaEvent = union(enum) {
     // it. Edits already landed in the authored graph; navigation is
     // side-effect-free (the settled no-autosave rule).
     close_hub_editor: void,
+    // Close the mission editor's campaign-context hand-off and return
+    // to the campaign map. The handler only transitions (the scope swap
+    // clears the editor payload - old scope .editor, new scope
+    // .campaign_editor lacks it); the campaign graph was never left.
+    // The world-map return button + the options menu's World Map entry
+    // fire it. Unsaved edits stay lost only against the settled
+    // explicit-save posture; navigation is side-effect-free (the
+    // settled no-autosave rule).
+    close_mission_editor: void,
     start_playtest: struct {
         level_index: u32, // 0-based into editor.levels
     },
@@ -1136,6 +1145,25 @@ pub const PlayerInputEvent = union(enum) {
     // DESIGN → The editor-state split).
     open_hub_editor: struct {
         hub: u32,
+    },
+    // Hand off to the mission editor for a campaign mission (the
+    // mission inspector's Open Mission Editor button): `mission` is the
+    // target mission's CampaignEditor handle; `mission_path` is the
+    // INPUT-LAYER-RESOLVED mission dir (the input layer computes it
+    // memo-aware, so a forked session opens the fork's files - a
+    // recorded handler must never read the session memos, so the path
+    // rides the payload like open_editor's mission_path), NULL for a
+    // never-saved mission (the fresh-template branch). The handler
+    // resolves the handle against the live authored graph (a crafted
+    // dead handle no-ops), adopts the GRAPH's name (the authored name is
+    // fresher than on-disk mission.txt when a map rename wasn't
+    // full-saved), loads the content through the reconstruction cache,
+    // and sets the payload's campaign context. The CALLER transitions
+    // to .editor (whose scope keeps campaign_editor alive - DESIGN →
+    // The editor-state split).
+    open_mission_editor: struct {
+        mission: u32,
+        mission_path: ?[]const u8,
     },
     // Orchestrates a save: syncs PlayerData from the working entity (in a
     // hub/level) via build_data_from_player, then writes via write_save.

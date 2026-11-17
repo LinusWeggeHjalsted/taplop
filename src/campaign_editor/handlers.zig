@@ -362,6 +362,71 @@ pub fn openHubEditor(
     };
 }
 
+/// The mission-editor hand-off open (the mission inspector's Open
+/// Mission Editor button -> the `open_mission_editor` orchestrator):
+/// resolve the target handle against the live authored graph (a
+/// crafted dead handle no-ops - the defensive convention), then either
+/// load the on-disk mission through the reconstruction cache (the
+/// input-layer-resolved path rides the payload - memo-aware, so a
+/// forked session opens the fork's files) or open the fresh template
+/// (a never-saved mission). Both branches ADOPT THE GRAPH'S NAME - the
+/// authored name is the fresher edit (an unsaved map rename leaves
+/// on-disk mission.txt stale). Sets the payload's campaign context (the
+/// handle); the CALLER transitions to .editor (whose scope keeps
+/// campaign_editor alive - DESIGN → The editor-state split). A failed
+/// load surfaces the recoverable error and leaves the editor unset
+/// (the arm's null check skips the transition - the
+/// openFreshEditorMission contract).
+pub fn openMissionEditorHandoff(
+    history: *GameStateHistory,
+    current: *GameState,
+    allocator: std.mem.Allocator,
+    balance_warnings: *std.ArrayList([]const u8),
+    mission_handle: u32,
+    mission_path: ?[]const u8,
+) void {
+    const campaign = current.campaign_editor orelse return;
+    var target: ?types.CampaignMissionEdit = null;
+    for (campaign.missions) |mission| {
+        if (mission.handle == mission_handle) {
+            target = mission;
+            break;
+        }
+    }
+    const mission = target orelse return;
+    if (mission_path) |path| {
+        if (!editor_handlers.openEditorMissionFromDir(history, current, allocator, balance_warnings, path)) return;
+        current.editor.?.mission.name = mission.name;
+    } else {
+        // A never-saved mission: the fresh template anchored under the
+        // campaign's missions/ (the placeholder convention - the anchor
+        // keys the mission-local art scan; the dir usually does not
+        // exist yet). State-derived: a fresh campaign with no dir yet
+        // anchors at campaigns/<name>/ (the mission editor reads no
+        // session memos - a recorded handler stays memo-blind).
+        const anchor_root = if (campaign.campaign_dir.len > 0)
+            campaign.campaign_dir
+        else
+            std.fmt.allocPrint(allocator, "campaigns/{s}", .{campaign.campaign_name}) catch
+                @panic("failed to format fresh campaign anchor");
+        const mission_anchor = std.fmt.allocPrint(
+            allocator,
+            "{s}/missions/{s}",
+            .{ anchor_root, mission.dir },
+        ) catch @panic("failed to format mission anchor");
+        editor_handlers.openEditorMissionTemplate(
+            history,
+            current,
+            allocator,
+            balance_warnings,
+            mission.name,
+            mission_anchor,
+        );
+        if (current.editor == null) return;
+    }
+    current.editor.?.campaign_mission = mission_handle;
+}
+
 /// The camera-clamp snapshot over a hub grid's tiles (the
 /// refreshEditorClampBounds math): taken once at drill-in open, never
 /// re-taken mid-edit, so painting never reframes the camera (see DESIGN

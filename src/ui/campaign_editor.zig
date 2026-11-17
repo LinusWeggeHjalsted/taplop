@@ -967,6 +967,50 @@ pub fn buildCampaignEditorView(
                         button_color,
                         null,
                     );
+                    entry_index += 2;
+                    // The hand-off entry (the Open Hub Editor twin, the
+                    // bottom placement): opens the mission editor for this
+                    // mission in campaign context - the return button +
+                    // the save target are the only differences (DESIGN →
+                    // The mission-editor hand-off). The raw three-element
+                    // append carries the payload (emitPanelButton takes
+                    // no payload - the hub inspector's open button
+                    // emission, verbatim).
+                    const open_mission_rect = inspector.inspectorControlRect(.{
+                        .x = content.x,
+                        .y = content.y + entry_index * editor_shell.editor_header_strip_height,
+                        .width = content.width,
+                        .height = 2 * editor_shell.editor_header_strip_height,
+                    });
+                    try elements.append(allocator, .{ .nine_slice_panel = .{
+                        .sprite_id = "ui/panel",
+                        .screen_position = open_mission_rect.position(),
+                        .width = open_mission_rect.width,
+                        .height = open_mission_rect.height,
+                        .color = button_color,
+                        .blocks_input = false,
+                    } });
+                    try elements.append(allocator, .{ .button = .{
+                        .sprite_id = null,
+                        .screen_position = open_mission_rect.position(),
+                        .width = open_mission_rect.width,
+                        .height = open_mission_rect.height,
+                        .action = .open_mission_editor,
+                        .payload = .{ .editor_campaign_mission = mission.handle },
+                    } });
+                    try elements.append(allocator, .{ .text_label = .{
+                        .text = "Open Mission Editor",
+                        .screen_position = .{
+                            .x = open_mission_rect.x + ui_element.ui_gap,
+                            .y = open_mission_rect.y + @divFloor(
+                                open_mission_rect.height - editor_shell.editor_group_header_font_size,
+                                2,
+                            ),
+                        },
+                        .font_size = editor_shell.editor_group_header_font_size,
+                        .color = lightest,
+                        .blocks_input = false,
+                    } });
                 }
             }
         }
@@ -1903,6 +1947,18 @@ test "buildCampaignEditorView: the mission inspector + edge buttons + the draw p
     };
     try std.testing.expectEqual(@as(u32, 3), mission_name_field.?.ref.target.campaign_mission);
     try std.testing.expectEqual(@as(u32, 3), direction_field.?.ref.target.campaign_mission);
+
+    // The hand-off entry (the slice-5 open): the Open Mission Editor
+    // button under Import, carrying the selected mission's handle.
+    var open_mission_button: ?ui_element.Button = null;
+    for (elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .open_mission_editor) {
+            open_mission_button = button;
+        },
+        else => {},
+    };
+    try std.testing.expect(open_mission_button != null);
+    try std.testing.expectEqual(@as(u32, 3), open_mission_button.?.payload.?.editor_campaign_mission);
 
     var reattach_buttons: usize = 0;
     var alpha_row = false;

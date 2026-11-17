@@ -548,6 +548,8 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .select_editor_campaign_import,
         .open_hub_editor,
         .close_hub_editor,
+        .open_mission_editor,
+        .close_mission_editor,
         .select_hub_tool,
         .toggle_hub_inspector,
         .toggle_hub_metadata_sidebar,

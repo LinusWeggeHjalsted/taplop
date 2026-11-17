@@ -383,6 +383,7 @@ working rules).
 - [Hub editor: the mission-editor mirrors - Tab cycle, Digit1-5, ctrl+O, the options menu, the return button](#hub-editor-the-mission-editor-mirrors---tab-cycle-digit1-5-ctrlo-the-options-menu-the-return-button)
 - [The browser lists: newest-first everywhere, recency timestamps, + the recoverable delete](#the-browser-lists-newest-first-everywhere-recency-timestamps--the-recoverable-delete)
 - [campaign-editor slice 5-0: the hub editor's save self-serves the campaign identity](#campaign-editor-slice-5-0-the-hub-editors-save-self-serves-the-campaign-identity)
+- [campaign-editor slice 5a: the mission-editor hand-off framing](#campaign-editor-slice-5a-the-mission-editor-hand-off-framing)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -22951,3 +22952,60 @@ build refused.
 
 The settle it lands is recorded in DESIGN (The hub editor surface's
 save-granularity bullet + The mission-editor hand-off). 1043 green.
+
+## campaign-editor slice 5a: the mission-editor hand-off framing
+
+The mission inspector's Open Mission Editor button now hands off to
+the mission editor in campaign context. The wiring mirrors the hub
+editor drill-in (its 4-1 pattern) end to end:
+
+- **The state**: `Editor.campaign_mission` - an optional
+  CampaignEditor handle on the mission editor's payload, NULL for
+  standalone mission sessions. The editor screen's scope already
+  kept campaign_editor alive across the transition (the state-split
+  plan), so no scope change was needed.
+- **The open** (`open_mission_editor`, a recorded PlayerInputEvent
+  orchestrator): the mission dir is resolved by the INPUT layer
+  (memo-aware through `campaignMissionEditorPath` - a forked session
+  opens the fork's files) and rides the payload like open_editor's
+  mission_path, because a recorded handler must never read the
+  session memos (replay would diverge). The handler resolves the
+  handle against the live graph (dead handles no-op), loads the
+  on-disk content through the reconstruction cache or opens the
+  fresh template (never-saved missions, anchored under the campaign's
+  missions/), and ADOPTS THE GRAPH'S NAME in both branches - the
+  authored name is the fresher edit when a map rename wasn't
+  full-saved. The mission-dir loading was extracted from
+  open_editor's path branch into `openEditorMissionFromDir` (the
+  shared seam; the fresh open parameterized as
+  `openEditorMissionTemplate`).
+- **The return**: `close_mission_editor` (a recorded pure
+  transition) + two surfaces - the global top bar's map slot
+  (`TopBarMapSlot.campaign_map_mission`, next to redo, the hub
+  editor's placement) and the options menu's World Map entry (a new
+  `mission_campaign_context` param on `buildOptionsMenu`; the
+  buttons array gained headroom - the editor's campaign-context
+  variant + the web tail reached the old bound exactly).
+- **The foreign-open rule**: opening other content (the editor
+  browser, New Mission) while the hand-off is open clears
+  campaign_editor in the same event - the replacement payload
+  carries no context, so the campaign would linger alive-but-orphaned
+  below (the editor screen's scope keeps it), reachable by no
+  surface. Undo restores both.
+
+Drive-authoring note: `report ui`'s "center = a valid click point"
+is the BOUNDS center - for the campaign map's hit_arrow edge buttons
+the actual hit test is the arrow STROKE, and a self-loop's bounds
+center falls inside the loop. The official campaign's four missions
+are all self-loops of its single hub; clicking near the loop's apex
+(at bounds top, not center) selects. The drive still round-tripped
+cleanly: mission click -> inspector -> Open Mission Editor -> the
+mission editor with the return button next to redo + the options
+menu's World Map entry -> return click -> the campaign map, exit 0.
+
+Tests: the on-disk hand-off round trip over the real official
+campaign (context + adopted name + loaded levels + campaign
+survival, close return, undo restore, the foreign-open clear), the
+fresh-template branch (graph name + anchor path), the options-menu
+variant (World Map present/absent by context), and the inspector
+button's payload. 1047 green.

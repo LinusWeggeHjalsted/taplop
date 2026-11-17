@@ -288,6 +288,12 @@ pub const TopBarMapSlot = enum {
     /// (`close_hub_editor` - the same destination as the options menu's
     /// World Map entry).
     campaign_map,
+    /// The mission editor's campaign-context return (the hand-off's
+    /// world-map button): same visual + tooltip as the hub editor's
+    /// `campaign_map` return, but fires `close_mission_editor` (the
+    /// screen-gated sibling - each close drops its own screen's state
+    /// via the scope rule).
+    campaign_map_mission,
 };
 
 pub fn buildGlobalTopBar(
@@ -401,11 +407,12 @@ pub fn buildGlobalTopBar(
             .none => unreachable,
             .world_map => .toggle_world_map,
             .campaign_map => .close_hub_editor,
+            .campaign_map_mission => .close_mission_editor,
         };
         const map_tooltip: []const u8 = switch (map_slot) {
             .none => unreachable,
             .world_map => "World Map",
-            .campaign_map => "Return to the campaign map",
+            .campaign_map, .campaign_map_mission => "Return to the campaign map",
         };
         try emitIconButton(
             elements,

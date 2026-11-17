@@ -4064,6 +4064,41 @@ pub fn handleAnytimeInput(
                     .hub = hub,
                 } });
             },
+            // The mission inspector's Open Mission Editor button: the
+            // hand-off open. The mission dir is resolved HERE (memo-aware
+            // - a forked session opens the fork's files; a recorded
+            // handler must never read the memos, so the path rides the
+            // event payload, the open_editor browser-row precedent).
+            .open_mission_editor => {
+                if (history.current_state.screen != .campaign_editor) return;
+                const mission_handle = payloadAs(.editor_campaign_mission, clicked_payload) orelse return;
+                const campaign = history.current_state.campaign_editor orelse return;
+                var target: ?types.CampaignMissionEdit = null;
+                for (campaign.missions) |entry| {
+                    if (entry.handle == mission_handle) target = entry;
+                }
+                const entry = target orelse return;
+                const mission_path = campaign_editor_io.campaignMissionEditorPath(
+                    history,
+                    campaign,
+                    entry,
+                    allocator,
+                );
+                pushPlayerActionAndDrain(history, .{ .open_mission_editor = .{
+                    .mission = mission_handle,
+                    .mission_path = mission_path,
+                } });
+            },
+            // The mission editor's world-map return button (campaign
+            // context): back to the campaign map (the recorded close
+            // drops the editor payload via the scope rule; the campaign
+            // graph survives).
+            .close_mission_editor => {
+                if (history.current_state.screen != .editor) return;
+                if (history.current_state.editor == null or
+                    history.current_state.editor.?.campaign_mission == null) return;
+                pushEventAndDrain(history, .{ .meta_event = .{ .close_mission_editor = {} } });
+            },
             // The hub editor's world-map return button: back to the
             // campaign map (the recorded close drops the drill-in state
             // via the scope rule; the campaign graph survives).

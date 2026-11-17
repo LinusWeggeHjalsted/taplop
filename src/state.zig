@@ -2910,6 +2910,7 @@ pub const GameStateHistory = struct {
                     .open_editor,
                     .open_campaign_editor,
                     .open_hub_editor,
+                    .open_mission_editor,
                     .save_game,
                     .export_game,
                     .dismiss_mission_complete,

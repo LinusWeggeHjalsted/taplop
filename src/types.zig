@@ -423,6 +423,17 @@ pub const Action = enum {
     // campaign map - the recorded close drops the drill-in state via
     // the scope rule.
     close_hub_editor,
+    /// The mission inspector's Open Mission Editor button: hands off
+    /// to the mission editor for that campaign mission (the slice-5
+    /// hand-off). The mission handle rides the `editor_campaign_mission`
+    /// payload; the orchestrator event is recorded (undo returns to the
+    /// campaign map).
+    open_mission_editor,
+    // The mission editor's world-map return button in campaign context
+    // (top-right): back to the campaign map - the recorded close drops
+    // the editor payload via the scope rule (the campaign graph
+    // survives).
+    close_mission_editor,
     // The hub editor's tool palette cell click: the HubEditorToolId
     // rides the `hub_tool` payload (the select_editor_tool convention).
     select_hub_tool,
@@ -1216,6 +1227,7 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         // the screen is `.level`, so these go inactive and the game set
         // above takes over).
         .save_editor_mission,
+        .close_mission_editor,
         .export_editor_mission,
         .toggle_editor_palette_group,
         .add_editor_palette_type,
@@ -1333,6 +1345,7 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .campaign_hub_tool,
         .campaign_mission_tool,
         .open_hub_editor,
+        .open_mission_editor,
         => .{ .campaign_editor = true },
         // The hub editor's own surface (the drill-in screen - its own
         // action context, so hub-editor bindings can never co-fire with
@@ -1660,7 +1673,9 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .open_hub_editor,
         => .editor_campaign_hub,
         .select_editor_campaign_background => .editor_campaign_background,
-        .select_editor_campaign_mission => .editor_campaign_mission,
+        .select_editor_campaign_mission,
+        .open_mission_editor,
+        => .editor_campaign_mission,
         .select_editor_campaign_import => .editor_campaign_import,
         .delete_editor_mission => .editor_mission_row,
         .delete_campaign => .campaign_row,
@@ -1765,6 +1780,7 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .save_campaign,
         .validate_campaign,
         .close_hub_editor,
+        .close_mission_editor,
         .toggle_hub_inspector,
         .toggle_hub_metadata_sidebar,
         .add_hub_decoration_type,
@@ -3819,6 +3835,19 @@ pub const EditorPickerTarget = union(enum) {
 
 pub const Editor = struct {
     mission: Mission = .{}, // metadata + path (the mission being edited)
+    /// The campaign-context hand-off (slice 5): the CampaignEditor
+    /// handle of the campaign graph mission this session edits, NULL
+    /// for a standalone mission session. Set only by the
+    /// `open_mission_editor` orchestrator (which ADOPTS the graph's
+    /// name over the on-disk one - the authored name is the fresher
+    /// edit); a plain `open_editor` replaces the whole payload, so the
+    /// context drops with it (the same open also clears the lingering
+    /// campaign below - the foreign-open rule). Non-null implies
+    /// `campaign_editor` is live below (the editor screen's scope keeps
+    /// it) and the world-map return button shows. The name dual-write
+    /// + the campaign save target key off it (see DESIGN → Campaigns &
+    /// the Campaign Editor → The mission-editor hand-off).
+    campaign_mission: ?u32 = null,
     levels: []const EditorLevel = &.{}, // all levels, reference-based
     // Palette (editor-global). Derived by dedup on open_editor from the
     // levels' inline definitions; not persisted to disk (unused types are

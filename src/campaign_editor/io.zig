@@ -252,6 +252,32 @@ pub fn effectiveCampaignDir(history: *GameStateHistory, editor: types.CampaignEd
     return editor.campaign_dir;
 }
 
+/// The mission-editor hand-off's read path (the input layer's
+/// memo-aware computation - a RECORDED handler must never read the
+/// session memos, so the resolved path rides the open event's payload
+/// instead, the open_editor mission_path precedent): the campaign's
+/// effective dir (the save memo's fork target when one exists, else
+/// the opened dir) + the mission's resolved dir (the memo's when one
+/// exists, else the state dir). Null for a FRESH mission (no uuid, no
+/// memo - the fresh-template branch; a full save that materialized
+/// template files mints the memo, so the path branch picks them up).
+pub fn campaignMissionEditorPath(
+    history: *GameStateHistory,
+    editor: types.CampaignEditor,
+    mission: types.CampaignMissionEdit,
+    allocator: std.mem.Allocator,
+) ?[]const u8 {
+    const memo = campaignSaveMemoFor(history, mission.handle);
+    if (mission.uuid.len == 0 and memo == null) return null;
+    const campaign_dir = effectiveCampaignDir(history, editor);
+    const mission_dir = if (memo) |entry| entry.dir else mission.dir;
+    return std.fmt.allocPrint(
+        allocator,
+        "{s}/missions/{s}",
+        .{ campaign_dir, mission_dir },
+    ) catch @panic("failed to format campaign mission path");
+}
+
 /// The campaign dir an import copies INTO: this session's save target.
 /// A local campaign imports into its own dir; an official-origin
 /// campaign mints the fork identity HERE (the memo carries to the later

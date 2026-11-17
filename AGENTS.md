@@ -712,8 +712,8 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   end_validation success path calls it gated `!replaying`).
 - `src/campaign_editor/` - the campaign editor's module family (the
   src/editor/ sibling): `handlers.zig` (the open/close framing + the
-  fresh-campaign default + the hub-editor drill-in open
-  `openHubEditor`) + `hub_handlers.zig` (the hub editor drill-in's
+  fresh-campaign default + the drill-in opens (`openHubEditor` +
+  `openMissionEditorHandoff`, the slice-5 mission hand-off)) + `hub_handlers.zig` (the hub editor drill-in's
   HubEditorEvent arms - copy-on-write over the hub list, writing
   through into the authored grid) + `load.zig` (the INVERSE PROJECTION -
   campaign.txt v5 (the Missions edge table) + every hub.txt + the mission

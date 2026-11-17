@@ -2829,3 +2829,167 @@ test "saveHubEditor: an official-origin hub save forks (the root carry) and the 
         try testing.expect(std.mem.indexOf(u8, healed_hub_txt, mission_memo.uuid) != null);
     }
 }
+
+test "mission editor hand-off: the on-disk open adopts the graph name + context; close returns; the foreign-open clears" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    const campaign_editor_io = @import("campaign_editor/io.zig");
+
+    // The REAL official campaign: its missions are on-disk content the
+    // hand-off loads through the reconstruction cache.
+    var history = harness.newHistory(null);
+    runToIdle(&history);
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+            .campaign_dir = "campaigns/main_campaign",
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    const opened = history.current_state.campaign_editor orelse return error.TestUnexpectedResult;
+    const mission = opened.missions[0];
+
+    // The input layer's path computation (memo-aware; no memos exist
+    // yet, so it resolves the state identity): the campaign's missions/
+    // dir + the mission's dir.
+    const mission_path = campaign_editor_io.campaignMissionEditorPath(
+        &history,
+        opened,
+        mission,
+        arena,
+    ) orelse return error.TestUnexpectedResult;
+    try testing.expectEqualStrings(
+        "campaigns/main_campaign/missions/beginnings",
+        mission_path,
+    );
+
+    // The hand-off open: the mission editor in campaign context. The
+    // graph's name is adopted over the file's (identical here - the
+    // official mission was never renamed), the mission's real content
+    // loads, and the campaign survives below.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_mission_editor = .{
+            .mission = mission.handle,
+            .mission_path = mission_path,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(state.Screen.editor, history.current_state.screen);
+    const editor = history.current_state.editor orelse return error.TestUnexpectedResult;
+    try testing.expectEqual(mission.handle, editor.campaign_mission.?);
+    try testing.expectEqualStrings(mission.name, editor.mission.name);
+    try testing.expect(editor.levels.len > 0);
+    try testing.expect(history.current_state.campaign_editor != null);
+
+    // The return: back to the campaign map, the scope rule dropping the
+    // editor payload (context included); the graph untouched.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .{ .close_mission_editor = {} } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(state.Screen.campaign_editor, history.current_state.screen);
+    try testing.expect(history.current_state.editor == null);
+    try testing.expect(history.current_state.campaign_editor != null);
+    try testing.expect(history.current_state.campaign_editor.?.missions.len == opened.missions.len);
+
+    // Undo restores the hand-off (the close is a plain timeline event).
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(state.Screen.editor, history.current_state.screen);
+    try testing.expect(history.current_state.editor.?.campaign_mission != null);
+
+    // The foreign-open rule: opening other content from within the
+    // hand-off (the editor browser's rows) clears the campaign below -
+    // the replacement payload carries no context, so the campaign would
+    // linger alive-but-orphaned otherwise. Undo restores both.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_editor = .{
+            .mission_path = null,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(state.Screen.editor, history.current_state.screen);
+    try testing.expect(history.current_state.editor != null);
+    try testing.expect(history.current_state.editor.?.campaign_mission == null);
+    try testing.expect(history.current_state.campaign_editor == null);
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expect(history.current_state.editor.?.campaign_mission != null);
+    try testing.expect(history.current_state.campaign_editor != null);
+}
+
+test "mission editor hand-off: a never-saved mission opens the fresh template at the campaign anchor" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // A local campaign dir with a never-saved mission (no uuid, the
+    // temp anchor dir).
+    var history = harness.newHistory(.{
+        .screen = .campaign_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "Local",
+            .campaign_uuid = "cu",
+            .campaign_dir = "campaigns/local",
+            .start_hub = 0,
+            .hubs = &.{.{
+                .handle = 0,
+                .name = "Alpha",
+                .position = .{ .x = 0, .y = 0 },
+                .grid = .{
+                    .level_tiles = &.{.{ .x = 0, .y = 0 }},
+                    .player_start = .{ .x = 0, .y = 0 },
+                },
+            }},
+            .missions = &.{.{ .handle = 3, .dir = "New Mission", .name = "Renamed On Map", .start = 0, .destination = 0 }},
+            .next_handle = 4,
+        },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    runToIdle(&history);
+    const campaign_editor_io = @import("campaign_editor/io.zig");
+
+    // The input layer: a never-saved mission has no path (the
+    // fresh-template signal).
+    const campaign = history.current_state.campaign_editor.?;
+    try testing.expect(campaign_editor_io.campaignMissionEditorPath(
+        &history,
+        campaign,
+        campaign.missions[0],
+        backing.allocator(),
+    ) == null);
+
+    // The hand-off: the fresh template at the campaign's missions/
+    // anchor, the GRAPH's name adopted (a map rename that was never
+    // full-saved beats the would-be file name).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_mission_editor = .{
+            .mission = 3,
+            .mission_path = null,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(state.Screen.editor, history.current_state.screen);
+    const editor = history.current_state.editor orelse return error.TestUnexpectedResult;
+    try testing.expectEqual(@as(u32, 3), editor.campaign_mission.?);
+    try testing.expectEqualStrings("Renamed On Map", editor.mission.name);
+    try testing.expectEqualStrings("campaigns/local/missions/New Mission", editor.mission.path);
+    try testing.expectEqual(@as(usize, 1), editor.levels.len);
+}

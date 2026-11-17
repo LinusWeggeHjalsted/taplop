@@ -439,13 +439,6 @@ work:
         surface settle stands: only the save target + the world-map
         return button differ, export unchanged; autosave-on-exit
         settled NO - DONE.md):
-    - [ ] 5a. The hand-off framing: the open_mission_editor
-          orchestrator (graph-name adoption, reconstruction-cache
-          read, fresh-mission temp-anchor branch) + the campaign
-          context field on the Editor payload + the return
-          transition + the world-map return button + the
-          options-menu variant + the foreign-open-clears-campaign
-          rule.
     - [ ] 5b. The save path: campaign-context save with the identity
           self-serve, the mission memo + the mission-editor-owned
           marker (the full save's lean mission.txt skip), the name

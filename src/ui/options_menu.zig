@@ -52,6 +52,10 @@ pub fn buildOptionsMenu(
     /// temporary, rebuilt from the editor loadout (see DESIGN → Level
     /// Editor → Playtest/validate framing).
     editor_run: ?types.EditorMode,
+    /// The mission editor's campaign-context flag (the slice-5 hand-off):
+    /// true while the edited mission belongs to a live campaign below -
+    /// adds the World Map return entry (the hub editor variant's twin).
+    mission_campaign_context: bool,
     button_color: Color,
     /// Where the exported save lands, for the Export Save tooltip. Native:
     /// the resolved persistent dir (tooltip: "Saves to <dir>/saves/"). Web:
@@ -69,7 +73,7 @@ pub fn buildOptionsMenu(
     } });
 
     const MenuButton = struct { label: []const u8, action: Action, tooltip: ?Tooltip = null };
-    var buttons: [9]MenuButton = undefined;
+    var buttons: [10]MenuButton = undefined;
     var button_count: usize = 0;
 
     // Level-only exit paths (restart / exit mission). Hub has no mission in
@@ -195,6 +199,21 @@ pub fn buildOptionsMenu(
             ))}) },
         };
         button_count += 1;
+
+        // The campaign-context return (the hand-off): the world-map entry,
+        // the hub editor variant's twin - the same destination as the
+        // global top bar's return button next to redo (both the button
+        // and the menu entry push close_mission_editor).
+        if (mission_campaign_context) {
+            buttons[button_count] = .{
+                .label = "World Map",
+                .action = .close_mission_editor,
+                .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(
+                    "Returns to the campaign map",
+                ))}) },
+            };
+            button_count += 1;
+        }
     }
 
     // The CAMPAIGN editor's variant (mirrors the mission editor's entries
@@ -351,7 +370,7 @@ test "buildOptionsMenu: Revalidate Mission is editor-only" {
     // under New Mission).
     {
         var elements: UiElementList = .empty;
-        try buildOptionsMenu(&elements, allocator, metrics, screen, .editor, null, button_color, null);
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .editor, null, false, button_color, null);
         var found = false;
         for (elements.items) |element| switch (element) {
             .button => |b| {
@@ -365,13 +384,40 @@ test "buildOptionsMenu: Revalidate Mission is editor-only" {
     // Level screen: absent (the button only renders for the editor).
     {
         var elements: UiElementList = .empty;
-        try buildOptionsMenu(&elements, allocator, metrics, screen, .level, null, button_color, null);
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .level, null, false, button_color, null);
         for (elements.items) |element| switch (element) {
             .button => |b| {
                 try std.testing.expect(b.action != .revalidate_editor_mission);
             },
             else => {},
         };
+    }
+}
+
+test "buildOptionsMenu: the mission editor's campaign-context variant carries the World Map return" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    var elements: UiElementList = .empty;
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+    const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
+
+    for ([_]bool{ false, true }) |context| {
+        elements.clearRetainingCapacity();
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .editor, null, context, button_color, null);
+        var world_map: ?usize = null;
+        for (elements.items, 0..) |element, index| switch (element) {
+            .button => |button| if (button.action == .close_mission_editor) {
+                world_map = index;
+            },
+            else => {},
+        };
+        if (context) {
+            try std.testing.expect(world_map != null);
+        } else {
+            try std.testing.expect(world_map == null);
+        }
     }
 }
 
@@ -389,7 +435,7 @@ test "buildOptionsMenu: the hub editor variant carries the drill-in's verbs" {
     // global top bar's return button).
     {
         var elements: UiElementList = .empty;
-        try buildOptionsMenu(&elements, allocator, metrics, screen, .hub_editor, null, button_color, null);
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .hub_editor, null, false, button_color, null);
         for ([_]types.Action{ .save_hub, .toggle_editor_browser, .close_hub_editor, .open_settings, .exit_to_menu }) |expected| {
             var found = false;
             for (elements.items) |element| switch (element) {
@@ -412,7 +458,7 @@ test "buildOptionsMenu: the hub editor variant carries the drill-in's verbs" {
     // The campaign editor variant: the hub-only verbs are absent there.
     {
         var elements: UiElementList = .empty;
-        try buildOptionsMenu(&elements, allocator, metrics, screen, .campaign_editor, null, button_color, null);
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .campaign_editor, null, false, button_color, null);
         for ([_]types.Action{ .save_hub, .close_hub_editor }) |forbidden| {
             for (elements.items) |element| switch (element) {
                 .button => |b| try std.testing.expect(b.action != forbidden),
@@ -432,7 +478,7 @@ test "buildOptionsMenu: the main-menu variant carries the meta entries, not the 
     const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
 
     var elements: UiElementList = .empty;
-    try buildOptionsMenu(&elements, allocator, metrics, screen, .main_menu, null, button_color, null);
+    try buildOptionsMenu(&elements, allocator, metrics, screen, .main_menu, null, false, button_color, null);
     // The main-menu variant: Settings + Credits + Exit Game (tests run
     // native - the web build omits Exit Game), and none of the session
     // verbs, the editor block, or Exit to Main Menu. No Continue - like
@@ -471,7 +517,7 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
     // Native (a persistent dir path is known): "Saves to <dir>/saves/".
     {
         var elements: UiElementList = .empty;
-        try buildOptionsMenu(&elements, allocator, metrics, screen, .level, null, button_color, "/home/tester/.ziglop");
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .level, null, false, button_color, "/home/tester/.ziglop");
         const button = (for (elements.items) |element| switch (element) {
             .button => |b| if (b.action == .save_game) break b,
             else => {},
@@ -485,7 +531,7 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
     // Web (null path): the export is a browser download.
     {
         var elements: UiElementList = .empty;
-        try buildOptionsMenu(&elements, allocator, metrics, screen, .level, null, button_color, null);
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .level, null, false, button_color, null);
         const button = (for (elements.items) |element| switch (element) {
             .button => |b| if (b.action == .save_game) break b,
             else => {},
@@ -498,7 +544,7 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
     // Other buttons stay tooltip-free.
     {
         var elements: UiElementList = .empty;
-        try buildOptionsMenu(&elements, allocator, metrics, screen, .level, null, button_color, "/x");
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .level, null, false, button_color, "/x");
         for (elements.items) |element| switch (element) {
             .button => |b| if (b.action != .save_game) {
                 try std.testing.expect(b.tooltip == null);
@@ -512,7 +558,7 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
     // and no close button, per the no-Continue convention.
     {
         var elements: UiElementList = .empty;
-        try buildOptionsMenu(&elements, allocator, metrics, screen, .editor, null, button_color, "/home/tester/.ziglop");
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .editor, null, false, button_color, "/home/tester/.ziglop");
         for (elements.items) |element| switch (element) {
             .button => |b| try std.testing.expect(b.action != .save_game),
             else => {},
@@ -562,7 +608,7 @@ test "buildOptionsMenu: Export Game on every variant, web only (null persistent 
     // reachable mid-level, so in-session backups are always possible.
     for ([_]state.Screen{ .main_menu, .level, .hub, .editor }) |variant| {
         var elements: UiElementList = .empty;
-        try buildOptionsMenu(&elements, allocator, metrics, screen, variant, null, button_color, null);
+        try buildOptionsMenu(&elements, allocator, metrics, screen, variant, null, false, button_color, null);
         const button = (for (elements.items) |element| switch (element) {
             .button => |b| if (b.action == .export_game) break b,
             else => {},
@@ -587,7 +633,7 @@ test "buildOptionsMenu: Export Game on every variant, web only (null persistent 
     // game folder.
     for ([_]state.Screen{ .main_menu, .level, .hub, .editor }) |variant| {
         var elements: UiElementList = .empty;
-        try buildOptionsMenu(&elements, allocator, metrics, screen, variant, null, button_color, "/home/tester/.ziglop");
+        try buildOptionsMenu(&elements, allocator, metrics, screen, variant, null, false, button_color, "/home/tester/.ziglop");
         for (elements.items) |element| switch (element) {
             .button => |b| try std.testing.expect(b.action != .export_game),
             else => {},
@@ -613,7 +659,7 @@ test "buildOptionsMenu + buildMissionFail during an editor run: run labels, no E
         // temporary - rebuilt from the editor loadout, discarded on exit).
         {
             var elements: UiElementList = .empty;
-            try buildOptionsMenu(&elements, allocator, metrics, screen, .level, run_mode, button_color, "/dir");
+            try buildOptionsMenu(&elements, allocator, metrics, screen, .level, run_mode, false, button_color, "/dir");
             try expectMenuButtonLabel(elements.items, .restart_mission, restart_label);
             try expectMenuButtonLabel(elements.items, .exit_mission, exit_label);
             for (elements.items) |element| switch (element) {
@@ -667,7 +713,7 @@ test "buildOptionsMenu: the campaign editor variant - browser + new campaign, no
     const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
 
     var elements: UiElementList = .empty;
-    try buildOptionsMenu(&elements, allocator, metrics, screen, .campaign_editor, null, button_color, null);
+    try buildOptionsMenu(&elements, allocator, metrics, screen, .campaign_editor, null, false, button_color, null);
 
     var found_browser = false;
     var found_new_campaign = false;

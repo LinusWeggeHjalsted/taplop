@@ -822,6 +822,7 @@ pub fn view(
                     ui.screenRect(),
                     current_state.screen,
                     editor_run,
+                    current_state.editor != null and current_state.editor.?.campaign_mission != null,
                     button_color,
                     session.persistent_dir_path,
                 ) catch @panic("failed to build options menu");
@@ -1021,6 +1022,13 @@ pub fn view(
     const map_slot: ui.TopBarMapSlot = switch (current_state.screen) {
         .level, .hub => .world_map,
         .hub_editor => .campaign_map,
+        // The mission editor's campaign-context hand-off: the return
+        // button shows only while the payload carries a campaign mission
+        // (a standalone mission session keeps the empty slot).
+        .editor => if (current_state.editor != null and current_state.editor.?.campaign_mission != null)
+            .campaign_map_mission
+        else
+            .none,
         else => .none,
     };
     ui.buildGlobalTopBar(

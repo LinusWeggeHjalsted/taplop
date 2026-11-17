@@ -415,9 +415,44 @@ pub fn handlePlayerInputEvent(
             current.transitionScreen(.hub_editor);
         },
 
+        // --- Meta: open the mission-editor hand-off ---
+        .open_mission_editor => |start| {
+            // The mission inspector's Open Mission Editor button. A
+            // failed open surfaced the recoverable error and left the
+            // editor unset - skip the transition (the drain loop
+            // reverts). The registry load + new-world bump + warning
+            // surface mirror open_editor: the hand-off installs editor
+            // content too (the mission payload swap must reset stale
+            // view state, and the mission editor's palettes read the
+            // registry).
+            var balance_warnings: std.ArrayList([]const u8) = .empty;
+            campaign_editor_handlers.openMissionEditorHandoff(
+                history,
+                current,
+                allocator,
+                &balance_warnings,
+                start.mission,
+                start.mission_path,
+            );
+            if (current.editor == null) return;
+            editor_handlers.loadEditorDecorationRegistry(history, allocator);
+            surfaceWarnings(history, &balance_warnings, allocator);
+            current.world_generation +%= 1;
+            current.transitionScreen(.editor);
+        },
+
         // --- Meta: open editor ---
         .open_editor => |start| {
             var balance_warnings: std.ArrayList([]const u8) = .empty;
+            // The foreign-open rule (the campaign hand-off): opening other
+            // content while a campaign-context mission editor is open would
+            // orphan the live campaign below - the editor screen's scope
+            // keeps campaign_editor, but the replacement payload carries no
+            // context, so no surface ever reaches the campaign again. The
+            // open clears it in the same event (undo restores both).
+            if (current.editor != null and current.editor.?.campaign_mission != null) {
+                current.campaign_editor = null;
+            }
             // Null path = the fresh empty mission (the main-menu Editor
             // button) - the short-circuit branch below; a path = the
             // mission-directory open (the future mission browser + the
@@ -442,104 +477,14 @@ pub fn handlePlayerInputEvent(
                 return;
             }
             const mission_path = start.mission_path.?;
-            const mission_file_path = std.fmt.allocPrint(
-                allocator,
-                "{s}/mission.txt",
-                .{mission_path},
-            ) catch @panic("failed to allocate mission path");
-            const mission_sections = blk: {
-                const bytes = history.readReconstructionFile(mission_file_path) catch {
-                    failReconstructionRead(history, "failed to read mission file");
-                    return;
-                };
-                break :blk parser.parseConfigFile(bytes, allocator, &parser.mission_sections) catch {
-                    failReconstructionRead(history, "failed to parse mission file");
-                    return;
-                };
-            };
-            validateConfigKeys(history, mission_sections, parser.mission_key_map, mission_file_path, allocator);
-            var mission = loaders.loadMission(
-                mission_sections,
-                allocator,
-            ) catch {
-                failReconstructionRead(history, "failed to parse mission file");
-                return;
-            };
-            // The derived level count (same reconstruction-sound probe as
-            // start_mission - open_editor is a reconstruction-read event).
-            mission.level_count = shared.countMissionLevelsCached(
+            const opened = editor_handlers.openEditorMissionFromDir(
                 history,
-                mission_path,
+                current,
                 allocator,
-            ) catch {
-                failReconstructionRead(history, "failed to read mission level files");
-                return;
-            };
-            const player_file_path = std.fmt.allocPrint(
-                allocator,
-                "{s}/player.txt",
-                .{mission_path},
-            ) catch @panic("failed to allocate player path");
-            const player_entity: types.Entity = blk: {
-                const bytes = history.readReconstructionFile(player_file_path) catch |read_error| {
-                    if (read_error != error.FileNotFound) {
-                        failReconstructionRead(history, "failed to read player.txt");
-                        return;
-                    }
-                    // No player.txt in the mission - the maxed default
-                    // loadout (the shared fresh-mission seed helper -
-                    // data/max_player.txt, a full player save; its loadout
-                    // sections map onto the template).
-                    break :blk editor_handlers.loadMaxPlayerLoadout(history, allocator, &balance_warnings) orelse return;
-                };
-                const sections = parser.parseConfigFile(bytes, allocator, &parser.player_loadout_sections) catch {
-                    failReconstructionRead(history, "failed to parse player.txt");
-                    return;
-                };
-                validateConfigKeys(history, sections, parser.player_loadout_key_map, player_file_path, allocator);
-                break :blk loaders.loadPlayerLoadout(sections, allocator, player_file_path, &balance_warnings) catch {
-                    failReconstructionRead(history, "failed to parse player.txt");
-                    return;
-                };
-            };
-            var level_sections: std.ArrayList([]const parser.Section) = .empty;
-            var level_index: u32 = 1;
-            while (level_index <= mission.level_count) : (level_index += 1) {
-                const level_path = std.fmt.allocPrint(
-                    allocator,
-                    "{s}/level_{d}.txt",
-                    .{ mission_path, level_index },
-                ) catch @panic("failed to allocate level path");
-                const sections = blk: {
-                    const bytes = history.readReconstructionFile(level_path) catch {
-                        failReconstructionRead(history, "failed to read level file");
-                        return;
-                    };
-                    break :blk parser.parseConfigFile(bytes, allocator, &parser.level_sections) catch {
-                        failReconstructionRead(history, "failed to parse level file");
-                        return;
-                    };
-                };
-                validateConfigKeys(history, sections, parser.level_key_map, level_path, allocator);
-                level_sections.append(allocator, sections) catch @panic("failed to append level sections");
-            }
-            current.editor = loaders.buildEditorMission(
-                mission,
-                player_entity,
-                level_sections.items,
-                history.file_source,
-                allocator,
-                mission_path,
                 &balance_warnings,
-            ) catch {
-                failReconstructionRead(history, "failed to build editor mission");
-                return;
-            };
-            // The mission's own path (the payload slice - same borrow as
-            // start_mission's): the sprite picker's mission-local scan +
-            // the editor save read it.
-            current.editor.?.mission.path = mission_path;
-            editor_handlers.refreshEditorClampBounds(&current.editor.?);
+                mission_path,
+            );
+            if (!opened) return;
             editor_handlers.loadEditorDecorationRegistry(history, allocator);
             surfaceWarnings(history, &balance_warnings, allocator);
             // Same new-world bump as the fresh branch above.

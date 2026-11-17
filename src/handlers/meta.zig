@@ -293,6 +293,15 @@ pub fn handleMetaEvent(
             // The hub editor surface).
             current.transitionScreen(.campaign_editor);
         },
+        .close_mission_editor => {
+            // Return to the campaign map from the mission-editor
+            // hand-off: the scope swap clears the editor payload (old
+            // scope .editor, new scope .campaign_editor has none); the
+            // campaign graph was never left. The same no-autosave rule -
+            // the mission editor's unsaved edits die with the payload
+            // (save first; ctrl+S).
+            current.transitionScreen(.campaign_editor);
+        },
         .start_playtest => |start| {
             // Instantiate the chosen level from the editor's palette +
             // player_def into a concrete gameplay Level. Discard
