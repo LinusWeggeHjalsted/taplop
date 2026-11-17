@@ -28,48 +28,6 @@ const text = ui_element.text;
 const Row = ui_element.Row;
 const no_tint_color: Color = .{ .r = 255, .g = 255, .b = 255 };
 
-/// The hub editor's top-right primary action: the world-map RETURN button
-/// (back to the campaign map - the drill-in's exit; navigation is
-/// side-effect-free, the settled no-autosave rule). The mission editor's
-/// `buildEditorPrimaryActions` icon-button class at its cell exactly
-/// (flush against the right screen edge); the icon is placeholder art
-/// until an asset lands (the icon_playtest/validate precedent - the art
-/// report carries it automatically). Slice 5's mission-editor
-/// world-map button (the campaign-context return) is the same button
-/// concept and will reuse this builder's shape.
-pub fn buildHubEditorTopBar(
-    elements: *UiElementList,
-    allocator: std.mem.Allocator,
-    active_theme: types.ActiveColorTheme,
-) !void {
-    const p = active_theme.player_gradient.colors;
-    // Match the top-bar options/undo buttons: background = gradient[5],
-    // icon = gradient[1] (the editor primary-actions treatment).
-    const c_btn_bg = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
-    const c_btn_icon = p[@min(@as(u32, 1), types.gradient_color_count - 1)];
-
-    const return_cell: Rectangle = .{
-        .x = types.reference_width - ui_element.top_bar_slot_size,
-        .y = 0,
-        .width = ui_element.top_bar_slot_size,
-        .height = ui_element.top_bar_slot_size,
-    };
-
-    try emit.emitIconButton(
-        elements,
-        allocator,
-        return_cell,
-        emit.small_button_background_sprite_id,
-        "ui/icon_world_map",
-        .close_hub_editor,
-        .{ .header = try spanRow(allocator, text("Return to the campaign map")) },
-        c_btn_bg,
-        c_btn_icon,
-        false,
-        null,
-    );
-}
-
 /// The hub editor's tool palette - the mission editor's
 /// `buildEditorBottomBar` EXACT structural mirror: the fixed pair
 /// (Select + Tile) left-anchored, then three GROUPS (NPCs / Missions /
@@ -1079,40 +1037,6 @@ test "buildHubEditorBottomBar: the fixed pair - Select + Tile cells, the active 
         },
         else => {},
     };
-}
-
-test "buildHubEditorTopBar: one world-map return button flush top-right" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    const black: Color = .{ .r = 0, .g = 0, .b = 0 };
-    const test_theme: types.ActiveColorTheme = .{
-        .lightest = .{ .r = 1, .g = 1, .b = 1 },
-        .darkest = black,
-        .world_gradient = .{ .colors = @splat(black) },
-        .enemy_gradient = .{ .colors = @splat(black) },
-        .player_gradient = .{ .colors = @splat(black) },
-    };
-
-    var elements: UiElementList = .empty;
-    defer elements.deinit(arena.allocator());
-    try buildHubEditorTopBar(&elements, arena.allocator(), test_theme);
-
-    var found: ?ui_element.Button = null;
-    var button_count: usize = 0;
-    for (elements.items) |element| switch (element) {
-        .button => |button| {
-            button_count += 1;
-            if (button.action == .close_hub_editor) found = button;
-        },
-        else => {},
-    };
-    try std.testing.expectEqual(@as(usize, 1), button_count);
-    const button = found orelse return error.TestUnexpectedResult;
-    try std.testing.expectEqual(types.reference_width - ui_element.top_bar_slot_size, button.screen_position.x);
-    try std.testing.expectEqual(@as(i32, 0), button.screen_position.y);
-    try std.testing.expectEqual(ui_element.top_bar_slot_size, button.width);
-    try std.testing.expect(button.tooltip != null);
 }
 
 test "buildHubEditorInspector: the exit summary, the NPC placeholder, the empty default" {

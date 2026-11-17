@@ -278,6 +278,18 @@ pub fn buildErrorPopup(
 /// No background of its own - purely a layout region, like the bottom bar.
 /// The remaining width stays reserved for the combat log (see TODO →
 /// Combat Log).
+/// The global top bar's map slot (one gap right of redo): which world-map
+/// button the screen shows, or none.
+pub const TopBarMapSlot = enum {
+    none,
+    /// The in-game world-map overlay toggle (level + hub screens).
+    world_map,
+    /// The hub editor drill-in's return to the campaign map
+    /// (`close_hub_editor` - the same destination as the options menu's
+    /// World Map entry).
+    campaign_map,
+};
+
 pub fn buildGlobalTopBar(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -292,11 +304,12 @@ pub fn buildGlobalTopBar(
     /// (Test/Validate). view() owns the rule; the bar draws what it's
     /// told.
     tips_available: bool,
-    /// Whether the world-map button should show: the level + hub screens
-    /// (the `toggle_world_map` binding contexts - playtest/validation runs
-    /// are level screens, so the run gets the map too). view() owns the
-    /// rule.
-    map_available: bool,
+    /// What the slot right of redo carries: the world-map overlay toggle
+    /// (the level + hub screens - playtest/validation runs are level
+    /// screens, so the run gets the map too), the hub editor drill-in's
+    /// return to the campaign map (the in-game world-map button's exact
+    /// placement + icon), or nothing. view() owns the rule.
+    map_slot: TopBarMapSlot,
 ) !void {
     const p = active_theme.player_gradient.colors;
     // Match the bottom-bar skip button: background = gradient[5], icon = gradient[1].
@@ -375,22 +388,33 @@ pub fn buildGlobalTopBar(
     });
     if (!can_redo) try emitDimWash(elements, allocator, redo_cell, c_dim);
 
-    // World-map button - same size, one `ui_gap` right of redo. Legal on
-    // the level + hub screens only (the `toggle_world_map` binding
-    // contexts; view() gates it via `map_available`). The icon sprite is
+    // The map slot - same size, one `ui_gap` right of redo. In-game
+    // (level + hub) it toggles the world-map overlay; on the hub editor
+    // it is the drill-in's return to the campaign map (the in-game
+    // world-map button's mirrored placement + icon). The icon sprite is
     // MISSING until the artist ships `ui/icon_world_map` - it draws the
     // magenta placeholder meanwhile (the art_report shopping list carries
     // it automatically).
-    if (map_available) {
+    if (map_slot != .none) {
         const map_cell = row.next(top_bar_slot_size);
+        const map_action: types.Action = switch (map_slot) {
+            .none => unreachable,
+            .world_map => .toggle_world_map,
+            .campaign_map => .close_hub_editor,
+        };
+        const map_tooltip: []const u8 = switch (map_slot) {
+            .none => unreachable,
+            .world_map => "World Map",
+            .campaign_map => "Return to the campaign map",
+        };
         try emitIconButton(
             elements,
             allocator,
             map_cell,
             small_button_background_sprite_id,
             "ui/icon_world_map",
-            .toggle_world_map,
-            .{ .header = try spanRow(allocator, text("World Map")) },
+            map_action,
+            .{ .header = try spanRow(allocator, text(map_tooltip)) },
             c_btn_bg,
             c_btn_icon,
             false,
@@ -779,6 +803,69 @@ pub fn buildMissionFail(
             button_color,
             null,
         );
+    }
+}
+
+test "buildGlobalTopBar: the map slot - world map in-game, campaign-map return on the hub editor" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+    const black: Color = .{ .r = 0, .g = 0, .b = 0 };
+    const test_theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
+    };
+
+    // The hub editor's campaign-map return: the close_hub_editor button
+    // one gap right of redo (the in-game world-map button's exact slot).
+    {
+        var elements: UiElementList = .empty;
+        defer elements.deinit(allocator);
+        try buildGlobalTopBar(&elements, allocator, metrics, screen, test_theme, true, true, false, .campaign_map);
+        var found: ?Button = null;
+        for (elements.items) |element| switch (element) {
+            .button => |b| if (b.action == .close_hub_editor) {
+                found = b;
+            },
+            else => {},
+        };
+        const button = found orelse return error.TestUnexpectedResult;
+        try std.testing.expectEqual(3 * (top_bar_slot_size + ui_gap), button.screen_position.x);
+        try std.testing.expectEqual(@as(i32, 0), button.screen_position.y);
+    }
+
+    // In-game: the same slot carries the world-map overlay toggle, never
+    // the return action; with no slot, neither button draws.
+    {
+        var elements: UiElementList = .empty;
+        defer elements.deinit(allocator);
+        try buildGlobalTopBar(&elements, allocator, metrics, screen, test_theme, true, true, false, .world_map);
+        for (elements.items) |element| switch (element) {
+            .button => |b| {
+                try std.testing.expect(b.action != .close_hub_editor);
+                if (b.action == .toggle_world_map)
+                    try std.testing.expectEqual(3 * (top_bar_slot_size + ui_gap), b.screen_position.x);
+            },
+            else => {},
+        };
+    }
+    {
+        var elements: UiElementList = .empty;
+        defer elements.deinit(allocator);
+        try buildGlobalTopBar(&elements, allocator, metrics, screen, test_theme, true, true, false, .none);
+        for (elements.items) |element| switch (element) {
+            .button => |b| {
+                try std.testing.expect(b.action != .close_hub_editor);
+                try std.testing.expect(b.action != .toggle_world_map);
+            },
+            else => {},
+        };
     }
 }
 

@@ -607,17 +607,13 @@ pub fn view(
             ) catch @panic("failed to build campaign editor primary actions");
         }
     } else if (current_state.screen == .hub_editor) {
-        // The hub editor drill-in's top bar: the world-map return button
-        // (flush top-right - the primary-actions spot). The tool palette,
-        // inspector, and metadata sidebar land with the editing slices;
+        // The hub editor drill-in's structural UI. The campaign-map
+        // return lives in the global top bar's map slot (right of redo -
+        // the in-game world-map button's placement); the tool palette,
+        // inspector, and metadata sidebar mirror their src/ui/ siblings;
         // the world scene is the world pass's hub_editor arm above.
         if (current_state.hub_editor) |hub_editor_value| {
             const hub_editor = &hub_editor_value;
-            ui.buildHubEditorTopBar(
-                &ui_elements,
-                frame_allocator,
-                active_theme,
-            ) catch @panic("failed to build hub editor top bar");
             if (current_state.campaign_editor) |campaign_editor| {
                 ui.buildHubEditorInspector(
                     &ui_elements,
@@ -1020,6 +1016,13 @@ pub fn view(
     // primary-actions rows (Test/Validate on the mission editor, Validate
     // on the campaign editor), the screens with UI already occupying that
     // corner. See DESIGN → UI Framework (global top bar).
+    // The map slot: the world-map overlay in-game, the hub editor
+    // drill-in's campaign-map return on that screen.
+    const map_slot: ui.TopBarMapSlot = switch (current_state.screen) {
+        .level, .hub => .world_map,
+        .hub_editor => .campaign_map,
+        else => .none,
+    };
     ui.buildGlobalTopBar(
         &ui_elements,
         frame_allocator,
@@ -1030,7 +1033,7 @@ pub fn view(
         render.can_redo,
         tips.len > 0 and current_state.screen != .editor and current_state.screen != .campaign_editor and
             current_state.screen != .hub_editor,
-        current_state.screen == .level or current_state.screen == .hub,
+        map_slot,
     ) catch @panic("failed to build global top bar");
 
     // Hover tooltip: the topmost element under the pointer that carries
@@ -6513,7 +6516,9 @@ test "hub editor: the world scene projects the hub grid + the return button" {
     try std.testing.expect(saw_exit_marker);
     try std.testing.expect(saw_decoration);
 
-    // The UI: the world-map return button (flush top-right).
+    // The UI: the campaign-map return button lives in the global top
+    // bar's map slot - one gap right of redo (the in-game world-map
+    // button's placement).
     var return_button_x: ?i32 = null;
     for (view_state.ui_elements) |element| switch (element) {
         .button => |button| if (button.action == .close_hub_editor) {
@@ -6522,5 +6527,5 @@ test "hub editor: the world scene projects the hub grid + the return button" {
         else => {},
     };
     try std.testing.expect(return_button_x != null);
-    try std.testing.expectEqual(types.reference_width - ui.top_bar_slot_size, return_button_x.?);
+    try std.testing.expectEqual(3 * (ui.top_bar_slot_size + ui.ui_gap), return_button_x.?);
 }
