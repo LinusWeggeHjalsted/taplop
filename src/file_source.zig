@@ -723,15 +723,21 @@ pub const FileSource = struct {
         uuid: []const u8,
         dir: []const u8,
         name: []const u8,
+        /// The local tab's recency sort key (the MissionEntry discipline):
+        /// the MAX mtime across the campaign folder's files - any change
+        /// (campaign.txt, a hub, a mission) counts as an update. 0 for
+        /// official entries (embedded content has no filesystem; the
+        /// Official tab keeps its name order).
+        mtime_ns: i128 = 0,
     };
 
     /// Enumerate the player's local campaigns under `campaigns/` in the
     /// persistent dir (the listMissions pattern). Returns one entry per
     /// subdirectory with a readable campaign.txt (name + campaign_uuid
     /// parsed in a throwaway arena; folders without one are SKIPPED - a
-    /// half-installed campaign is not viewable). Sorted by name ascending
-    /// (deterministic; no recency sort - the mtime machinery is mission
-    /// browsing's affordance). The caller owns the returned slice + all
+    /// half-installed campaign is not viewable). Sorted NEWEST FIRST (max
+    /// folder-file mtime descending - the mission list's recency
+    /// discipline, so every browser list agrees on one order). The caller owns the returned slice + all
     /// strings (free via `freeCampaigns`).
     pub fn listCampaigns(
         self: *const FileSource,
@@ -1311,11 +1317,13 @@ pub fn freeCampaigns(allocator: std.mem.Allocator, campaigns: []const FileSource
     allocator.free(campaigns);
 }
 
-/// Name-ascending order for the campaign browser's tabs, dir ascending as
-/// the deterministic tiebreak.
+/// Newest-first ordering for the campaign browser's local tab (the
+/// `missionOrder` discipline): mtime descending, name ascending as the
+/// deterministic tiebreak. Official entries carry mtime 0 - all equal, so
+/// the tiebreak keeps their name order.
 fn campaignEntryOrder(_: void, a: FileSource.CampaignEntry, b: FileSource.CampaignEntry) bool {
-    if (!std.mem.eql(u8, a.name, b.name)) return std.mem.lessThan(u8, a.name, b.name);
-    return std.mem.lessThan(u8, a.dir, b.dir);
+    if (a.mtime_ns != b.mtime_ns) return a.mtime_ns > b.mtime_ns;
+    return std.mem.lessThan(u8, a.name, b.name);
 }
 
 /// One embedded-map key is an official campaign's campaign.txt
@@ -1386,7 +1394,11 @@ fn probeCampaignDir(
     const content_dir = std.fmt.allocPrint(allocator, "{s}/{s}", .{ root, id }) catch
         @panic("failed to allocate campaign dir path");
     defer allocator.free(content_dir);
-    return parseCampaignEntry(allocator, campaign_bytes, content_dir);
+    var entry = parseCampaignEntry(allocator, campaign_bytes, content_dir) orelse return null;
+    // The recency stamp rides the entry (the browser lists sort newest
+    // first - the MissionEntry discipline).
+    entry.mtime_ns = dirMtime(self, content_dir);
+    return entry;
 }
 
 /// One mission folder's scan results (`FileSource.scanMissionFolder`):
@@ -1806,23 +1818,41 @@ test "listCampaigns: local campaigns with metadata; skips + name fallbacks" {
     const file_source = FileSource.init(io, dir);
 
     file_source.writeFile("campaigns/zeta_lands/campaign.txt", "Metadata\nfile_format_version 3\ncampaign_uuid 33333333-3333-3333-3333-333333333333\nname Zeta Lands\n") catch @panic("w1");
+    try io.sleep(std.Io.Duration.fromNanoseconds(2 * std.time.ns_per_ms), .real);
     // No name key: the entry falls back to the dir stem.
     file_source.writeFile("campaigns/unnamed/campaign.txt", "Metadata\nfile_format_version 3\ncampaign_uuid 44444444-4444-4444-4444-444444444444\n") catch @panic("w2");
+    try io.sleep(std.Io.Duration.fromNanoseconds(2 * std.time.ns_per_ms), .real);
     // Missing campaign.txt - SKIPPED (not viewable).
     file_source.writeFile("campaigns/broken/hub_a.txt", "Metadata\nfile_format_version 1\n") catch @panic("w3");
 
     const list = try file_source.listCampaigns(allocator);
     defer freeCampaigns(allocator, list);
 
-    // Name-ascending (bytewise - 'Z' sorts before lowercase 'u'):
-    // "Zeta Lands" before "unnamed" (the stem fallback).
+    // Newest first (the sleep forces distinct stamps): the later-saved
+    // "unnamed" (the stem fallback) leads, "Zeta Lands" follows.
     try testing.expectEqual(@as(usize, 2), list.len);
-    try testing.expectEqualStrings("campaigns/zeta_lands", list[0].dir);
-    try testing.expectEqualStrings("Zeta Lands", list[0].name);
-    try testing.expectEqualStrings("33333333-3333-3333-3333-333333333333", list[0].uuid);
-    try testing.expectEqualStrings("campaigns/unnamed", list[1].dir);
-    try testing.expectEqualStrings("unnamed", list[1].name);
-    try testing.expectEqualStrings("44444444-4444-4444-4444-444444444444", list[1].uuid);
+    try testing.expectEqualStrings("campaigns/unnamed", list[0].dir);
+    try testing.expectEqualStrings("unnamed", list[0].name);
+    try testing.expectEqualStrings("44444444-4444-4444-4444-444444444444", list[0].uuid);
+    try testing.expectEqualStrings("campaigns/zeta_lands", list[1].dir);
+    try testing.expectEqualStrings("Zeta Lands", list[1].name);
+    try testing.expectEqualStrings("33333333-3333-3333-3333-333333333333", list[1].uuid);
+    try testing.expect(list[0].mtime_ns > list[1].mtime_ns);
+}
+
+test "campaignEntryOrder: mtime descending, name ascending tiebreak" {
+    const CampaignEntry = FileSource.CampaignEntry;
+    var entries = [_]CampaignEntry{
+        .{ .uuid = "", .dir = "", .name = "Older" },
+        .{ .uuid = "", .dir = "", .name = "Beta", .mtime_ns = 100 },
+        .{ .uuid = "", .dir = "", .name = "Alpha", .mtime_ns = 100 },
+    };
+    std.mem.sort(CampaignEntry, &entries, {}, campaignEntryOrder);
+    // Equal mtimes -> name ascending; mtime 0 (official entries) sorts
+    // last.
+    try testing.expectEqualStrings("Alpha", entries[0].name);
+    try testing.expectEqualStrings("Beta", entries[1].name);
+    try testing.expectEqualStrings("Older", entries[2].name);
 }
 
 test "listCampaigns: empty when campaigns/ absent" {
