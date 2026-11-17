@@ -41,7 +41,8 @@ const read_limit: std.Io.Limit = .limited(256 * 1024 * 1024);
 /// already-validated import path - a violation is a programmer error).
 /// Defense in depth against crafted session-log bundles / validation
 /// replays seeding reconstruction reads outside the persistent dir
-/// (PROJECTREVIEW m-5.1 - a must-have before the server seam). Same rule
+/// (DONE.md, "FileSource: the relative-path gate at the readFile/writeFile
+/// seam" - a must-have before the server seam). Same rule
 /// set as `zip_reader.isUnsafeZipEntryName`, kept separate on purpose:
 /// this is the lower layer and zip_reader stays import-free of it.
 fn isInvalidRelativePath(path: []const u8) bool {

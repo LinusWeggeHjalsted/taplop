@@ -377,6 +377,7 @@ working rules).
 - [console input: the wait-idle hold can no longer stall the channel](#console-input-the-wait-idle-hold-can-no-longer-stall-the-channel)
 - [campaign-editor slice 4-7: hub-content validation findings folded into the campaign Validate](#campaign-editor-slice-4-7-hub-content-validation-findings-folded-into-the-campaign-validate)
 - [Gear sprites sub-layer removed (out of scope)](#gear-sprites-sub-layer-removed-out-of-scope)
+- [The review docs removed (PROJECTREVIEW.md + REVIEWPLAN.md)](#the-review-docs-removed-projectreviewmd--reviewplanmd)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -22695,3 +22696,18 @@ if non-weapon gear art is ever wanted, it slots into `layer_sprites`
 removal is a four-line revert.
 
 TODO entries deleted (NEXT UP bullet + the View section's Open list).
+
+## The review docs removed (PROJECTREVIEW.md + REVIEWPLAN.md)
+
+The full-repo review's live artifacts (the frozen findings document +
+its plan) were deleted once every actionable finding had landed: the
+record that still matters is the per-item DONE entries ("review m-x.y" /
+"review Part N" titled) plus the settled design prose in DESIGN.md. The
+five live pointers that cited `PROJECTREVIEW Part N` / `m-5.1` in
+code comments + TODO + DESIGN were re-pointed in the same commit - at
+the DONE entry where one exists (m-5.1's relative-path gate, Part 15's
+safe-mode build posture, Part 5's content-root re-shape), or de-
+attributed where the surrounding text already carries the rationale
+(Part 6's vestigial `replaying` gate, Part 9's marquee-drag posture).
+Historical DONE entries that still name the file are left as written -
+entries are snapshots, not maintained records.

@@ -378,8 +378,7 @@ work:
       is the '!' / '=' cell plans empty and is removed by the move
       (documented, intended - DESIGN → Level Editor → the commit chain's
       per-entry re-planning). But dragging a large marquee selection ACROSS
-      a marker silently eats its members - a UX trap. POSTURE SETTLED
-      (PROJECTREVIEW Part 9): when it bites, SURFACE the loss in the drag
+      a marker silently eats its members - a UX trap. POSTURE SETTLED: when it bites, SURFACE the loss in the drag
       preview (a "will be deleted" cue - the view already draws the
       translated outlines) rather than vetoing the move - the
       warn-over-reject posture. The marker-on-marker case stays vetoed

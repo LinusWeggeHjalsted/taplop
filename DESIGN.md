@@ -3191,8 +3191,8 @@ PASSES - violations degrade at runtime).
   turns those panics into UB, and undefined behavior on hostile input is
   not a rejection. Any binary that runs reconstruction/validation over
   untrusted logs - the future server, or any client build acting as one -
-  is built ReleaseSafe or Debug, never ReleaseFast (PROJECTREVIEW Part 15,
-  the security-posture headline).
+  is built ReleaseSafe or Debug, never ReleaseFast (see DONE.md,
+  "Server-revalidation builds must be safe-mode").
 - **TAS is valid BY DESIGN - no anti-TAS work, ever.** The game is
   turn-based, so any legal event log is in principle reproducible by a
   human player, one decision at a time. The leaderboard certifies
@@ -3482,7 +3482,8 @@ bridges the two (persistent `campaigns/...` first - custom campaigns live
 there at the same shape - then embedded as-is, then embedded under the
 `data/` prefix; `readEmbeddedFile` mirrors the same two embedded tiers).
 One shape means official and custom campaigns address identically
-(reported as a review rider, PROJECTREVIEW Part 5: the hardcoded
+(reported as a review rider - see DONE.md, "campaign content paths
+re-shaped to content-root-relative": the hardcoded
 `data/campaigns/...` builds would never have resolved a custom campaign).
 Compat: a `data/`-prefixed path still resolves through the embedded
 as-is tier, so session logs recorded before the re-shape reconstruct

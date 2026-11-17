@@ -1015,7 +1015,8 @@ pub fn beginFocusedTextEdit(
 /// The `replaying` gate is VESTIGIAL but KEPT as defense-in-depth: the
 /// input handlers run only in the live path (replay drives `processEvent`
 /// directly on recorded events - never this dispatch), so the gate can
-/// never fire today (PROJECTREVIEW Part 6 confirmed the class dead). The
+/// never fire today (confirmed dead at the review that audited the
+/// class). The
 /// convention: sound is a side effect, and side-effect seams keep an
 /// explicit `!replaying` gate even when the current call graph makes it
 /// redundant - do not cargo-cult NEW gates onto sites that are provably
