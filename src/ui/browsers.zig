@@ -300,6 +300,17 @@ fn editorBrowserNewButtonAction(kind: types.EditorKind) types.Action {
     };
 }
 
+/// The Import button's ACTION, derived from the active kind like the
+/// New button's: the mission kind uploads a mission .zip, the campaign
+/// kind a campaign .zip (web-only either way - native never emits the
+/// button). Exhaustive like the label.
+fn editorBrowserImportAction(kind: types.EditorKind) types.Action {
+    return switch (kind) {
+        .mission => .import_editor_mission,
+        .campaign => .import_campaign,
+    };
+}
+
 /// Build the editor browser: a full-screen modal panel mirroring the
 /// load-save browser - the editor-kind tab row (Mission today; Hub /
 /// Campaign tabs append when those editors land) with a New button
@@ -457,11 +468,12 @@ pub fn buildEditorBrowser(
         null,
     );
     // Import (web only - the load-save browser's Import discipline): opens
-    // a file picker for a mission .zip; the picked zip extracts into
-    // missions/ and the rescanned list shows it. Centered along the
+    // a file picker for the ACTIVE kind's .zip (a mission zip extracts
+    // into missions/, a campaign zip into campaigns/); the picked zip
+    // extracts and the rescanned list shows it. Centered along the
     // bottom, between the Back and New buttons. Native has no button -
     // drop the extracted folder (or a STORE zip) into the persistent
-    // missions/ dir by hand.
+    // dir by hand.
     if (@import("builtin").target.os.tag == .emscripten) {
         try emitPanelButton(
             elements,
@@ -475,7 +487,7 @@ pub fn buildEditorBrowser(
             },
             "Import",
             menu_button_font_size,
-            .import_editor_mission,
+            editorBrowserImportAction(kind),
             button_color,
             null,
         );
@@ -888,6 +900,31 @@ pub fn buildCampaignBrowser(
         button_color,
         null,
     );
+    // Import (web only): the editor browser's Import discipline over the
+    // player-facing surface - campaigns are player acquisitions too (the
+    // settled slice-5c placement: the Import button lives in BOTH
+    // campaign browsers). The picked campaign .zip extracts into
+    // campaigns/ and the rescanned list shows it. Native has no button -
+    // drop the extracted folder (or a STORE zip) into the persistent
+    // campaigns/ dir by hand.
+    if (@import("builtin").target.os.tag == .emscripten) {
+        try emitPanelButton(
+            elements,
+            allocator,
+            font_metrics,
+            .{
+                .x = screen.x + @divTrunc(screen.width - load_save_button_width, 2),
+                .y = button_y,
+                .width = load_save_button_width,
+                .height = panel_button_height,
+            },
+            "Import",
+            menu_button_font_size,
+            .import_campaign,
+            button_color,
+            null,
+        );
+    }
 }
 
 test "buildLoadSavePanel: rows carry refs + actions, scroll window + clamp" {

@@ -1548,6 +1548,13 @@ pub const game_import_temp_path = ".game_import.zip";
 /// after reading - same shape as `mission_import_marker_path`.
 pub const game_import_marker_path = ".game_import_marker";
 
+/// After reading - same shape as `mission_import_marker_path`, for the
+/// campaign import: the picked campaign .zip lands in
+/// `imported_campaigns/` and this marker names it (the Zig side polls
+/// the marker, deletes it, and extracts the zip into campaigns/ - see
+/// campaign_editor/io.zig's pollCampaignImportMarker).
+pub const campaign_import_marker_path = ".campaign_import_marker";
+
 /// On web, offer a file from the persistent dir to the player as a browser
 /// download (anchor click on a Blob of the file's bytes) under the given
 /// download name (the staging path can be a dot-temp the download must not
@@ -1644,6 +1651,39 @@ pub fn triggerBrowserMissionUpload() void {
             "    FS.mkdirTree('" ++ persistent_mount_path ++ "/imported_missions');" ++
             "    FS.writeFile('" ++ persistent_mount_path ++ "/imported_missions/' + name, new Uint8Array(reader.result));" ++
             "    FS.writeFile('" ++ persistent_mount_path ++ "/" ++ mission_import_marker_path ++ "', 'imported_missions/' + name);" ++
+            "  };" ++
+            "  reader.readAsArrayBuffer(file);" ++
+            "};" ++
+            "document.body.appendChild(input);" ++
+            "input.click();" ++
+            "setTimeout(function() { input.remove(); }, 5000);" ++
+            "})();";
+        emscripten_run_script(script);
+    }
+}
+
+/// On web, open a browser file picker for a CAMPAIGN .zip (both campaign
+/// browsers' Import button): the picked zip is written into
+/// imported_campaigns/ under its (sanitized) file name + the campaign
+/// import marker names it. Mirrors `triggerBrowserMissionUpload` exactly.
+/// Comptime-dead on native (the button is never emitted there).
+pub fn triggerBrowserCampaignUpload() void {
+    if (@import("builtin").target.os.tag == .emscripten) {
+        const script =
+            "(function() {" ++
+            "var input = document.createElement('input');" ++
+            "input.type = 'file';" ++
+            "input.accept = '.zip';" ++
+            "input.onchange = function() {" ++
+            "  var file = input.files[0];" ++
+            "  if (!file) return;" ++
+            "  var name = file.name.replace(/[^A-Za-z0-9_.-]/g, '_');" ++
+            "  if (name.indexOf('.') == 0) name = '_' + name;" ++
+            "  var reader = new FileReader();" ++
+            "  reader.onload = function() {" ++
+            "    FS.mkdirTree('" ++ persistent_mount_path ++ "/imported_campaigns');" ++
+            "    FS.writeFile('" ++ persistent_mount_path ++ "/imported_campaigns/' + name, new Uint8Array(reader.result));" ++
+            "    FS.writeFile('" ++ persistent_mount_path ++ "/" ++ campaign_import_marker_path ++ "', 'imported_campaigns/' + name);" ++
             "  };" ++
             "  reader.readAsArrayBuffer(file);" ++
             "};" ++

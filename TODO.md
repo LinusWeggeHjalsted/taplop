@@ -407,41 +407,6 @@ work:
     - [ ] later. New-game campaign picker + the speedrun seed
           (all-hubs-discovered start option, runtime-derived) - main-menu
           work, rides the same machinery.
-  - [ ] 3. The campaign editor - COMPLETE (slices 3a-3f; the Validate
-        button's file-level design superseded the original
-        parameterized-graph-view plan mid-slice - see DONE.md, slice 3f).
-  - [ ] 4. The hub editor drill-in - design SETTLED (DESIGN → Campaigns
-        & the Campaign Editor → The hub editor surface; the state +
-        event settle: the parallel `?HubEditor` on GameState scoped
-        `{ .hub_editor }` + a dedicated `hub_editor` binding context +
-        the screen-scope rule owning the drill-in lifetime). Recut
-        (4-1 framing + 4-2 the planner extraction DONE - DONE.md, "campaign-editor slice 4-1" / "campaign-editor slice 4-2"):
-    - [ ] 4-3. Grid editing over the hub grid: the tile tool, the
-          player spawn, select/marquee/move-drag + the hub
-          `hub_editor_event` family (screen-gated on .hub_editor,
-          writing through into CampaignEditor.hubs by handle) + the
-          hub editor binding set. Part A DONE (DONE.md, "campaign-editor
-          slice 4-3a"): the event family + handlers + planning facades +
-          orchestrators + the Select/Tile palette + Tab cycle + the
-          select-tool keys + click-driven paint/select/move (verified
-          end to end over the console channel). COMPLETE (4-3b DONE -
-          DONE.md, "campaign-editor slice 4-3b"): the gesture arms ride
-          the shared EditorSurface dispatch (one copy of each gesture
-          lifecycle), the view overlays (cursor/selection/marquee/
-          move-drag) render over the drilled-in grid, and the move-drag
-          is runtime-verified (spawn moved + ground swap over the
-          console channel).
-    - [ ] 4-4. NPC + exit-marker tools - COMPLETE (4-4a + 4-4b - DONE.md,
-          "campaign-editor slice 4-4a" / "campaign-editor slice 4-4b").
-  - [ ] 5. The mission-editor hand-off + campaign export/import
-        (design SETTLED incl. the wiring mechanics - DESIGN → Campaigns
-        & the Campaign Editor → The mission-editor hand-off; the
-        surface settle stands: only the save target + the world-map
-        return button differ, export unchanged; autosave-on-exit
-        settled NO - DONE.md):
-    - [ ] 5c. Campaign export + import (the Import button in BOTH
-          campaign browsers - the editor browser's Campaign tab +
-          the world-map campaign browser).
   - future (post-slice-3 polish): multi-select + multi-reposition of
         hubs on the campaign map (single-select in v1); drag-the-tip
         re-angling of self-loop/dangling stubs (the inspector direction

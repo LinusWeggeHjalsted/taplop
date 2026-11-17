@@ -242,6 +242,20 @@ pub fn buildOptionsMenu(
             .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(campaign_save_body))}) },
         };
         button_count += 1;
+        // The campaign export: a .zip of the saved campaign (full save
+        // happens first as part of the export). Native: the file lands
+        // in <persistent dir>/exported_campaigns/; web: it's offered as
+        // a browser download. The Export Mission mirror.
+        const campaign_export_body = if (persistent_dir_path) |dir|
+            try std.fmt.allocPrint(allocator, "Zips the saved campaign to {s}/exported_campaigns/", .{dir})
+        else
+            "Downloads the saved campaign as a .zip";
+        buttons[button_count] = .{
+            .label = "Export Campaign",
+            .action = .export_campaign,
+            .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(campaign_export_body))}) },
+        };
+        button_count += 1;
         buttons[button_count] = .{
             .label = "Open Browser",
             .action = .toggle_editor_browser,

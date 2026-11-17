@@ -1078,8 +1078,262 @@ pub fn saveHubEditor(history: *GameStateHistory) void {
     }
 }
 
+/// Export the edited campaign as a .zip (the campaign editor's
+/// options-menu Export Campaign button - button-only, no keybind): FULL
+/// SAVE first (the settled order - the bundle is always the current
+/// state; the save also forks official-origin content into a persistent
+/// dir, so the walk below reads everything from one persistent tree),
+/// then bundle EVERY file under the campaign dir (recursive - campaign
+/// root + hubs/ + missions/ + all bundled art; the archive names are
+/// the campaign's own content paths minus the campaign dir prefix, so
+/// the import extracts symmetrically) into a STORE archive at
+/// `exported_campaigns/<uuid>_<name>.zip` in the persistent dir. On web
+/// that file is then offered as a browser download (the Export Mission
+/// seam). A pure side effect (the dump_event_log class). See DESIGN →
+/// Campaigns & the Campaign Editor → The mission-editor hand-off.
+pub fn exportCampaignEditor(history: *GameStateHistory) void {
+    const saved_dir = saveCampaignEditor(history) orelse return;
+    const editor = history.current_state.campaign_editor orelse return;
+    const scratch = history.current_arena.allocator();
+
+    const fail = struct {
+        fn note(history_arg: *GameStateHistory, reason: []const u8) void {
+            history_arg.session.setPendingError(
+                history_arg.history_arena.allocator(),
+                reason,
+            );
+        }
+    };
+
+    // The walk: the whole persistent dir's recursive listing, filtered
+    // to the campaign's subtree (the save landed everything there
+    // persistently - root carries, hub carries, the mission saves; the
+    // Export Game walker, prefix-scoped).
+    const all_paths = history.file_source.listPersistentDirFiles(scratch) catch {
+        fail.note(history, "failed to export: could not list the campaign's files");
+        return;
+    };
+    var entries: std.ArrayList(zip_writer.ZipEntry) = .empty;
+    const prefix = std.fmt.allocPrint(scratch, "{s}/", .{saved_dir}) catch
+        @panic("failed to allocate campaign export prefix");
+    for (all_paths) |path| {
+        if (!std.mem.startsWith(u8, path, prefix)) continue;
+        const archive_name = path[prefix.len..];
+        const bytes = history.file_source.readFile(scratch, path) catch {
+            fail.note(history, "failed to export: could not read a campaign file");
+            return;
+        };
+        entries.append(scratch, .{ .name = archive_name, .bytes = bytes }) catch
+            @panic("failed to append campaign export entry");
+    }
+    if (entries.items.len == 0) {
+        fail.note(history, "failed to export: the campaign has no files on disk");
+        return;
+    }
+
+    const archive = zip_writer.writeZipArchive(entries.items, scratch) catch {
+        fail.note(history, "failed to export: could not build the zip archive");
+        return;
+    };
+    const sanitized = sanitizeNameForDir(editor.campaign_name, scratch);
+    const campaign_uuid = resolveCampaignIdentity(history, scratch, editor).uuid;
+    const zip_path = std.fmt.allocPrint(
+        scratch,
+        "exported_campaigns/{s}_{s}.zip",
+        .{ campaign_uuid, sanitized },
+    ) catch @panic("failed to allocate campaign export zip path");
+    history.file_source.writeFile(zip_path, archive) catch {
+        fail.note(history, "failed to export: could not write the zip file");
+        return;
+    };
+    // Web: offer it as a download (reads it back from the mounted FS);
+    // native: a comptime no-op.
+    file_source_mod.triggerBrowserDownload(scratch, zip_path, std.fs.path.basename(zip_path));
+}
+
+/// Consume the campaign-import marker, if present: the picked .zip has
+/// landed in imported_campaigns/ - delete the marker, extract the zip
+/// into campaigns/ (see importCampaignFromZip), and rescan both campaign
+/// browser lists so the row appears. Mirrors pollMissionImportMarker
+/// (the web-only upload lands the zip + marker; the extraction is
+/// platform-neutral file I/O; a failure surfaces the popup and keeps
+/// the zip).
+pub fn pollCampaignImportMarker(history: *GameStateHistory) void {
+    const marker = file_source_mod.campaign_import_marker_path;
+    if (!history.file_source.fileExists(marker)) return;
+
+    const scratch = history.current_arena.allocator();
+    const marker_bytes = history.file_source.readFile(scratch, marker) catch {
+        history.file_source.deleteFile(marker) catch {};
+        return;
+    };
+    history.file_source.deleteFile(marker) catch {};
+    importCampaignFromZip(history, std.mem.trim(u8, marker_bytes, " \r\n\t"));
+}
+
+/// The campaign import caps (the mission import family's values - a
+/// campaign is a superset of a mission: configs + art for every hub +
+/// every mission; the same generous headroom).
+const campaign_import_max_entries: usize = 1024;
+const campaign_import_max_entry_bytes: usize = 64 * 1024 * 1024;
+const campaign_import_max_total_bytes: usize = 256 * 1024 * 1024;
+
+/// Extract one campaign zip into `campaigns/<uuid>_<sanitized name>/`
+/// (the campaign save's dir convention - a re-import of the same zip
+/// overwrites the same dir, idempotent; a duplicate campaign uuid from
+/// a DIFFERENT dir imports as a second dir - the scan's latest-wins
+/// tolerance, never refused). The pass structure mirrors
+/// importMissionFromZip: every cap + every name is validated over the
+/// central-directory headers BEFORE the first decode or write; a
+/// hostile or malformed zip fails whole, never half-imported.
+fn importCampaignFromZip(history: *GameStateHistory, zip_path: []const u8) void {
+    const scratch = history.current_arena.allocator();
+    const fail = struct {
+        fn note(history_arg: *GameStateHistory, reason: []const u8) void {
+            history_arg.session.setPendingError(
+                history_arg.history_arena.allocator(),
+                reason,
+            );
+        }
+    };
+
+    const zip_bytes = history.file_source.readFile(scratch, zip_path) catch {
+        fail.note(history, "failed to import: could not read the uploaded zip");
+        return;
+    };
+
+    // Pass one: every central-directory header (all names + sizes, no
+    // data) - the caps run on these alone, before any decode.
+    const headers = zip_reader.readZipEntryHeaders(zip_bytes, scratch) catch {
+        fail.note(history, "failed to import: the zip is corrupt or uses an unsupported format");
+        return;
+    };
+    if (headers.len > campaign_import_max_entries) {
+        fail.note(history, "failed to import: the zip has too many files");
+        return;
+    }
+    var total_bytes: usize = 0;
+    for (headers) |header| {
+        if (header.uncompressed_size > campaign_import_max_entry_bytes) {
+            fail.note(history, "failed to import: a file in the zip is too large");
+            return;
+        }
+        total_bytes += header.uncompressed_size;
+    }
+    if (total_bytes > campaign_import_max_total_bytes) {
+        fail.note(history, "failed to import: the zip is too large to import");
+        return;
+    }
+
+    // Filter OS junk, then strip a single common root folder (an
+    // OS-made zip of the extracted folder).
+    var file_headers: std.ArrayList(zip_reader.ZipEntryHeader) = .empty;
+    for (headers) |header| {
+        if (!zip_reader.isOsZipJunkEntry(header.name)) file_headers.append(scratch, header) catch
+            @panic("failed to collect zip entries");
+    }
+    zip_reader.stripCommonRootFolder(file_headers.items);
+    const stripped = file_headers.items;
+
+    // Validate every name up front (nothing decoded, nothing written on
+    // any bad entry).
+    for (stripped) |header| {
+        if (zip_reader.isUnsafeZipEntryName(header.name)) {
+            const message = std.fmt.allocPrint(
+                history.history_arena.allocator(),
+                "failed to import: unsafe file name in the zip ({s})",
+                .{header.name},
+            ) catch "failed to import: unsafe file name in the zip";
+            fail.note(history, message);
+            return;
+        }
+    }
+
+    // The campaign's identity: campaign.txt at the (stripped) archive
+    // root. Entries are decoded one at a time from here on (the
+    // per-entry reset arena keeps memory at one entry through the
+    // whole import).
+    const campaign_txt_header = blk: for (stripped) |header| {
+        if (std.mem.eql(u8, header.name, "campaign.txt")) break :blk header;
+    } else {
+        fail.note(history, "failed to import: the zip has no campaign.txt at its root");
+        return;
+    };
+    var entry_arena = std.heap.ArenaAllocator.init(history.backing_allocator);
+    defer entry_arena.deinit();
+    const campaign_txt = zip_reader.extractZipEntry(
+        zip_bytes,
+        entry_arena.allocator(),
+        campaign_txt_header,
+    ) catch {
+        fail.note(history, "failed to import: could not read campaign.txt from the zip (it may be corrupt)");
+        return;
+    };
+    _ = entry_arena.reset(.retain_capacity);
+
+    const sections = parser.parseConfigFile(campaign_txt.bytes, scratch, &parser.campaign_sections) catch {
+        fail.note(history, "failed to import: the zip's campaign.txt is not valid");
+        return;
+    };
+    // The identity fields only (name + uuid) - the campaign dir stem
+    // derivation; the graph itself resolves against the EXTRACTED files
+    // when the campaign is opened, never at import.
+    const campaign = loaders.loadCampaign(sections, "", scratch, null) catch {
+        fail.note(history, "failed to import: the zip's campaign.txt is not valid");
+        return;
+    };
+
+    // The target dir, derived exactly like the campaign save's mint.
+    const sanitized = sanitizeNameForDir(campaign.name, scratch);
+    var name_prefix: []const u8 = sanitized;
+    if (campaign.uuid.len > 0) {
+        name_prefix = std.fmt.allocPrint(
+            scratch,
+            "{s}_{s}",
+            .{ campaign.uuid, sanitized },
+        ) catch @panic("failed to allocate imported campaign dir path");
+    }
+    const dir_path = std.fmt.allocPrint(
+        scratch,
+        "campaigns/{s}",
+        .{name_prefix},
+    ) catch @panic("failed to allocate imported campaign dir path");
+
+    for (stripped) |header| {
+        const entry = zip_reader.extractZipEntry(zip_bytes, entry_arena.allocator(), header) catch {
+            const message = std.fmt.allocPrint(
+                history.history_arena.allocator(),
+                "failed to import: could not read {s} from the zip (it may be corrupt)",
+                .{header.name},
+            ) catch "failed to import: could not read a file from the zip (it may be corrupt)";
+            fail.note(history, message);
+            return;
+        };
+        const file_path = std.fmt.allocPrint(scratch, "{s}/{s}", .{ dir_path, entry.name }) catch
+            @panic("failed to allocate imported campaign file path");
+        history.file_source.writeFile(file_path, entry.bytes) catch {
+            const message = std.fmt.allocPrint(
+                history.history_arena.allocator(),
+                "failed to import: could not write {s}",
+                .{entry.name},
+            ) catch "failed to import: could not write a campaign file";
+            fail.note(history, message);
+            return;
+        };
+        _ = entry_arena.reset(.retain_capacity);
+    }
+
+    // Success: the zip has served its purpose (delete it - the
+    // extracted folder is the artifact), and both campaign browser
+    // lists rescan so the row appears immediately.
+    history.file_source.deleteFile(zip_path) catch {};
+    shared.rescanCampaignBrowserLists(history);
+}
+
 fn surfaceSaveError(history: *GameStateHistory, message: []const u8) void {
     history.session.setPendingError(history.history_arena.allocator(), message);
 }
 
 const writers = @import("../writers.zig");
+const zip_writer = @import("../zip_writer.zig");
+const zip_reader = @import("../zip_reader.zig");

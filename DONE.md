@@ -385,6 +385,7 @@ working rules).
 - [campaign-editor slice 5-0: the hub editor's save self-serves the campaign identity](#campaign-editor-slice-5-0-the-hub-editors-save-self-serves-the-campaign-identity)
 - [campaign-editor slice 5a: the mission-editor hand-off framing](#campaign-editor-slice-5a-the-mission-editor-hand-off-framing)
 - [campaign-editor slice 5b: the campaign-context mission save](#campaign-editor-slice-5b-the-campaign-context-mission-save)
+- [campaign-editor slice 5c: campaign export + import (the STORE-zip pattern over the campaign dir)](#campaign-editor-slice-5c-campaign-export--import-the-store-zip-pattern-over-the-campaign-dir)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -23072,3 +23073,55 @@ pruned a 99 GB .zig-cache (disk full - the AGENTS growth note fired
 for real).
 
 1050 green.
+
+## campaign-editor slice 5c: campaign export + import (the STORE-zip pattern over the campaign dir)
+
+The last slice-5 piece: the mission zip machinery extended to
+campaigns, both directions.
+
+- **Export** (the campaign editor's options-menu Export Campaign
+  button, button-only): FULL SAVE first (the settled order - the
+  bundle is always the current state, and the save forks
+  official-origin content into a persistent tree first), then every
+  file under the campaign dir bundles into
+  `exported_campaigns/<uuid>_<name>.zip` - the walk is
+  `listPersistentDirFiles` (the Export Game walker, recursive)
+  prefix-filtered to the campaign's subtree, with the archive names
+  being the campaign's own content paths minus the campaign dir
+  prefix (so the import extracts symmetrically). Browser download on
+  web (the Export Mission seam).
+- **Import**: the mission import's pass structure verbatim -
+  central-directory caps before any decode (1024 entries / 64 MB per
+  entry / 256 MB total), OS-junk filter, the root strip (generalized
+  into `zip_reader.stripCommonRootFolder` - mission_io's private
+  copy moved to the shared untrusted-archive policy home), the
+  unsafe-name rejection, campaign.txt parsed for the identity, then
+  extraction into `campaigns/<uuid>_<name>/` (a re-import is
+  idempotent; a duplicate uuid from a different dir is a second dir
+  under the scan's latest-wins tolerance, never refused). The web
+  seam mirrors `triggerBrowserMissionUpload`
+  (`imported_campaigns/` + the `.campaign_import_marker`); the poll
+  runs while EITHER campaign browser is open.
+- **Both browsers carry the Import button** (the settled placement):
+  the editor browser's Import action now DERIVES FROM THE ACTIVE
+  KIND (mission zip on the mission tab, campaign zip on the campaign
+  tab - previously the button fired the mission upload on both tabs,
+  a latent wrong-kind bug the derivation fixes), and the world-map
+  campaign browser (the player-facing surface - campaigns are player
+  acquisitions too) gains its own web-only Import. The mission
+  trigger stays editor-browser-only so its shipped ctrl+I binding
+  can't fire a mission upload over the world-map browser.
+
+Tests: the export+import round trip over a saved campaign (the zip's
+entries are the campaign's content paths minus the prefix; the
+marker poll extracts into campaigns/ + the browser lists rescan +
+the consumed marker no-ops) and the OS-wrapped-zip shape (root
+strip) + the idempotent re-import. Runtime-verified over the
+console channel end to end on the real binary: the fresh-campaign
+authoring flow -> hand-off save -> Export Campaign wrote the 5-file
+zip; the zip staged with the marker into a clean session restored
+the campaign dir + row while the browser was open; exit 0 both runs;
+the drive artifacts removed.
+
+1050 green. Slice 5 (the mission-editor hand-off + export/import) is
+COMPLETE: 5-0, 5a, 5b, 5c all landed.

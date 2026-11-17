@@ -721,7 +721,9 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   `open_campaign_editor`)
   + `io.zig` (the import copy + the save orchestration incl. the
   official-origin fork rule - see DESIGN → Campaigns & the Campaign
-  Editor → The editor save model) + the file-level Validate
+  Editor → The editor save model; the hand-off save's identity seam
+  `campaignMissionSaveTarget` + the campaign export/import zip
+  round trip) + the file-level Validate
   (`validateSavedCampaign` - the save-first, certify-the-saved-files
   contract).
   The state type is `types.CampaignEditor` (the parallel-editor settle).

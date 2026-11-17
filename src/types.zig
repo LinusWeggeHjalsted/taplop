@@ -270,6 +270,13 @@ pub const Action = enum {
     // class; saves first, then bundles. See
     // editor/mission_io.zig's exportEditorMission.
     export_editor_mission,
+    // Export the edited campaign as a .zip (the campaign editor's
+    // options-menu Export Campaign button - button-only, no keybind).
+    // Same side-effect class as the mission export: full save first (the
+    // bundle is always the current state), then the whole campaign dir
+    // bundles into exported_campaigns/. See campaign_editor/io.zig's
+    // exportCampaignEditor.
+    export_campaign,
     restart_mission,
     exit_mission,
     exit_to_menu,
@@ -747,6 +754,14 @@ pub const Action = enum {
     // ships in default_settings.txt and no-ops on native, where the button
     // is never emitted - the skip_level discipline).
     import_editor_mission,
+    // The campaign browsers' "Import" (web only): opens a file picker
+    // for a campaign .zip; the picked zip lands in imported_campaigns/
+    // and the Zig side extracts it into campaigns/ (see
+    // campaign_editor/io.zig's pollCampaignImportMarker). Serves BOTH
+    // campaign browsers (the editor browser's Campaign tab + the
+    // world-map campaign browser). Button-only; native has no button
+    // (drop the extracted folder by hand).
+    import_campaign,
     // The fresh-mission open (the editor browser's New Mission button, the
     // options-menu New Mission button, and the ctrl+N binding): pushes
     // `open_editor` with a null path - a fresh one-level template mission
@@ -1300,6 +1315,7 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .select_editor_campaign_tab,
         .open_editor_campaign_row,
         .import_editor_mission,
+        .import_campaign,
         .delete_editor_mission,
         .delete_campaign,
         => .{ .editor = true, .campaign_editor = true, .hub_editor = true },
@@ -1341,6 +1357,7 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .select_editor_campaign_import,
         .save_campaign,
         .validate_campaign,
+        .export_campaign,
         .campaign_select_tool,
         .campaign_hub_tool,
         .campaign_mission_tool,
@@ -1768,6 +1785,8 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .select_editor_all,
         .toggle_editor_browser,
         .import_editor_mission,
+        .import_campaign,
+        .export_campaign,
         .new_editor_mission,
         .new_editor_campaign,
         .open_campaign_background_picker,

@@ -278,6 +278,28 @@ pub fn isOsZipJunkEntry(name: []const u8) bool {
 /// zip fails whole, never half-imported. Same rule set as file_source's
 /// `isInvalidRelativePath`, kept separate on purpose: this file stays
 /// import-free of the IO layer.
+/// Strip a single common ROOT folder from every entry name, if there is
+/// one: an OS "compress folder" zip wraps the content's files in
+/// `<folder>/...`, while our own exports are flat at the archive root.
+/// Mixed shapes (some entries at the root, some under a folder, or two
+/// different folders) strip nothing - the identity-file lookup then
+/// fails and the import popup explains. Mutates `headers` in place
+/// (names are borrowed from the archive bytes).
+pub fn stripCommonRootFolder(headers: []ZipEntryHeader) void {
+    if (headers.len == 0) return;
+    const first_slash = std.mem.indexOfScalar(u8, headers[0].name, '/') orelse return;
+    const root = headers[0].name[0..first_slash];
+    if (root.len == 0) return;
+    for (headers) |header| {
+        if (!std.mem.startsWith(u8, header.name, root) or
+            header.name.len <= root.len or
+            header.name[root.len] != '/') return;
+    }
+    for (headers) |*header| {
+        header.name = header.name[root.len + 1 ..];
+    }
+}
+
 pub fn isUnsafeZipEntryName(name: []const u8) bool {
     if (name.len == 0 or name[0] == '/') return true;
     if (std.mem.indexOfScalar(u8, name, '\\') != null) return true;

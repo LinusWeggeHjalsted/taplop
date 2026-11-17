@@ -3229,3 +3229,147 @@ test "mission editor hand-off save: an official-origin campaign forks at the han
     // The official campaign's own files stay embedded-only.
     try testing.expect(!file_source_mod.persistentFileExists(&harness.file_source, "campaigns/main_campaign/campaign.txt"));
 }
+
+test "campaign export + import: the zip round trip through exported_campaigns/ and the marker poll" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    const campaign_editor_io = @import("campaign_editor/io.zig");
+    const file_source_mod = @import("file_source.zig");
+    const zip_reader = @import("zip_reader.zig");
+
+    // A fresh campaign with one hub + one hand-off-saved mission (the
+    // full save materializes everything persistently).
+    var history = harness.newHistory(.{
+        .screen = .campaign_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "Zipped",
+            .start_hub = 0,
+            .hubs = &.{.{
+                .handle = 0,
+                .name = "Alpha",
+                .position = .{ .x = 0, .y = 0 },
+                .grid = .{
+                    .level_tiles = &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } },
+                    .player_start = .{ .x = 0, .y = 0 },
+                },
+            }},
+            .missions = &.{.{ .handle = 3, .dir = "New Mission", .name = "One", .start = 0, .destination = 0 }},
+            .next_handle = 4,
+        },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    runToIdle(&history);
+    _ = campaign_editor_io.saveCampaignEditor(&history);
+    try testing.expect(history.session.pending_error == null);
+    const campaign_memo = campaign_editor_io.campaignSaveMemoFor(&history, types.campaign_save_memo_handle).?;
+    const campaign_uuid = try arena.dupe(u8, campaign_memo.uuid);
+
+    // The export: the full save runs again (idempotent), then the whole
+    // campaign dir bundles into exported_campaigns/<uuid>_<name>.zip.
+    campaign_editor_io.exportCampaignEditor(&history);
+    try testing.expect(history.session.pending_error == null);
+    const zip_path = try std.fmt.allocPrint(arena, "exported_campaigns/{s}_Zipped.zip", .{campaign_uuid});
+    const zip_bytes = try harness.file_source.readFile(arena, zip_path);
+    {
+        const headers = try zip_reader.readZipEntryHeaders(zip_bytes, arena);
+        var has_campaign_txt = false;
+        var has_hub_txt = false;
+        var has_mission_txt = false;
+        for (headers) |header| {
+            if (std.mem.eql(u8, header.name, "campaign.txt")) has_campaign_txt = true;
+            if (std.mem.endsWith(u8, header.name, "hub.txt")) has_hub_txt = true;
+            if (std.mem.endsWith(u8, header.name, "/mission.txt")) has_mission_txt = true;
+            // The archive names are the campaign's own content paths
+            // minus the campaign dir prefix.
+            try testing.expect(!std.mem.startsWith(u8, header.name, "campaigns/"));
+        }
+        try testing.expect(has_campaign_txt);
+        try testing.expect(has_hub_txt);
+        try testing.expect(has_mission_txt);
+    }
+
+    // The import: a fresh harness (a clean persistent dir), the zip
+    // staged + the marker naming it - the poll extracts into campaigns/
+    // and the rescan shows the row.
+    var harness2 = Harness.init(backing.allocator());
+    var history2 = harness2.newHistory(null);
+    runToIdle(&history2);
+    try harness2.file_source.writeFile("imported_campaigns/picked.zip", zip_bytes);
+    try harness2.file_source.writeFile(file_source_mod.campaign_import_marker_path, "imported_campaigns/picked.zip");
+    campaign_editor_io.pollCampaignImportMarker(&history2);
+    try testing.expect(history2.session.pending_error == null);
+    const imported_dir = try std.fmt.allocPrint(arena, "campaigns/{s}_Zipped", .{campaign_uuid});
+    try testing.expect(file_source_mod.persistentFileExists(
+        &harness2.file_source,
+        try std.fmt.allocPrint(arena, "{s}/campaign.txt", .{imported_dir}),
+    ));
+    const local_campaigns = try harness2.file_source.listCampaigns(arena);
+    try testing.expectEqual(@as(usize, 1), local_campaigns.len);
+    try testing.expectEqualStrings(imported_dir, local_campaigns[0].dir);
+    // The rescan populated the browser's session list.
+    try testing.expectEqual(@as(usize, 1), history2.session.campaign_browser_local.len);
+
+    // The marker is consumed (a second poll no-ops).
+    campaign_editor_io.pollCampaignImportMarker(&history2);
+    try testing.expect(history2.session.pending_error == null);
+}
+
+test "campaign import: an OS-wrapped zip strips the root folder; a re-import is idempotent" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    const campaign_editor_io = @import("campaign_editor/io.zig");
+    const file_source_mod = @import("file_source.zig");
+    const zip_writer = @import("zip_writer.zig");
+
+    // A hand-built campaign zip wrapped in a single root folder (the OS
+    // "compress folder" shape) - the exported-zip counterpart with the
+    // same identity.
+    var entries: std.ArrayList(zip_writer.ZipEntry) = .empty;
+    try entries.append(arena, .{
+        .name = "My Campaign/campaign.txt",
+        .bytes = "Metadata\nfile_format_version 5\nname Wrapped\ncampaign_uuid cu-wrapped\nstart_hub hu\n\nHubs\n\nhub_uuid hu\nposition 0 0\n",
+    });
+    try entries.append(arena, .{
+        .name = "My Campaign/hubs/h/hub.txt",
+        .bytes = "Metadata\nfile_format_version 5\nname Home\nhub_uuid hu\n\nLayout 1\n!\n",
+    });
+    const archive = try zip_writer.writeZipArchive(entries.items, arena);
+
+    var history = harness.newHistory(null);
+    runToIdle(&history);
+    try harness.file_source.writeFile("imported_campaigns/wrapped.zip", archive);
+    try harness.file_source.writeFile(file_source_mod.campaign_import_marker_path, "imported_campaigns/wrapped.zip");
+    campaign_editor_io.pollCampaignImportMarker(&history);
+    try testing.expect(history.session.pending_error == null);
+    const imported_dir = "campaigns/cu-wrapped_Wrapped";
+    try testing.expect(file_source_mod.persistentFileExists(
+        &harness.file_source,
+        try std.fmt.allocPrint(arena, "{s}/campaign.txt", .{imported_dir}),
+    ));
+    try testing.expect(file_source_mod.persistentFileExists(
+        &harness.file_source,
+        try std.fmt.allocPrint(arena, "{s}/hubs/h/hub.txt", .{imported_dir}),
+    ));
+
+    // The re-import of the same zip: the same target dir, idempotent
+    // (never a second dir, never refused).
+    try harness.file_source.writeFile("imported_campaigns/wrapped2.zip", archive);
+    try harness.file_source.writeFile(file_source_mod.campaign_import_marker_path, "imported_campaigns/wrapped2.zip");
+    campaign_editor_io.pollCampaignImportMarker(&history);
+    try testing.expect(history.session.pending_error == null);
+    const local_campaigns = try harness.file_source.listCampaigns(arena);
+    try testing.expectEqual(@as(usize, 1), local_campaigns.len);
+    try testing.expectEqualStrings(imported_dir, local_campaigns[0].dir);
+}

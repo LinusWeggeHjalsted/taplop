@@ -1616,6 +1616,16 @@ pub fn handleAnytimeInput(
         }
     }
 
+    if (anytime.export_campaign) {
+        // The campaign export - same side-effect class + gates as the
+        // campaign save (the export_editor_mission discipline).
+        if (history.current_state.screen == .campaign_editor and
+            history.current_state.campaign_editor != null)
+        {
+            campaign_editor_io.exportCampaignEditor(history);
+        }
+    }
+
     if (anytime.toggle_editor_browser) {
         // The editor browser (the main-menu Editor button, the options-menu
         // Open Mission button, the browser's Back button, ctrl+O). Reachable
@@ -4400,14 +4410,29 @@ pub fn handleAnytimeInput(
     // No periodic rescan while open (see SessionState.editor_local_missions).
     // The zip-import marker is polled here: a completed web upload extracts
     // into missions/ + rescans, so the new row appears immediately.
-    if (history.current_state.ui_surfaces.isSurfaceOpen(.editor_browser)) {
-        // The Import trigger (web-only effect at the seam; native no-ops -
-        // the button is never emitted there and the binding parses +
-        // no-ops, the skip_level discipline).
-        if (anytime.import_editor_mission) {
+    // The import seam serves BOTH campaign browsers (the editor browser
+    // + the world-map campaign browser - campaigns are player-facing
+    // acquisitions too, the settled slice-5c placement).
+    if (history.current_state.ui_surfaces.isSurfaceOpen(.editor_browser) or
+        history.current_state.ui_surfaces.isSurfaceOpen(.campaign_browser))
+    {
+        // The Import triggers (web-only effects at the seam; native
+        // no-ops - the buttons are never emitted there and the bindings
+        // parse + no-op, the skip_level discipline). The MISSION trigger
+        // stays editor-browser-only (its ctrl+I binding must not fire a
+        // mission upload over the world-map campaign browser).
+        if (anytime.import_editor_mission and
+            history.current_state.ui_surfaces.isSurfaceOpen(.editor_browser))
+        {
             file_source_mod.triggerBrowserMissionUpload();
         }
+        if (anytime.import_campaign) {
+            file_source_mod.triggerBrowserCampaignUpload();
+        }
         mission_io.pollMissionImportMarker(history);
+        campaign_editor_io.pollCampaignImportMarker(history);
+    }
+    if (history.current_state.ui_surfaces.isSurfaceOpen(.editor_browser)) {
         if (anytime.scroll_delta != 0) {
             const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
             // The ACTIVE kind's list scrolls (the mission rows and the

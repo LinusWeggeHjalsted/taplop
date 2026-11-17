@@ -351,6 +351,14 @@ pub const AnytimeInput = struct {
     /// upload trigger is comptime-dead on native - the skip_level
     /// discipline); consumed only while the browser is open.
     import_editor_mission: bool = false,
+    /// Import a campaign .zip (both campaign browsers' Import button,
+    /// web-only effect at the consumption site - the upload trigger is
+    /// comptime-dead on native).
+    import_campaign: bool = false,
+    /// Export the edited campaign (the campaign editor's options-menu
+    /// Export Campaign button). Side-effect class; consumed only on the
+    /// campaign editor screen.
+    export_campaign: bool = false,
     /// The fresh-mission open (the editor browser's New Mission button,
     /// the options-menu New Mission button, and the ctrl+N binding):
     /// pushes `open_editor` with a null path. The consumption site accepts
@@ -611,6 +619,8 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .close_editor_picker => player_input.anytime.options_action = action,
         .toggle_editor_browser => player_input.anytime.toggle_editor_browser = true,
         .import_editor_mission => player_input.anytime.import_editor_mission = true,
+        .import_campaign => player_input.anytime.import_campaign = true,
+        .export_campaign => player_input.anytime.export_campaign = true,
         .new_editor_mission => player_input.anytime.new_editor_mission = true,
         .new_editor_campaign => player_input.anytime.new_editor_campaign = true,
         .save_campaign => player_input.anytime.save_campaign = true,

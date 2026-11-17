@@ -795,28 +795,7 @@ fn isMissionImportJunk(name: []const u8) bool {
     return zip_reader.isOsZipJunkEntry(name);
 }
 
-/// Strip a single common ROOT folder from every entry name, if there is
-/// one: an OS "compress folder" zip wraps the mission's files in
-/// `<folder>/...`, while our own exports are flat at the archive root.
-/// Mixed shapes (some entries at the root, some under a folder, or two
-/// different folders) strip nothing - the mission.txt lookup then fails and
-/// the popup explains. Mutates `headers` in place (the caller's scratch-
-/// arena copy of the filtered list - names are borrowed from the archive
-/// bytes either way).
-fn missionImportRootStrip(headers: []zip_reader.ZipEntryHeader) void {
-    if (headers.len == 0) return;
-    const first_slash = std.mem.indexOfScalar(u8, headers[0].name, '/') orelse return;
-    const root = headers[0].name[0..first_slash];
-    if (root.len == 0) return;
-    for (headers) |header| {
-        if (!std.mem.startsWith(u8, header.name, root) or
-            header.name.len <= root.len or
-            header.name[root.len] != '/') return;
-    }
-    for (headers) |*header| {
-        header.name = header.name[root.len + 1 ..];
-    }
-}
+const missionImportRootStrip = zip_reader.stripCommonRootFolder;
 
 /// A safe extraction name: the shared untrusted-archive policy (see
 /// `zip_reader.isUnsafeZipEntryName`) - no absolute paths, no `..`
@@ -880,7 +859,7 @@ fn importMissionFromZip(history: *GameStateHistory, zip_path: []const u8) void {
         if (!isMissionImportJunk(header.name)) file_headers.append(scratch, header) catch
             @panic("failed to collect zip entries");
     }
-    missionImportRootStrip(file_headers.items);
+    zip_reader.stripCommonRootFolder(file_headers.items);
     const stripped = file_headers.items;
 
     // Validate every name up front (nothing decoded, nothing written on
