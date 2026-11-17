@@ -387,6 +387,7 @@ working rules).
 - [campaign-editor slice 5b: the campaign-context mission save](#campaign-editor-slice-5b-the-campaign-context-mission-save)
 - [campaign-editor slice 5c: campaign export + import (the STORE-zip pattern over the campaign dir)](#campaign-editor-slice-5c-campaign-export--import-the-store-zip-pattern-over-the-campaign-dir)
 - [campaign editor: the inspector rides the shared windowed renderer (slice-5c rider)](#campaign-editor-the-inspector-rides-the-shared-windowed-renderer-slice-5c-rider)
+- [Hub editor palette + viewport fixes: theme following, right-drag pan, cell art](#hub-editor-palette--viewport-fixes-theme-following-right-drag-pan-cell-art)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -23195,3 +23196,61 @@ test binary out of .zig-cache/o to chase a count) corrupted the build
 cache's manifest and needed a full .zig-cache prune - the AGENTS
 "trust the exit code, don't fish in .zig-cache" rule fired for real;
 the prune + cold rebuild is ~40s and fully green after.
+
+## Hub editor palette + viewport fixes: theme following, right-drag pan, cell art
+
+The author's report while building the new main campaign - seven
+issues, five fixes, one theme: the drill-in's palette/viewport had
+diverged from its mission-editor mirrors.
+
+- **Gradient picks updated the authored hub's indices but not the
+  colors** - `activeThemeFor` had arms for the runtime level/hub and
+  the mission editor's active tab, but not the `.hub_editor` screen,
+  so the drill-in fell to the neutral wheel-0 default while
+  `hub_set_gradient` correctly wrote the drilled hub's grid. The
+  editor and hub_editor arms now resolve through one shared
+  `GradientTriple` helper over the editing target's EditorLevel
+  (active level tab / drilled hub grid), so the two derivations cannot
+  drift - the literal shared core the author asked for (the picking
+  flow itself - sidebar rows, theme picker, commit events - was
+  already the mission editor's own machinery, the 4-5d reuse).
+- **Right-drag now pans the drill-in viewport** - `handleCameraPan`'s
+  screen gate simply lacked `.hub_editor`; the drill-in shares the
+  generic world-pan path (its camera + clamp arm already existed), and
+  right-click delete coexists via the existing movement-threshold
+  disambiguation.
+- **NPC cells**: entity-frame 512x640 fit (was a squished 1x2-tile
+  fit at half scale) + the world scene's `npcEntityDrawable` tint -
+  the player gradient at index 0.
+- **Mission cells**: the level-end marker's still (pole + banner
+  frame 0 over one fitted rect, tinted like `levelEndDrawable` -
+  pole world[5], banner world[0]) instead of the whole 8-frame banner
+  strip squished into one frame; the mission's name moved from an
+  in-cell label (no space) to the tooltip.
+- **Decoration cells** ride the mission editor's graphic stack - the
+  layer emission (back layers, base, overlay layers over one fitted
+  rect, per-layer tints) extracted into the pub
+  `emitDecorationCellGraphics`, shared by both cells.
+
+Two seams the fixes pulled into shared homes: the flag frame dims
+moved to `types.flag_frame_*` (the entity-frame-consts precedent - one
+source for view.zig's flag drawing and the UI cells), and `ui.Image`
+gained an optional `source_rectangle` threaded through drawSprite's
+existing source param (the world sprite path's mechanism - one frame
+of a strip; the renderer was already shaped for it).
+
+Tests: 1056 green - the activeThemeFor hub arm (drilled-hub triple,
+dead-handle neutral fallback, the mission/hub parity contract), the
+pan gate on the hub screen (the existing threshold test's shape), and
+per-cell structure tests (NPC aspect/tint, mission pole + banner
+frame with the source rect + tooltip name + no label, decoration
+layer order/tints/keep_original_colors).
+
+Runtime-verified over the console channel on the real binary: drilled
+into the official campaign's hub, a right-drag left
+`camera_pan {x: -772, y: -436}` (dump) with the world scene live, the
+world gradient pick landed (`grid.color_wheel_index` 0 -> 3 via the
+theme picker), and the NPC / Missions / Decorations groups all
+rendered their new cells across frames with clean exits. Web build
+compiled + loaded in Firefox (main menu, live ~60fps loop, healthy GL
+context) for the draw.zig seam change.
