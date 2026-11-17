@@ -942,8 +942,8 @@ const arrow_hit_tolerance: i32 = 12;
 /// degrees off the REVERSED end tangent - the chevron opens backward
 /// into the arrow). Directionality affordance on mission edges; drawn by
 /// the backend from the same samples hit-testing uses.
-pub const arrowhead_arm_length: i32 = 48;
-pub const arrowhead_arm_angle_degrees: i32 = 15;
+const arrowhead_arm_length: i32 = 48;
+const arrowhead_arm_angle_degrees: i32 = 15;
 
 /// A cubic bezier stroke - the world map's mission-edge rendering (see
 /// DESIGN → Campaigns & the Campaign Editor → Edge geometry). Every

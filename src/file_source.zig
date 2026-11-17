@@ -70,7 +70,7 @@ fn isInvalidRelativePath(path: []const u8) bool {
 /// depends on that). Caller owns the slice + every element (free each,
 /// then the slice). Mirrors ui/editor_pickers.zig's
 /// `official_entity_sprite_stems` comptime scan in purpose.
-pub fn officialMissionDirPaths(allocator: std.mem.Allocator) []const []const u8 {
+fn officialMissionDirPaths(allocator: std.mem.Allocator) []const []const u8 {
     var dirs: std.ArrayList([]const u8) = .empty;
     errdefer {
         for (dirs.items) |dir| allocator.free(dir);

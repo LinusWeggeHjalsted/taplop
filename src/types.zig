@@ -3437,6 +3437,7 @@ pub const UiSurfaceState = struct {
 
     /// The topmost open overlay (the last opened - the one that draws on
     /// top and that Escape pops first), or null when the stack is empty.
+    /// pub for the surface-stack tests (the only cross-file callers).
     pub fn topOverlay(self: *const UiSurfaceState) ?UiSurfaceId {
         var top: ?UiSurfaceId = null;
         for (self.open_overlays) |maybe_surface| {

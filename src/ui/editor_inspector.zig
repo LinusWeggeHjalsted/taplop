@@ -796,7 +796,7 @@ pub fn inspectorControlRect(cell: Rectangle) Rectangle {
 
 /// The label line's y inside a two-unit entry cell: flush to the BOTTOM of
 /// the upper unit, directly above the control line.
-pub fn inspectorLabelY(cell: Rectangle) i32 {
+fn inspectorLabelY(cell: Rectangle) i32 {
     return cell.y + editor_inspector_row_height - editor_group_header_font_size;
 }
 
@@ -2207,7 +2207,7 @@ pub fn renderInspectorEntries(
 /// (a custom namespaced stem displays as its last path segment - see
 /// `spriteDisplayName`) - clicking opens the centered sprite picker (the
 /// input site routes entity vs decoration by the inspector target).
-pub fn emitInspectorSpriteButton(
+fn emitInspectorSpriteButton(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
@@ -2526,7 +2526,7 @@ pub fn emitTextFieldUi(
 /// `.select_editor_decoration_color`; the `_layer_color` actions for layer
 /// rows, with `layer_index` riding the payload). A swatch click commits
 /// the index (same-value picks never fire).
-pub fn emitInspectorColorSwatches(
+fn emitInspectorColorSwatches(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     gradient: [types.gradient_color_count]types.Color,
@@ -2569,7 +2569,7 @@ pub fn emitInspectorColorSwatches(
 /// value in the FORMAT's vocabulary ("true"/"false" - the exact tokens
 /// `asBool` parses); clicking flips it via `action`. Shared by the entity
 /// + decoration toggle rows (the plan resolves current + action).
-pub fn emitInspectorToggle(
+fn emitInspectorToggle(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,

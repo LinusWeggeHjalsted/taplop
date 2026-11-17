@@ -214,7 +214,7 @@ pub fn activeEditorLevel(editor: *const types.Editor) ?*const types.EditorLevel 
 /// NEUTRAL CORE (the slice-4 extraction): pure over a level-shaped grid +
 /// the decoration palette; the mission editor's `planEditorTilePaintActions`
 /// and the hub editor's tile tool both map its steps to their own events.
-pub fn planGridTilePaint(
+fn planGridTilePaint(
     level: *const types.EditorLevel,
     decoration_types: []const types.DecorationTypeDef,
     position: Vector2,
@@ -475,7 +475,7 @@ pub fn planEditorEntityPlacementActions(
 /// NEUTRAL CORE (the slice-4 extraction): shared by the mission editor's
 /// `planEditorDecorationPlacementActions` and the hub editor's decoration
 /// tool (the campaign-SHARED decoration palette).
-pub fn planGridDecorationPlacement(
+fn planGridDecorationPlacement(
     level: *const types.EditorLevel,
     decoration_types: []const types.DecorationTypeDef,
     type_id: u32,
@@ -870,7 +870,7 @@ fn singleGridStepPlan(
 /// NEUTRAL CORE (the slice-4 extraction): shared by the mission editor's
 /// `planEditorDeleteActions` and the hub editor's right-click delete (the
 /// hub grid has no entities/items - those arms simply never fire there).
-pub fn planGridDelete(
+fn planGridDelete(
     level: *const types.EditorLevel,
     decoration_types: []const types.DecorationTypeDef,
     position: Vector2,
@@ -985,7 +985,7 @@ pub fn planEditorDeleteActions(
 ///
 /// NEUTRAL CORE (the slice-4 extraction): shared by the mission editor and
 /// the hub editor's select tool.
-pub fn gridClickGroup(
+fn gridClickGroup(
     level: *const types.EditorLevel,
     decoration_types: []const types.DecorationTypeDef,
     position: Vector2,
@@ -1119,7 +1119,7 @@ fn selectionOpsToEditorEvents(
 ///
 /// NEUTRAL CORE (the slice-4 extraction): shared by both editors' select
 /// tools.
-pub fn planGridSelectionToggle(
+fn planGridSelectionToggle(
     selection: []const types.Selectable,
     group: []const types.Selectable,
     allocator: std.mem.Allocator,
@@ -1181,7 +1181,7 @@ pub fn planEditorSelectionActions(
 ///
 /// NEUTRAL CORE (the slice-4 extraction): shared by both editors' select
 /// tools.
-pub fn planGridSelectionReplace(
+fn planGridSelectionReplace(
     selection: []const types.Selectable,
     group: []const types.Selectable,
     allocator: std.mem.Allocator,
@@ -1278,7 +1278,7 @@ pub fn planEditorSelectionDeleteActions(
 ///
 /// NEUTRAL CORE (the slice-4 extraction): shared by both editors'
 /// move-drag gestures.
-pub fn gridSelectionContainsPosition(
+fn gridSelectionContainsPosition(
     level: *const types.EditorLevel,
     decoration_types: []const types.DecorationTypeDef,
     selection: []const types.Selectable,
@@ -1364,7 +1364,7 @@ fn translatedPosition(position: Vector2, delta: Vector2) Vector2 {
 /// selection the move will actually plan against - the current one, or
 /// the click group an unselected-claim drag's replace will have installed
 /// by the time the move runs (the move-drag gate's two call sites).
-pub fn gridSelectionMoveVetoed(
+fn gridSelectionMoveVetoed(
     level: *const types.EditorLevel,
     selection: []const types.Selectable,
     delta: Vector2,
@@ -1401,7 +1401,7 @@ pub fn editorSelectionMoveVetoed(
 ///
 /// NEUTRAL CORE (the slice-4 extraction): the hub editor's move lands as
 /// its own commit event over the same entry shape (hub arms join at 4-3).
-pub fn gridSelectionMoveEntries(
+fn gridSelectionMoveEntries(
     level: *const types.EditorLevel,
     selection: []const types.Selectable,
     delta: Vector2,
@@ -1531,7 +1531,7 @@ pub fn planEditorSelectionMoveActions(
 /// (`planEditorSelectionDeleteActions`) and the selection move's clear
 /// phase (inside `planEditorSelectionMoveActions`) both map it; the hub
 /// editor maps it for its delete + move at 4-3.
-pub fn planGridSelectionDelete(
+fn planGridSelectionDelete(
     level: *const types.EditorLevel,
     selection: []const types.Selectable,
     allocator: std.mem.Allocator,
@@ -1766,7 +1766,7 @@ fn appendPlacementDeletesDescending(
 ///
 /// NEUTRAL CORE (the slice-4 extraction): shared by both editors'
 /// marquee gestures.
-pub fn planGridRegionSelect(
+fn planGridRegionSelect(
     level: *const types.EditorLevel,
     decoration_types: []const types.DecorationTypeDef,
     selection: []const types.Selectable,
@@ -1867,7 +1867,7 @@ fn selectEntriesToEditorEvents(
 /// the '!' / '='), skipping entries already in the selection - the
 /// marquee's membership rule with no region bound. The adds share the
 /// action's idle point, so one undo step reverts the whole batch.
-pub fn planGridSelectAll(
+fn planGridSelectAll(
     level: *const types.EditorLevel,
     selection: []const types.Selectable,
     allocator: std.mem.Allocator,
