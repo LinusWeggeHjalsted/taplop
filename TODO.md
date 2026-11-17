@@ -917,8 +917,8 @@ Done items in DONE.md. Open:
   tiers are DONE (DONE.md; harness `src/test_harness.zig`; tiers in
   `src/handler_tests_gear/_combat/_ai/_turnflow.zig`). Most of the named
   primitives have since gained drain tests (`swap_positions`, `retreat`,
-  the combat verbs), but `swap_hands` still has none - exactly the class
-  where sibling-drift bugs live (see DESIGN → Architecture → "Prefer
+  `swap_hands`, the combat verbs), but sibling-drift bugs live where
+  coverage lags (see DESIGN → Architecture → "Prefer
   composing"; `swap_positions` had no test when it was rewritten to compose
   `move_entity`). `pushAndRunSub` makes adding them cheap; the per-variant
   convention (every new event variant lands with ≥1 drain test - DESIGN →

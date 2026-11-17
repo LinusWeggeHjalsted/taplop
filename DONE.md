@@ -379,6 +379,7 @@ working rules).
 - [Gear sprites sub-layer removed (out of scope)](#gear-sprites-sub-layer-removed-out-of-scope)
 - [The review docs removed (PROJECTREVIEW.md + REVIEWPLAN.md)](#the-review-docs-removed-projectreviewmd--reviewplanmd)
 - [The shipped-defaults binding-lint test + the hub_editor context bugs it caught](#the-shipped-defaults-binding-lint-test--the-hubeditor-context-bugs-it-caught)
+- [swap_hands: the last untested named primitive gets its drain test](#swaphands-the-last-untested-named-primitive-gets-its-drain-test)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -22767,3 +22768,18 @@ hub set (both siblings dormant), the Tab chords cycle on all three
 editor sets, and the selection trio fires on the mission + hub editor
 sets (dormant in game). DESIGN's Input section updated (three editors,
 the trio + chords on all three).
+
+## swap_hands: the last untested named primitive gets its drain test
+
+The Tier 1 verb census gap closed: `swap_hands` had input-gate coverage
+(the no-op-vs-fires push test in input_handlers.zig) but no
+handler-drain test - the exact sibling-drift class the tech-debt item
+tracked (`swap_positions` was rewritten untested once). The new test in
+`src/handler_tests_gear.zig` runs the real event through the harness:
+both hands' weapons trade places (asserted by damage scalar, arena-
+compaction safe) and a prepared skill is cancelled by the swap (level
+context - the equip-weapon precedent: a skill prepared from the old
+weapon must not linger into the new main hand's slots).
+
+The tech-debt item is trimmed to the general statement (sibling-drift
+lives where coverage lags); no per-verb census list remains to churn.

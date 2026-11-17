@@ -92,6 +92,46 @@ fn inventoryBootsSpeed(slot: ?Item) ?u32 {
     };
 }
 
+// ───────────────────────── swap_hands ─────────────────────────
+
+test "swap_hands: the hands trade weapons and a prepared skill is cancelled" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    // Level context (not the file's hub default): the swap's
+    // cancelPreparedSkill side effect needs a level to act on, and the
+    // prepared skill rides level state.
+    const three_by_three = [_]types.Vector2{
+        .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 },
+        .{ .x = 0, .y = 1 }, .{ .x = 1, .y = 1 }, .{ .x = 2, .y = 1 },
+        .{ .x = 0, .y = 2 }, .{ .x = 1, .y = 2 }, .{ .x = 2, .y = 2 },
+    };
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
+        &three_by_three,
+    ));
+    const player_entity = test_harness.levelEntity(&history, 0);
+    player_entity.main_hand_weapon = .{ .name = "sword", .weapon_type = .sword, .weapon_damage = 5 };
+    player_entity.off_hand_weapon = .{ .name = "spear", .weapon_type = .spear, .weapon_damage = 7 };
+    history.current_state.level.?.prepared_skill = .slice;
+
+    event_push.pushPlayerAction(
+        &history.current_state,
+        .swap_hands,
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // The weapons trade places (identified by damage, not struct equality -
+    // runToIdle's arena compaction re-addresses everything).
+    try expectWeapon(test_harness.levelEntity(&history, 0).main_hand_weapon, 7);
+    try expectWeapon(test_harness.levelEntity(&history, 0).off_hand_weapon, 5);
+    // The prepared skill does not linger into the new main hand's slots
+    // (the equip-weapon precedent).
+    try testing.expectEqual(@as(?SkillId, null), history.current_state.level.?.prepared_skill);
+}
+
 // ───────────────────────── equip_item ─────────────────────────
 
 test "equip_item: empty inventory slot is a no-op" {
