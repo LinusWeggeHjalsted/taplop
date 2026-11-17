@@ -88,6 +88,17 @@ if [ -n "$fmt_dirty" ]; then
     printf '[zig fmt, advisory] %s file(s) not canonically formatted - run zig fmt before committing\n' "$fmt_count"
 fi
 
+# TODO drift lint (non-fatal): same posture as the dash sweep - the commit
+# checkpoint surfaces completed-task residue in TODO.md (checked boxes,
+# COMPLETE status words, dangling "below" pointers), but doc hygiene never
+# fails a test run. See AGENTS → Documentation.
+todo_lint="$("$(dirname "$0")/todo_lint.sh" 2>/dev/null || true)"
+if [ -n "$todo_lint" ] && [ "${todo_lint#todo lint: CLEAN}" = "$todo_lint" ]; then
+    printf '[todo lint, advisory] TODO.md carries drift residue:
+%s
+' "$todo_lint"
+fi
+
 if [ -n "$failures" ]; then
     printf '%s\n' "--- failures ---"
     printf '%s\n' "$failures"

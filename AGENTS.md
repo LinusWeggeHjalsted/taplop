@@ -33,6 +33,16 @@ Lifecycle of a fact:
     cleanup pass. (Sub-slice checklists: done slices are deleted the same
     way; remaining slices keep their numbering so DONE.md cross-references
     stay stable.)
+  - **The last slice of a multi-slice task has a SECOND deletion site: the
+    parent pointer bullet.** The slice checkoff deletes the slice block;
+    the NEXT UP entry (or section intro) pointing at the slices is a
+    separate deletion, and missing it is how completed tasks linger - both
+    drift classes the `todo: drift cleanup` commit found (the console-input
+    and web-storage NEXT UP bullets outlived their final checkoffs; the
+    web-storage one kept pointing at a section the checkoff had deleted).
+    Non-slice completions (a fix, a rider) have no checkoff moment at all:
+    before a session's last commit, grep TODO for what the session
+    finished. The mechanical residue is linted (`scripts/todo_lint.sh`).
 
 Read AGENTS.md + TODO.md at the start of a session. Reach for DESIGN.md when
 a task touches a subsystem's settled design; reach for DONE.md only when you
@@ -41,7 +51,7 @@ the lifecycle above. A fact lives in ONE place: AGENTS never restates design
 - it points (Subsystem Map below); DESIGN never restates a working rule - it
 links to AGENTS.
 
-Two hygiene rules that keep the above true in practice:
+Hygiene rules that keep the above true in practice:
 
 - **Staleness is cleaned WHILE working, never deferred.** When renaming or
   removing a code symbol, grep DESIGN.md + TODO.md for stale references and
@@ -60,6 +70,12 @@ Two hygiene rules that keep the above true in practice:
   subsections nested; DONE: flat, one line per archive unit; anchors, no
   line numbers - nothing goes stale). Run it in the SAME commit that
   adds, renames, or removes a `##`/`###` heading in either file.
+- **TODO drift is linted** (`scripts/todo_lint.sh`): checked `[x]` boxes,
+  COMPLETE status words, and dangling "X below" pointers are the
+  machine-checkable residue of the deletion policy above - advisory,
+  surfaced by `scripts/test.sh` (the dash-sweep posture). What it cannot
+  catch is stale status prose ("build not started" over built work);
+  that class is only caught by reading the section a bullet points at.
 
 > **Collaboration style** (small steps, pause at checkpoints, surface
 > tradeoffs, clarifying questions, stay inside the cwd) lives in
