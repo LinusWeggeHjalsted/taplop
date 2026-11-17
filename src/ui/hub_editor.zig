@@ -26,7 +26,6 @@ const Color = types.Color;
 const spanRow = ui_tooltip.spanRow;
 const text = ui_element.text;
 const Row = ui_element.Row;
-const no_tint_color: Color = .{ .r = 255, .g = 255, .b = 255 };
 
 /// The hub editor's tool palette - the mission editor's
 /// `buildEditorBottomBar` EXACT structural mirror: the fixed pair
@@ -380,8 +379,9 @@ fn emitHubMissionCell(
     } });
 }
 
-/// One Decorations-group cell: the type's base sprite (tinted like the
-/// mission editor's cells) + the corner delete button.
+/// One Decorations-group cell: the mission editor's own graphic stack
+/// (`editor_shell.emitDecorationCellGraphics` - base + layers over one
+/// fitted rect, the 4-5d reuse) + the corner delete button.
 fn emitHubDecorationCell(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -405,20 +405,7 @@ fn emitHubDecorationCell(
         .highlighted = std.meta.eql(hub_editor.active_tool, .{ .decoration_type = type_id }),
         .tooltip = .{ .header = try spanRow(allocator, text(type_definition.id)) },
     } });
-    const fitted = editor_shell.scaleToFit(cell, @max(type_definition.pixel_dims.x, 1), @max(type_definition.pixel_dims.y, 1));
-    const sprite_id = try std.fmt.allocPrint(allocator, "decorations/{s}", .{type_definition.sprite});
-    const color_index = @min(type_definition.color_index, types.gradient_color_count - 1);
-    try elements.append(allocator, .{ .image = .{
-        .sprite_id = sprite_id,
-        .screen_position = .{ .x = fitted.x, .y = fitted.y },
-        .width = fitted.width,
-        .height = fitted.height,
-        .color = if (type_definition.keep_original_colors)
-            no_tint_color
-        else
-            world[color_index],
-        .blocks_input = false,
-    } });
+    try editor_shell.emitDecorationCellGraphics(elements, allocator, cell, type_definition, world);
 
     // The delete button (the mission palette's corner-cell shape).
     const delete_size = editor_shell.editor_plus_size;
@@ -1198,6 +1185,106 @@ test "buildHubEditorBottomBar: mission cells - pole + banner frame, the name in 
         try std.testing.expect(!pole.blocks_input);
         try std.testing.expect(!banner.blocks_input);
     }
+}
+
+test "buildHubEditorBottomBar: decoration cells render the mission editor's layer stack" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const world_one: Color = .{ .r = 31, .g = 32, .b = 33 };
+    const world_two: Color = .{ .r = 41, .g = 42, .b = 43 };
+    const world_four: Color = .{ .r = 51, .g = 52, .b = 53 };
+    const black: Color = .{ .r = 0, .g = 0, .b = 0 };
+    const test_theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{ black, world_one, world_two, black, world_four, black } },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
+    };
+    const test_metrics = ui_element.FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+    const campaign_editor = types.CampaignEditor{
+        .start_hub = 0,
+        .hubs = &.{.{ .handle = 0, .name = "Alpha", .position = .{ .x = 0, .y = 0 } }},
+        .missions = &.{},
+        .decoration_types = &.{.{
+            .id = "ruin",
+            .sprite = "ruin_1",
+            .footprint = &.{.{ .x = 0, .y = 0 }},
+            .pixel_dims = .{ .x = 512, .y = 512 },
+            .color_index = 2,
+            .layers = &.{
+                .{ .sprite = "moss_1", .color_index = 4, .pixel_dims = .{ .x = 512, .y = 512 } },
+                .{ .sprite = "vine_1", .color_index = 1, .behind = true, .pixel_dims = .{ .x = 512, .y = 512 } },
+            },
+        }},
+        .next_handle = 1,
+    };
+    var collapsed = [3]bool{ true, true, false };
+    var scroll_offsets = [3]i32{ 0, 0, 0 };
+    var elements: UiElementList = .empty;
+    defer elements.deinit(arena.allocator());
+    try buildHubEditorBottomBar(&elements, arena.allocator(), test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .active_tool = .select }, test_theme, &collapsed, &scroll_offsets);
+
+    // The scene's draw order over ONE fitted rect (512x512 art in the
+    // square cell = the cell itself): behind layer, base, overlay layer
+    // - each tinted at its own color_index into the world gradient.
+    var images: [3]ui_element.Image = undefined;
+    var image_count: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .image => |image| {
+            // Only the cell's graphic stack (the Tile fixed tool's art is
+            // an image too).
+            if (!std.mem.startsWith(u8, image.sprite_id, "decorations/")) continue;
+            if (image_count < 3) images[image_count] = image;
+            image_count += 1;
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(usize, 3), image_count);
+    try std.testing.expectEqualStrings("decorations/vine_1", images[0].sprite_id);
+    try std.testing.expectEqualStrings("decorations/ruin_1", images[1].sprite_id);
+    try std.testing.expectEqualStrings("decorations/moss_1", images[2].sprite_id);
+    try std.testing.expect(std.meta.eql(world_one, images[0].color));
+    try std.testing.expect(std.meta.eql(world_two, images[1].color));
+    try std.testing.expect(std.meta.eql(world_four, images[2].color));
+    for (images) |image| {
+        try std.testing.expectEqual(images[0].screen_position, image.screen_position);
+        try std.testing.expectEqual(@as(i32, 256), image.width);
+        try std.testing.expectEqual(@as(i32, 256), image.height);
+        try std.testing.expect(!image.blocks_input);
+    }
+
+    // keep_original_colors: base + layers UNTINTED (the mission cell's
+    // exact rule).
+    const keep_types = [_]types.DecorationTypeDef{.{
+        .id = "moss",
+        .sprite = "moss_1",
+        .footprint = &.{.{ .x = 0, .y = 0 }},
+        .pixel_dims = .{ .x = 512, .y = 512 },
+        .keep_original_colors = true,
+        .layers = &.{.{ .sprite = "glow_1", .color_index = 3, .pixel_dims = .{ .x = 512, .y = 512 } }},
+    }};
+    const keep_campaign = types.CampaignEditor{
+        .start_hub = 0,
+        .hubs = &.{.{ .handle = 0, .name = "Alpha", .position = .{ .x = 0, .y = 0 } }},
+        .missions = &.{},
+        .decoration_types = &keep_types,
+        .next_handle = 1,
+    };
+    var keep_elements: UiElementList = .empty;
+    defer keep_elements.deinit(arena.allocator());
+    try buildHubEditorBottomBar(&keep_elements, arena.allocator(), test_metrics, ui_element.screenRect(), keep_campaign, .{ .hub = 0, .active_tool = .select }, test_theme, &collapsed, &scroll_offsets);
+    var keep_image_count: usize = 0;
+    for (keep_elements.items) |element| switch (element) {
+        .image => |image| {
+            if (!std.mem.startsWith(u8, image.sprite_id, "decorations/")) continue;
+            try std.testing.expect(std.meta.eql(ui_element.default_tint, image.color));
+            keep_image_count += 1;
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(usize, 2), keep_image_count);
 }
 
 test "buildHubEditorInspector: the exit summary, the NPC placeholder, the empty default" {

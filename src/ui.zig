@@ -172,6 +172,7 @@ pub const editor_palette_max_tools = ui_editor_shell.editor_palette_max_tools;
 pub const editorPaletteGroupSize = ui_editor_shell.editorPaletteGroupSize;
 pub const editorPaletteGroupAt = ui_editor_shell.editorPaletteGroupAt;
 pub const scaleToFit = ui_editor_shell.scaleToFit;
+pub const emitDecorationCellGraphics = ui_editor_shell.emitDecorationCellGraphics;
 pub const buildEditorLevelTabs = ui_editor_shell.buildEditorLevelTabs;
 pub const editorLevelTabScrollRegion = ui_editor_shell.editorLevelTabScrollRegion;
 pub const buildEditorPrimaryActions = ui_editor_shell.buildEditorPrimaryActions;

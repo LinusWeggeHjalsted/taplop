@@ -354,32 +354,23 @@ fn emitEditorEntityToolCell(
     }
 }
 
-/// Emit a DECORATION palette tool cell: the tool button + the decoration's
-/// scene composition at cell scale - base sprite, then overlay layers, all
-/// sharing one fitted rect (layers are validated to match the base's pixel
-/// dims, so one fit covers the whole stack). Tints follow the scene's
-/// decoration pass: base + layers at their own color_index into the world
-/// gradient - or UNTINTED when `keep_original_colors` is set.
-fn emitEditorDecorationToolCell(
+/// A decoration tool cell's GRAPHIC stack - the scene's composition at
+/// cell scale, SHARED by the mission editor's palette cell and the hub
+/// editor's (the 4-5d reuse): back layers (`behind`), then the base, then
+/// overlay layers, all sharing one fitted rect (layers are validated to
+/// match the base's pixel dims, so one fit covers the whole stack).
+/// Tints follow the scene's decoration pass: base + layers at their own
+/// color_index into the world gradient - or UNTINTED when
+/// `keep_original_colors` is set. The BUTTON (action/payload/highlight)
+/// stays per-editor: the mission cell's `emitEditorToolCellButton`, the
+/// hub cell's own emission.
+pub fn emitDecorationCellGraphics(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     cell: Rectangle,
-    tool: types.EditorToolId,
     type_definition: types.DecorationTypeDef,
-    world_gradient: [types.gradient_color_count]types.Color,
-    button_color: Color,
-    tooltip_header: []const u8,
-    active_tool: types.EditorToolId,
+    world_gradient: [types.gradient_color_count]Color,
 ) !void {
-    try emitEditorToolCellButton(
-        elements,
-        allocator,
-        cell,
-        tool,
-        button_color,
-        tooltip_header,
-        active_tool,
-    );
     const fitted = scaleToFit(cell, type_definition.pixel_dims.x, type_definition.pixel_dims.y);
 
     // Base + layers untinted (pure white) when keep_original_colors is
@@ -423,6 +414,31 @@ fn emitEditorDecorationToolCell(
             world_gradient,
         );
     }
+}
+
+/// Emit a DECORATION palette tool cell: the tool button + the shared
+/// graphic stack (`emitDecorationCellGraphics`).
+fn emitEditorDecorationToolCell(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    cell: Rectangle,
+    tool: types.EditorToolId,
+    type_definition: types.DecorationTypeDef,
+    world_gradient: [types.gradient_color_count]types.Color,
+    button_color: Color,
+    tooltip_header: []const u8,
+    active_tool: types.EditorToolId,
+) !void {
+    try emitEditorToolCellButton(
+        elements,
+        allocator,
+        cell,
+        tool,
+        button_color,
+        tooltip_header,
+        active_tool,
+    );
+    try emitDecorationCellGraphics(elements, allocator, cell, type_definition, world_gradient);
 }
 
 /// One decoration layer's image in a palette tool cell (the fitted rect
