@@ -275,7 +275,10 @@ pub fn buildHubEditorBottomBar(
 }
 
 /// One NPCs-group cell (the fixed NpcType pair): the button + the NPC's
-/// sprite at half scale.
+/// entity-frame art at the mission editor's entity-cell fit (512x640,
+/// aspect-preserved), tinted with the player gradient at index 0 - the
+/// world scene's `npcEntityDrawable` convention (the npcs/ art is
+/// grayscale, the same convention as entity art).
 fn emitHubNpcCell(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -302,19 +305,19 @@ fn emitHubNpcCell(
         .highlighted = std.meta.eql(hub_editor.active_tool, .{ .npc = npc_type }),
         .tooltip = .{ .header = try spanRow(allocator, text(try std.fmt.allocPrint(allocator, "Place a {s} NPC", .{@tagName(npc_type)}))) },
     } });
-    const fitted = editor_shell.scaleToFit(cell, tool_graphic_tile_size, 2 * tool_graphic_tile_size);
+    const fitted = editor_shell.scaleToFit(
+        cell,
+        editor_shell.editor_entity_frame_width,
+        editor_shell.editor_entity_frame_height,
+    );
     try elements.append(allocator, .{ .image = .{
         .sprite_id = npc_type.spriteId(),
-        .screen_position = .{
-            .x = fitted.x + @divTrunc(fitted.width - @divTrunc(fitted.width, 2), 2),
-            .y = fitted.y + @divTrunc(fitted.height - @divTrunc(fitted.height, 2), 2),
-        },
-        .width = @divTrunc(fitted.width, 2),
-        .height = @divTrunc(fitted.height, 2),
-        .color = no_tint_color,
+        .screen_position = fitted.position(),
+        .width = fitted.width,
+        .height = fitted.height,
+        .color = active_theme.player_gradient.colors[0],
         .blocks_input = false,
     } });
-    _ = active_theme;
 }
 
 /// One Missions-group cell: the flag graphic + the mission's name across
@@ -1037,6 +1040,54 @@ test "buildHubEditorBottomBar: the fixed pair - Select + Tile cells, the active 
         },
         else => {},
     };
+}
+
+test "buildHubEditorBottomBar: NPC cells - entity-frame fit, the world's player[0] tint" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const player_zero: Color = .{ .r = 7, .g = 8, .b = 9 };
+    const black: Color = .{ .r = 0, .g = 0, .b = 0 };
+    const test_theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = .{ player_zero, black, black, black, black, black } },
+    };
+    const test_metrics = ui_element.FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+    const campaign_editor = types.CampaignEditor{
+        .start_hub = 0,
+        .hubs = &.{.{ .handle = 0, .name = "Alpha", .position = .{ .x = 0, .y = 0 } }},
+        .missions = &.{},
+        .decoration_types = &.{},
+        .next_handle = 1,
+    };
+    var collapsed = [3]bool{ false, true, true };
+    var scroll_offsets = [3]i32{ 0, 0, 0 };
+    var elements: UiElementList = .empty;
+    defer elements.deinit(arena.allocator());
+    try buildHubEditorBottomBar(&elements, arena.allocator(), test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .active_tool = .select }, test_theme, &collapsed, &scroll_offsets);
+
+    // One art image per NPC cell: the entity-frame 512x640 aspect (the
+    // mission editor's entity-cell fit, height-limited to 204x256 in the
+    // square cell) + the player gradient's index 0 (the world scene's
+    // npcEntityDrawable tint).
+    const expected_ids = [_][]const u8{ "npcs/gear_upgrader", "npcs/dream_guide" };
+    for (expected_ids) |expected_id| {
+        var found: ?ui_element.Image = null;
+        for (elements.items) |element| switch (element) {
+            .image => |image| {
+                if (std.mem.eql(u8, image.sprite_id, expected_id)) found = image;
+            },
+            else => {},
+        };
+        const image = found orelse return error.TestUnexpectedResult;
+        try std.testing.expect(std.meta.eql(player_zero, image.color));
+        try std.testing.expectEqual(@as(i32, 256), image.height);
+        try std.testing.expectEqual(@as(i32, 204), image.width);
+        try std.testing.expect(!image.blocks_input);
+    }
 }
 
 test "buildHubEditorInspector: the exit summary, the NPC placeholder, the empty default" {
