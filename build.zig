@@ -420,6 +420,15 @@ pub fn build(b: *std.Build) !void {
     tests.root_module.addImport("generated_sprite_metadata", sprite_metadata_module);
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
+    // Also install the test binary at a STABLE path: zig prints the pass
+    // count only when the run step actually EXECUTES, so a fully-cached
+    // run is silent - scripts/test.sh runs the installed binary for the
+    // count instead of fishing .zig-cache for it (the AGENTS
+    // anti-pattern; see the script). The install rides the test step,
+    // so zig-out/bin/test always matches the sources the step just
+    // built (a cached install means the cached binary is current).
+    const install_tests = b.addInstallArtifact(tests, .{});
+    test_step.dependOn(&install_tests.step);
 
     // === Sound asset overview (scripts/sound_report.sh) ===
     // A host tool that walks the engine's enums and writes sound_report.md -

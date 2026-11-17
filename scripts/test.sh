@@ -105,7 +105,17 @@ if [ -n "$failures" ]; then
 fi
 
 # The pass count line (e.g. "All 161 tests passed." or "139 pass, 1 fail").
+# zig prints it ONLY when the run step actually EXECUTES - a fully-cached
+# run is silent (the silence that once sent an agent fishing in .zig-cache
+# for a count and corrupting a manifest - the AGENTS "don't fish" rule
+# fired for real). The test binary is installed at a stable path instead
+# (build.zig wires the install into the test step), so when zig's output
+# lacks the count, run the installed binary for it: the suite executes
+# exactly once either way (fresh -> zig ran it, cached -> this fallback).
 summary="$(printf '%s\n' "$output" | grep -E "All [0-9]+ tests passed|[0-9]+ pass, [0-9]+ fail" | sort -u || true)"
+if [ -z "$summary" ] && [ -x ./zig-out/bin/test ]; then
+    summary="$(./zig-out/bin/test 2>&1 | grep -E "All [0-9]+ tests passed|[0-9]+ pass, [0-9]+ fail" | sort -u || true)"
+fi
 if [ -n "$summary" ]; then
     printf '%s\n' "$summary"
 fi

@@ -94,7 +94,10 @@ Hygiene rules that keep the above true in practice:
   failures, and prints a final `PASS (exit 0)` / `FAIL (exit N)`. **Trust the
   exit code, not the text.** Don't fish for test binaries in `.zig-cache/o/`
   to "check" - `find` races the build and returns stale binaries; the exit
-  code is authoritative.
+  code is authoritative. (Need the pass count for a DONE entry? It prints
+  only when the run step actually executes - on a fully-cached run
+  `scripts/test.sh` gets it from `zig-out/bin/test`, the stable path the
+  test step installs for exactly this - never the cache.)
   `scripts/test.sh --raw` prints the full verbatim output if needed.
 - OK to run these directly without asking
 
