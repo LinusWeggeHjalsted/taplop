@@ -386,6 +386,7 @@ working rules).
 - [campaign-editor slice 5a: the mission-editor hand-off framing](#campaign-editor-slice-5a-the-mission-editor-hand-off-framing)
 - [campaign-editor slice 5b: the campaign-context mission save](#campaign-editor-slice-5b-the-campaign-context-mission-save)
 - [campaign-editor slice 5c: campaign export + import (the STORE-zip pattern over the campaign dir)](#campaign-editor-slice-5c-campaign-export--import-the-store-zip-pattern-over-the-campaign-dir)
+- [campaign editor: the inspector rides the shared windowed renderer (slice-5c rider)](#campaign-editor-the-inspector-rides-the-shared-windowed-renderer-slice-5c-rider)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -23125,3 +23126,72 @@ the drive artifacts removed.
 
 1050 green. Slice 5 (the mission-editor hand-off + export/import) is
 COMPLETE: 5-0, 5a, 5b, 5c all landed.
+
+## campaign editor: the inspector rides the shared windowed renderer (slice-5c rider)
+
+The Open Mission Editor button (slice 5c) overflowed the campaign
+editor's inspector panel: the mission section grew to 13 row-units
+against the panel's 11 visible rows, pushing the button (and part of
+Import) below the fold onto the palette area. The fix chosen was the
+structural one - migrate the hand-emitted inspector onto the mission
+editor's generic machinery (the hub editor drill-in's precedent,
+`renderInspectorEntries`) instead of adding local windowing to the
+hand-emission - so windowing, scroll clamping, and the overflow
+scrollbar come by construction and the future UI file split
+(TODO's campaign_editor.zig split note) becomes a mostly-file-move.
+
+- **Two generic control variants** in `EditorInspectorControl`
+  (`src/ui/editor_inspector.zig`): `text_field` (a self-contained
+  TextFieldRef + value - for content whose values live outside the
+  entity/decoration/item contexts) and `action_button`
+  (`InspectorActionButton`: label + action + optional payload). Both
+  are self-contained, so `InspectorRenderContext` needed no new
+  member; they are not campaign-specific and are the seam any future
+  inspector surface uses.
+- **Entries builders in `campaign_editor.zig`**
+  (`campaignHubInspectorEntries` / `campaignMissionInspectorEntries`)
+  replace both hand-emitted arms (~360 lines) with entry lists + one
+  `renderInspectorEntries` call each. The dynamic labels (the start-hub
+  radio readback, the re-attach rows' attached-hub names, the armed
+  pick-mode hint) resolve at build time - the entries are built per
+  frame.
+- **Visual normalization**: the two drill-in buttons (Open Hub Editor /
+  Open Mission Editor) previously emitted as label-less full-height
+  buttons; they now follow the mission editor's row convention (a
+  label line - "Drill-in" - plus the control-line button). The
+  start-hub toggle likewise became the standard label + control row.
+- **Signature**: `buildCampaignEditorView` swapped its
+  `section_expanded` slice param for `ui_state: *UiState` (the
+  renderer requires it; the slice WAS `ui_state.editor_inspector_section_expanded`
+  - one source of truth). The wheel gate in `handleAnytimeInput`
+  (input_handlers.zig) extends to `.campaign_editor` + `inspector_open`
+  + the panel rect, sharing `editor_inspector_scroll` with the mission
+  and hub editors (mutually exclusive screens, same panel rect).
+
+Behavior contract: the mission section's windowing matches the
+mission editor's - entries render only when they FULLY fit, so at
+scroll 0 the Open Mission Editor button is absent (13 > 11 units) and
+scrolling two rows brings it in; the scroll upper bound clamps in the
+builder (max_scroll = 2 for the mission section).
+
+Tests: the campaign view tests rewritten against the entries model
+(the mission test now asserts the windowing contract - button absent
+at scroll 0, present at scroll 2, a seeded 99 clamps to 2, the
+scrollbar track present on overflow); a campaign-editor wheel-routing
+handler test (inside scrolls / outside untouched / closed falls
+through - the mission editor test's shape). 1051 green.
+Runtime-verified over the console channel on the real binary: campaign
+editor opened via the browser, a mission selected (section expanded
+by click), the re-attach rows rendering at scroll 0 with the hand-off
+button correctly below the fold, `scroll -1` x3 (pointer inside the
+panel) driving the offset 0 -> 1 -> 2 (clamped), the Open Mission
+Editor button then visible at y 1592-1704 (inside the panel) and its
+click landing in the mission editor (screen `.editor`, the hand-off),
+clean exit 0. The drive wrote into the session's persistent dir only
+(no campaign save performed - selection is transient view state).
+
+Session note: a cache-manifest surgery mishap (deleting a referenced
+test binary out of .zig-cache/o to chase a count) corrupted the build
+cache's manifest and needed a full .zig-cache prune - the AGENTS
+"trust the exit code, don't fish in .zig-cache" rule fired for real;
+the prune + cold rebuild is ~40s and fully green after.

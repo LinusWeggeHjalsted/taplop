@@ -431,8 +431,8 @@ work:
         src/campaign_editor/{handlers,io,load}.zig already mirror
         src/editor/{handlers,mission_io}.zig; the gap is the UI:
         src/ui/campaign_editor.zig carries the map view + BOTH pickers
-        + the inspector + the metadata sidebar + the palette + ~900
-        lines of tests (~1,900 total - the editor_inspector drift
+        + the inspector + the metadata sidebar + the palette + ~950
+        lines of tests (~1,950 total - the editor_inspector drift
         pattern; see the split note in Tech Debt). Split along the
         mission editor's seams: the tool palette → an editor_shell
         sibling, the inspector + metadata sidebar → an

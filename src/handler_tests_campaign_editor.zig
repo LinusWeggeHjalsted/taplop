@@ -675,6 +675,45 @@ test "campaign editor: right-click on a mission edge deletes the mission (the ed
     try testing.expectEqual(@as(usize, 2), history.current_state.campaign_editor.?.hubs[0].grid.exit_placements.len);
 }
 
+test "campaign editor: the inspector panel owns the wheel" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    var history = harness.newHistory(campaignEditorEventFixtureState());
+    runToIdle(&history);
+
+    const input_handlers_mod = @import("input_handlers.zig");
+    const ui = @import("ui.zig");
+
+    // Inside the open panel (open by default): one wheel-down notch =
+    // one row down; wheel-up at the top clamps at 0 (the mission editor's
+    // exact model - the shared panel rect, the shared scroll state).
+    const inside: types.ScreenPosition = .{
+        .x = 512,
+        .y = ui.editorInspectorPanelRect().y + 100,
+    };
+    input_handlers_mod.handleAnytimeInput(&history, .{ .scroll_delta = -1 }, null, inside, &.{});
+    try testing.expectEqual(@as(i32, 1), history.session.ui_state.editor_inspector_scroll);
+    input_handlers_mod.handleAnytimeInput(&history, .{ .scroll_delta = 1 }, null, inside, &.{});
+    try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_inspector_scroll);
+
+    // Outside the panel (top-right, over no UI): the offset is untouched.
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .scroll_delta = -1 },
+        null,
+        .{ .x = 2000, .y = 300 },
+        &.{},
+    );
+    try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_inspector_scroll);
+
+    // Panel closed: the routing falls through even inside the rect.
+    history.current_state.campaign_editor.?.inspector_open = false;
+    input_handlers_mod.handleAnytimeInput(&history, .{ .scroll_delta = -1 }, null, inside, &.{});
+    try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_inspector_scroll);
+}
+
 test "campaign editor: the mission tool's draw gesture - arm, place, cancel via clean right-click" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

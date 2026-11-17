@@ -594,11 +594,11 @@ pub fn view(
                 if (session.ui_state.text_edit != null) &session.ui_state.text_edit.? else null,
                 drag_override,
                 session.campaign_background_stems,
-                &session.ui_state.editor_inspector_section_expanded,
                 mission_draw,
                 pointer_map_position,
                 reattach_end,
                 session.editor_local_missions,
+                &session.ui_state,
             ) catch @panic("failed to build campaign editor view");
             ui.buildCampaignEditorPrimaryActions(
                 &ui_elements,

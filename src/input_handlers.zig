@@ -4603,15 +4603,19 @@ pub fn handleAnytimeInput(
                 null
         else
             null;
-        // The open inspector panel owns the wheel on EITHER editor
-        // surface (the inspector reuse: the mission editor's panel + the
-        // hub editor drill-in's - the same rect, the same scroll state).
+        // The open inspector panel owns the wheel on EVERY editor surface
+        // (the inspector reuse: the mission editor's panel, the campaign
+        // editor's, and the hub editor drill-in's - the same rect, the
+        // same scroll state).
         if (((history.current_state.screen == .editor and
             history.current_state.editor != null and
             history.current_state.editor.?.inspector_open) or
             (history.current_state.screen == .hub_editor and
                 history.current_state.hub_editor != null and
-                history.current_state.hub_editor.?.inspector_open)) and
+                history.current_state.hub_editor.?.inspector_open) or
+            (history.current_state.screen == .campaign_editor and
+                history.current_state.campaign_editor != null and
+                history.current_state.campaign_editor.?.inspector_open)) and
             ui.editorInspectorPanelRect().contains(pointer_position))
         {
             // Editor inspector content scroll (vertical): one wheel notch =

@@ -3922,7 +3922,12 @@ The slice-3 interaction design. The state shape is settled separately
   inspector (left), metadata sidebar (right), Save + Validate primary
   actions (top-right; ctrl+S saves the FULL campaign - the per-screen
   granularity: see The hub editor surface). No Test/Playtest - there is
-  nothing to play in a campaign.
+  nothing to play in a campaign. The inspector CONTENT rides the
+  mission editor's shared windowed renderer (`renderInspectorEntries` -
+  the hub editor drill-in's pattern): row-unit windowing, wheel scroll +
+  overflow scrollbar identical by construction, so the mission section's
+  full content (name, direction, re-attach rows, Import, the hand-off
+  button) scrolls instead of overflowing the panel.
 - **Tools** (the active-tool model):
   - select: single-select v1 (multi-select + multi-reposition of hubs
     is future polish - TODO); click-select + drag-move commits one

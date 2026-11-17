@@ -955,6 +955,15 @@ const EditorInspectorControl = union(enum) {
     /// section detail rows - name or one stat): the shared text-field
     /// element, reading the selected slot's item.
     inventory_item_text: types.TextFieldId,
+    /// A self-contained text field (the value rides the entry, built per
+    /// frame by the surface): rows whose values live outside the
+    /// entity/decoration/item contexts (the campaign editor's inspector
+    /// fields - hub + mission names, the mission direction).
+    text_field: struct { ref: types.TextFieldRef, value: []const u8 },
+    /// A payload-carrying panel button in the control column (the
+    /// campaign editor's rows - re-attach picks, import, drill-ins, and
+    /// the radio-style start-hub toggle whose label carries the state).
+    action_button: InspectorActionButton,
 };
 
 /// One line of inspector content - per the coupling contract in DESIGN →
@@ -1626,10 +1635,11 @@ fn buildEditorInspectorContent(
 /// The inspector content's GENERIC half: the windowed entries -> elements
 /// emission - panel geometry, row-unit math + scroll clamping, section
 /// strips, field rows, controls, the overflow scrollbar. Shared by every
-/// inspector surface: the mission editor's panel (the resolve half above)
-/// and the hub editor drill-in's decoration arm. The caller resolves the
-/// inspector target, builds the entries, and packs the context; exactly
-/// one context is populated (the one its entries read).
+/// inspector surface: the mission editor's panel (the resolve half
+/// above), the hub editor drill-in's decoration arm, and the campaign
+/// editor's hub/mission inspector. The caller resolves the target, builds
+/// the entries, and packs the context; exactly one context is populated
+/// (the one its entries read) - or none, for self-contained controls.
 pub fn renderInspectorEntries(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -1822,6 +1832,25 @@ pub fn renderInspectorEntries(
                         font_metrics,
                         toggle.current,
                         toggle.action,
+                        button_color,
+                        control_rect,
+                        active_theme,
+                    ),
+                    .text_field => |field| try emitTextFieldUi(
+                        elements,
+                        allocator,
+                        font_metrics,
+                        text_edit,
+                        field.ref,
+                        field.value,
+                        control_rect,
+                        active_theme,
+                    ),
+                    .action_button => |action_row| try emitInspectorActionButton(
+                        elements,
+                        allocator,
+                        font_metrics,
+                        action_row,
                         button_color,
                         control_rect,
                         active_theme,
@@ -2606,6 +2635,53 @@ fn emitInspectorToggle(
     try elements.append(allocator, .{ .text_label = .{
         .text = label,
         .screen_position = rect
+            .placeCenter(label_width, editor_group_header_font_size)
+            .position(),
+        .font_size = editor_group_header_font_size,
+        .color = active_theme.lightest,
+        .blocks_input = false,
+    } });
+}
+
+/// A field-row action button: the label + action the surface resolves
+/// (the current state rides the label - e.g. the attached hub's name) +
+/// the optional payload its commit carries.
+const InspectorActionButton = struct {
+    label: []const u8,
+    action: types.Action,
+    payload: ?types.ButtonPayload,
+};
+
+/// The action-button control: a full-width panel-backed button in the
+/// control column, centered label - `emitPanelButton`'s shape plus the
+/// payload the row carries.
+fn emitInspectorActionButton(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    row: InspectorActionButton,
+    button_color: Color,
+    control_rect: Rectangle,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = control_rect.position(),
+        .width = control_rect.width,
+        .height = control_rect.height,
+        .color = button_color,
+    } });
+    try elements.append(allocator, .{ .button = .{
+        .screen_position = control_rect.position(),
+        .width = control_rect.width,
+        .height = control_rect.height,
+        .action = row.action,
+        .payload = row.payload,
+    } });
+    const label_width = font_metrics.measureSpanWidth(text(row.label), editor_group_header_font_size);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = row.label,
+        .screen_position = control_rect
             .placeCenter(label_width, editor_group_header_font_size)
             .position(),
         .font_size = editor_group_header_font_size,
