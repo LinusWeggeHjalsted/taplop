@@ -378,6 +378,7 @@ working rules).
 - [campaign-editor slice 4-7: hub-content validation findings folded into the campaign Validate](#campaign-editor-slice-4-7-hub-content-validation-findings-folded-into-the-campaign-validate)
 - [Gear sprites sub-layer removed (out of scope)](#gear-sprites-sub-layer-removed-out-of-scope)
 - [The review docs removed (PROJECTREVIEW.md + REVIEWPLAN.md)](#the-review-docs-removed-projectreviewmd--reviewplanmd)
+- [The shipped-defaults binding-lint test + the hub_editor context bugs it caught](#the-shipped-defaults-binding-lint-test--the-hubeditor-context-bugs-it-caught)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -22711,3 +22712,58 @@ attributed where the surrounding text already carries the rationale
 (Part 6's vestigial `replaying` gate, Part 9's marquee-drag posture).
 Historical DONE entries that still name the file are left as written -
 entries are snapshots, not maintained records.
+
+## The shipped-defaults binding-lint test + the hub_editor context bugs it caught
+
+The punch-list's HIGH PRIORITY item: `data/default_settings.txt` carried
+no conflict lint - the runtime warn+drop+repair machinery covered USER
+files only, and our own shipped file was assumed clean (DONE entries
+even referenced a "shipped-defaults binding-lint test" that never
+existed in the tree - the commit that added that claim touched only
+DONE.md/TODO.md; doc drift, now made true). The fix: the
+content-validation suite's settings branch now passes its warnings list
+into the real `loadSettings`, so the shipped file gets the SAME lint a
+user file gets (same-combo co-firing pairs, unknown actions,
+unproducible input ids) and a defect becomes a test failure instead of
+a silent first-listed-wins drop.
+
+The lint lit up immediately - and not over a redundant combo this
+time. Findings, root-caused:
+
+- **`BindingContextSet.intersects` never checked `hub_editor`** - the
+  hub-editor landing wired the screen's active set ({anytime,
+  hub_editor}) and the consumption sites, but not the predicate that
+  gates bindings. Every action deriving `{hub_editor}` was therefore
+  keyboard-dead, including the shipped ctrl+S save_hub (its DONE entry
+  says "runtime-verified" - the drive fired the action through the
+  console channel, which bypasses the binding gate; the keypress was
+  never actually reachable). Fixed: hub_editor joins the pair checks.
+- **`bindingContextsCoFire` skipped hub_editor too** - the conflict
+  lint was blind to co-firing pairs involving hub-editor bindings
+  ({anytime} vs {hub_editor} co-fire on the hub editor screen). Fixed
+  the same way (it's the same "one of game/editors/menu active" family).
+- **The selection trio + tool-cycling chords were hub-editor-dead by
+  derivation**: the drill-in wired idle consumption arms for
+  delete_editor_selection / clear_editor_selection / select_editor_all
+  and the Tab cycle, but those actions derived {editor} (or
+  {editor, campaign_editor}) - disjoint from the hub editor screen's
+  set, so the keys never fired despite the wired handlers. The shipped
+  file even carried duplicate `context hub_editor` copies of those
+  bindings - the author's intent, inert because context lines are
+  informational (contexts derive from the action). Fixed: the trio now
+  derives {editor, hub_editor}, the chords {editor, campaign_editor,
+  hub_editor}; the five duplicate shipped entries deleted (one entry
+  per combo covers all editors via derived contexts).
+
+Tests: the predicates are pinned by an EXHAUSTIVE walk over
+BindingContext's tags (inline for over `@"enum".field_names`): same
+context co-fires with itself, distinct screen contexts never co-fire
+(anytime rides along everywhere except the popup), and a binding for
+context c is active exactly on frame sets containing c - a future
+context added without wiring both predicates fails there (this bug
+class shipped invisibly precisely because nothing enumerated the
+tags). Dispatch pins in input.zig: ctrl+S now fires save_hub on the
+hub set (both siblings dormant), the Tab chords cycle on all three
+editor sets, and the selection trio fires on the mission + hub editor
+sets (dormant in game). DESIGN's Input section updated (three editors,
+the trio + chords on all three).

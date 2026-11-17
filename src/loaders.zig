@@ -237,8 +237,9 @@ pub fn loadSettings(
     base: ?Settings,
     /// Receives binding-level config warnings (unknown action; duplicate
     /// or conflicting combos - see the conflict scan below). Null on the
-    /// defaults path (`loadSettingsWrapped`) - the shipped file is
-    /// round-trip-tested, so binding warnings there are dev noise.
+    /// defaults path (`loadSettingsWrapped`) - the runtime startup pass
+    /// doesn't pop warnings over our own shipped file; the shipped file's
+    /// conflict lint is the content-validation test (zero warnings asserted).
     warnings: ?*std.ArrayList([]const u8),
 ) !Settings {
     _ = try validateFileFormatVersion(sections, "Metadata", settings_file_format_version, settings_file_format_version);

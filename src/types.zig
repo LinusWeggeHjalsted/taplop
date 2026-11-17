@@ -1038,6 +1038,7 @@ pub const BindingContextSet = struct {
             (self.game and other.game) or
             (self.editor and other.editor) or
             (self.campaign_editor and other.campaign_editor) or
+            (self.hub_editor and other.hub_editor) or
             (self.menu and other.menu) or
             (self.error_popup and other.error_popup);
     }
@@ -1047,20 +1048,64 @@ pub const BindingContextSet = struct {
 /// same-combo pair on them would co-fire - the binding-CONFLICT predicate
 /// at load + in the keybind UI's steal scan). NOT plain intersection: the
 /// activation model (see DESIGN → Input → Binding contexts) has exactly
-/// one of game/editor/campaign_editor/menu active with `anytime` riding
-/// along (everywhere except the modal error popup), so {anytime} ∩ {game}
+/// one of game/editor/campaign_editor/hub_editor/menu active with `anytime`
+/// riding along (everywhere except the modal error popup), so {anytime} ∩ {game}
 /// is empty YET both are active in-game - intersection would miss the
-/// conflict. Cross-screen sets (game vs editor vs campaign_editor) never
-/// co-fire; `error_popup` is active ALONE (co-fires only with itself).
+/// conflict. Cross-screen sets (game vs editor vs campaign_editor vs
+/// hub_editor) never co-fire; `error_popup` is active ALONE (co-fires only
+/// with itself).
 pub fn bindingContextsCoFire(a: BindingContextSet, b: BindingContextSet) bool {
     if (a.error_popup or b.error_popup) {
         return a.error_popup and b.error_popup;
     }
     if (a.anytime and b.anytime) return true;
-    if (a.anytime and (b.game or b.editor or b.campaign_editor or b.menu)) return true;
-    if (b.anytime and (a.game or a.editor or a.campaign_editor or a.menu)) return true;
+    if (a.anytime and (b.game or b.editor or b.campaign_editor or b.hub_editor or b.menu)) return true;
+    if (b.anytime and (a.game or a.editor or a.campaign_editor or a.hub_editor or a.menu)) return true;
     return (a.game and b.game) or (a.editor and b.editor) or
-        (a.campaign_editor and b.campaign_editor) or (a.menu and b.menu);
+        (a.campaign_editor and b.campaign_editor) or (a.hub_editor and b.hub_editor) or
+        (a.menu and b.menu);
+}
+
+test "BindingContextSet: intersects + coFire cover every context" {
+    // Exhaustive over the enum: the hub_editor landing shipped with BOTH
+    // predicates skipping that context - a whole screen's bindings dead
+    // (intersects) and the conflict lint blind there (coFire) - invisible
+    // because nothing enumerated the tags. A future context added to
+    // BindingContext without wiring it into both predicates fails here.
+    // (inline for: the set's @field assignment needs a comptime name.)
+    const context_names = @typeInfo(BindingContext).@"enum".field_names;
+    inline for (context_names) |name| {
+        const context = @field(BindingContext, name);
+        var alone: BindingContextSet = .{};
+        @field(alone, name) = true;
+
+        // Same context co-fires with itself; distinct screen contexts never
+        // do (exactly one of game/editors/menu is active per frame) - the
+        // exception is anytime, which rides along on every non-popup
+        // screen and is swallowed BY the popup.
+        inline for (context_names) |other_name| {
+            const other = @field(BindingContext, other_name);
+            var other_alone: BindingContextSet = .{};
+            @field(other_alone, other_name) = true;
+            const rides_along = (context == .anytime and other != .error_popup) or
+                (other == .anytime and context != .error_popup);
+            const expected = context == other or rides_along;
+            try std.testing.expectEqual(expected, bindingContextsCoFire(alone, other_alone));
+        }
+
+        // A binding for context c is active exactly on frame sets that
+        // contain c (intersects must check EVERY member, hub_editor
+        // included): with anytime riding along, {anytime, c} fires it and
+        // {anytime, d} (d != c) does not - except c = anytime itself,
+        // which is active on every non-popup frame set.
+        inline for (context_names) |frame_name| {
+            const frame_context = @field(BindingContext, frame_name);
+            var frame: BindingContextSet = .{ .anytime = true };
+            @field(frame, frame_name) = true;
+            const expected = context == .anytime or context == frame_context;
+            try std.testing.expectEqual(expected, alone.intersects(frame));
+        }
+    }
 }
 
 /// The single `BindingContext` written to a binding's settings-file line -
@@ -1201,10 +1246,14 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .open_editor_skill_picker,
         .close_editor_picker,
         .select_editor_utility_skill,
+        => .{ .editor = true },
+        // The selection trio - consumed by BOTH editor arms (the mission
+        // editor's + the hub editor drill-in's identical idle arms in
+        // input_handlers.zig), so the derived contexts name both screens.
         .delete_editor_selection,
         .clear_editor_selection,
         .select_editor_all,
-        => .{ .editor = true },
+        => .{ .editor = true, .hub_editor = true },
         // The editor browser + its in-window controls - EDITOR-FAMILY:
         // the browser opens over BOTH editors (the keyboard shortcuts
         // fire on either editor screen; from the main menu only its
@@ -1218,9 +1267,14 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .select_editor_campaign_tab,
         .open_editor_campaign_row,
         .import_editor_mission,
+        => .{ .editor = true, .campaign_editor = true },
+        // The tool-cycling chords (Tab / shift+Tab) - all THREE editors
+        // (the hub editor's cycle rides the same consumption arm in
+        // handleAnytimeInput). Split from the browser family: the browser
+        // is mission/campaign-editor-only.
         .cycle_editor_tool_forward,
         .cycle_editor_tool_backward,
-        => .{ .editor = true, .campaign_editor = true },
+        => .{ .editor = true, .campaign_editor = true, .hub_editor = true },
         // The New pair is SPLIT by editor screen (the round-three punch
         // fix): ctrl+N makes a fresh mission on the mission editor, a
         // fresh campaign on the campaign editor - same chord, different

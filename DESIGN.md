@@ -1524,10 +1524,12 @@ that true (`src/session_log_bundle.zig`):
   `move_cursor_*`; the handler-side pending_error gate remains as the
   wheel-redirect + defense-in-depth). Otherwise the screen picks its
   context and `anytime` rides along (level/hub → game, editor → editor,
-  campaign_editor → campaign_editor - the TWO EDITORS have SEPARATE
+  campaign_editor → campaign_editor, hub_editor → hub_editor - the THREE
+  EDITORS have SEPARATE
   contexts, so the same combo can bind once per editor (ctrl+S is
   save_editor_mission on the mission editor, save_campaign on the
-  campaign editor; Digit1 is the mission palette's select tool there, the
+  campaign editor, save_hub on the hub editor; Digit1 is the mission
+  palette's select tool there, the
   campaign map's here) without shadowing - the derived gate keeps each
   dormant on the other's screen; main_menu → menu, replay_viewer → none
   yet). An editor
@@ -1542,7 +1544,12 @@ that true (`src/session_log_bundle.zig`):
   browser still OPENS from the main menu via its buttons
   (clicks bypass the context gate; the consumption sites keep their
   `editorBrowserReachableScreen` gate for those), but a main-menu surface
-  has no editor semantics for the shortcuts. Button clicks bypass the gate
+  has no editor semantics for the shortcuts. The selection trio
+  (delete_editor_selection, clear_editor_selection, select_editor_all)
+  and the tool-cycling chords (cycle_editor_tool_forward/backward) fire
+  on ALL THREE editors - the hub editor drill-in consumes them through
+  its own idle arms (mirrors of the mission editor's), so the derived
+  contexts name every consuming screen. Button clicks bypass the gate
   entirely (`applyAction` sets actions directly) - buttons only render in
   their context.
 - **Action↔context classification is declared + compiler-enforced.**

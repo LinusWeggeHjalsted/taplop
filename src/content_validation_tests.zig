@@ -21,8 +21,8 @@ const types = @import("types.zig");
 const FileSource = file_source_mod.FileSource;
 
 /// Classify a config file path and run its loader + key validation. Returns
-/// an error if the parse or load fails; appends key-validation warnings to
-/// `warnings` (and the caller asserts none). The classification is by path
+/// an error if the parse or load fails; appends key-validation + binding
+/// warnings to `warnings` (and the caller asserts none). The classification is by path
 /// pattern - the one piece of wiring that maps paths to loaders + key maps.
 fn validateConfigFile(
     path: []const u8,
@@ -37,7 +37,12 @@ fn validateConfigFile(
     // grammar), so each branch parses with its own list before loading.
     if (std.mem.eql(u8, path, "data/default_settings.txt")) {
         const sections = try parser.parseConfigFile(bytes, allocator, &parser.settings_sections);
-        _ = try loaders.loadSettings(sections, allocator, null, null);
+        // warnings passed so the shipped file's BINDINGS get the same conflict
+        // lint a user file gets (same-combo co-firing pairs, unknown actions,
+        // unproducible input ids): a dead-on-arrival combo shipped in the
+        // defaults becomes a test failure instead of a silent first-listed-
+        // wins drop invisible at runtime (the save_campaign ctrl+S class).
+        _ = try loaders.loadSettings(sections, allocator, null, warnings);
         parser.validateKeys(sections, parser.settings_key_map, path, allocator, warnings);
     } else if (std.mem.eql(u8, path, "data/color_themes.txt")) {
         const sections = try parser.parseConfigFile(bytes, allocator, &parser.color_theme_sections);
@@ -138,9 +143,10 @@ test "shipped content: every config .txt parses, loads, and has no unknown keys"
     // Sanity: at least the known config files are present.
     try std.testing.expect(config_count >= 16);
 
-    // No key-validation warnings across all shipped config.
+    // No warnings across all shipped config (key validation + the settings
+    // file's binding lint).
     if (warnings.items.len > 0) {
-        std.debug.print("\nkey-validation warnings in shipped content:\n", .{});
+        std.debug.print("\nwarnings in shipped content:\n", .{});
         for (warnings.items) |warning| std.debug.print("  {s}\n", .{warning});
         return error.UnknownKeysInShippedContent;
     }

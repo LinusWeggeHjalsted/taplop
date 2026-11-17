@@ -80,23 +80,6 @@ action select_editor_all
 context editor
 
 input_type key
-input_name Delete
-action delete_editor_selection
-context hub_editor
-
-input_type key
-input_name KeyD
-ctrl true
-action clear_editor_selection
-context hub_editor
-
-input_type key
-input_name KeyA
-ctrl true
-action select_editor_all
-context hub_editor
-
-input_type key
 input_name PageDown
 action zoom_in
 context anytime
@@ -265,17 +248,6 @@ input_name Tab
 shift true
 action cycle_editor_tool_backward
 context editor
-
-input_type key
-input_name Tab
-action cycle_editor_tool_forward
-context hub_editor
-
-input_type key
-input_name Tab
-shift true
-action cycle_editor_tool_backward
-context hub_editor
 
 input_type key
 input_name Digit1

@@ -1599,6 +1599,51 @@ test "translateInput: editor save/export chords reach the anytime flags" {
     try std.testing.expect(!result.anytime.in_game.toggle_skills);
 }
 
+test "translateInput: the selection trio fires on the mission editor AND the hub editor sets" {
+    // The trio (Delete / ctrl+D / ctrl+A) is consumed by identical idle
+    // arms on both editor screens (input_handlers.zig), so the derived
+    // contexts name both - one binding set serves the mission editor and
+    // the hub editor drill-in. Before the hub-editor contexts landed,
+    // the keys were dead on the hub screen while its consumption arms
+    // sat wired (the shipped file even carried useless duplicate
+    // context hub_editor entries - context lines are ignored, contexts
+    // are derived).
+    const bindings = [_]InputBinding{
+        .{ .input = .{ .key = "Delete" }, .action = .delete_editor_selection },
+        .{ .input = .{ .key = "KeyD" }, .modifiers = .{ .ctrl = true }, .action = .clear_editor_selection },
+        .{ .input = .{ .key = "KeyA" }, .modifiers = .{ .ctrl = true }, .action = .select_editor_all },
+    };
+    const settings: Settings = .{ .input_bindings = &bindings };
+    const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
+    const press_all = PlatformInput{
+        .events = &.{
+            .{ .key_down = "Delete" },
+            .{ .key_down = "ControlLeft" },
+            .{ .key_down = "KeyD" },
+            .{ .key_down = "KeyA" },
+        },
+        .viewport = .{ .width = 2560, .height = 2160 },
+    };
+
+    for ([_]types.BindingContextSet{
+        .{ .anytime = true, .editor = true },
+        .{ .anytime = true, .hub_editor = true },
+    }) |contexts| {
+        var input_state: InputState = .{};
+        const result = translateInput(press_all, &input_state, settings, camera, 0, null, null, contexts);
+        try std.testing.expect(result.idle.delete_editor_selection);
+        try std.testing.expect(result.idle.clear_editor_selection);
+        try std.testing.expect(result.idle.select_editor_all);
+    }
+
+    // Outside the editors the trio is dormant.
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(press_all, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .game = true });
+        try std.testing.expect(!result.idle.delete_editor_selection);
+    }
+}
+
 test "translateInput: ctrl+N is split by editor screen (new mission / new campaign)" {
     // The New pair's dispatch pin (the ctrl+S lesson: a binding with
     // every other site wired but no checkAction line is dead). The pair
@@ -1775,6 +1820,7 @@ test "translateInput: ctrl+S is save_campaign on the campaign editor set, save_e
     const bindings = [_]InputBinding{
         .{ .input = .{ .key = "KeyS" }, .modifiers = .{ .ctrl = true }, .action = .save_editor_mission },
         .{ .input = .{ .key = "KeyS" }, .modifiers = .{ .ctrl = true }, .action = .save_campaign },
+        .{ .input = .{ .key = "KeyS" }, .modifiers = .{ .ctrl = true }, .action = .save_hub },
         .{ .input = .{ .key = "KeyN" }, .modifiers = .{ .ctrl = true }, .action = .new_editor_mission },
         .{ .input = .{ .key = "KeyN" }, .modifiers = .{ .ctrl = true }, .action = .new_editor_campaign },
     };
@@ -1810,6 +1856,17 @@ test "translateInput: ctrl+S is save_campaign on the campaign editor set, save_e
         const result = translateInput(chord, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .campaign_editor = true });
         try std.testing.expect(result.anytime.save_campaign);
         try std.testing.expect(!result.anytime.save_editor_mission);
+    }
+    // The hub editor screen: the third save sibling fires, both other
+    // editors' are dormant (save_hub was dead from the hub editor's
+    // landing until the intersects fix - the hub_editor pair was never
+    // checked).
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(chord, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .hub_editor = true });
+        try std.testing.expect(result.anytime.save_hub);
+        try std.testing.expect(!result.anytime.save_editor_mission);
+        try std.testing.expect(!result.anytime.save_campaign);
     }
     // The New pair is split by editor screen (ctrl+N is a fresh mission
     // on the mission editor, a fresh campaign on the campaign editor).
@@ -1891,11 +1948,12 @@ test "translateInput: campaign tool keybinds bridge onto the campaign cell's cli
     }
 }
 
-test "translateInput: Tab / shift+Tab fire the tool-cycling chords on both editor sets" {
-    // The cycling actions are dual-context (editor + campaign_editor) -
-    // one binding pair serves both editors. While a text field is
-    // focused, ALL binding translation is suppressed (the text-input
-    // capture seam), so the chords never fight the field buffer.
+test "translateInput: Tab / shift+Tab fire the tool-cycling chords on all three editor sets" {
+    // The cycling actions are triple-context (editor + campaign_editor +
+    // hub_editor) - one binding pair serves all three editors. While a
+    // text field is focused, ALL binding translation is suppressed (the
+    // text-input capture seam), so the chords never fight the field
+    // buffer.
     const bindings = [_]InputBinding{
         .{ .input = .{ .key = "Tab" }, .action = .cycle_editor_tool_forward },
         .{ .input = .{ .key = "Tab" }, .modifiers = .{ .shift = true }, .action = .cycle_editor_tool_backward },
@@ -1917,6 +1975,7 @@ test "translateInput: Tab / shift+Tab fire the tool-cycling chords on both edito
     for ([_]types.BindingContextSet{
         .{ .anytime = true, .editor = true },
         .{ .anytime = true, .campaign_editor = true },
+        .{ .anytime = true, .hub_editor = true },
     }) |contexts| {
         var forward_state: InputState = .{};
         const forward_result = translateInput(press_tab, &forward_state, settings, camera, 0, null, null, contexts);

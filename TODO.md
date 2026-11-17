@@ -16,19 +16,6 @@ Test by running `zig build run` and clicking through.
 
 ## NEXT UP (not ordered - pick what progresses)
 
-- **HIGH PRIORITY - the shipped default_settings.txt carries no conflict
-  lint** (found in the punch-list session): the 3e wiring shipped
-  save_campaign's ctrl+S on the SAME combo + SAME context as
-  save_editor_mission's - first-listed-wins made the binding dead on
-  arrival, and the only detection was the runtime load warning + drop
-  + repair (silent to devs: the chord was "just dead" rather than
-  erroring). Nothing prevents the class from shipping again. Fix: a
-  test that loads the SHIPPED defaults (data/default_settings.txt
-  through the real loadSettings) + asserts ZERO binding warnings - a
-  same-combo co-firing pair in the shipped file becomes a test failure
-  instead of a silent runtime repair. (The runtime machinery itself is
-  sound - USER files are warned + repaired; the gap is only over our
-  own shipped file.)
 - **No-op clicks still play the action sound (session reflection,
       accepted-for-now)** - the fired-actions sound choke point queues at
       the ACTION layer, but a consumption arm can no-op silently (the
