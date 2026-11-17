@@ -483,10 +483,17 @@ fn emitEditorToolDeleteButton(
     } });
 }
 
+fn editorLevelTabsLeft(editor: types.Editor) i32 {
+    const leading_cells: i32 = if (editor.campaign_mission != null) 4 else 3;
+    return leading_cells * (top_bar_slot_size + ui_gap);
+}
+
 /// Editor top row: level tabs, emitted to the RIGHT of the global top
-/// bar's options + undo + redo buttons (those come from
-/// `buildGlobalTopBar` - the always-on-top layer; the tabs deliberately
-/// stay UNDER overlays). One 128-high panel-backed button per level (the
+/// bar's occupied leading cells (those come from `buildGlobalTopBar` - the
+/// always-on-top layer; the tabs deliberately stay UNDER overlays). The
+/// campaign hand-off's map-return cell shifts the row one cell right;
+/// standalone missions start immediately after redo. One 128-high
+/// panel-backed button per level (the
 /// palette group-header visual class), labeled with the level's name or
 /// "Level N" if unnamed. The ACTIVE tab is highlighted (lightest edge
 /// outline - the same path as tool cells); clicking switches the active
@@ -514,12 +521,12 @@ pub fn buildEditorLevelTabs(
     const p = active_theme.player_gradient.colors;
     const button_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
 
-    // Tabs start right of the global top bar's three cells (options + undo
-    // + redo joined by ui_gap in buildGlobalTopBar's Row; one more gap
-    // separates the tabs), flush against the top of the screen, and end at
-    // the pinned add-level "+" - one ui_gap clear of it, one clear of the
-    // primary-actions block.
-    const region_left: i32 = 3 * (top_bar_slot_size + ui_gap);
+    // Tabs start right of the global top bar's occupied leading cells
+    // (options + undo + redo, plus the campaign-map return when present;
+    // the trailing ui_gap separates the tabs), flush against the top of the
+    // screen, and end at the pinned add-level "+" - one ui_gap clear of it,
+    // one clear of the primary-actions block.
+    const region_left = editorLevelTabsLeft(editor);
     const plus_cell: Rectangle = .{
         .x = types.reference_width - editor_primary_actions_width - ui_gap -
             editor_header_strip_height,
@@ -718,11 +725,11 @@ pub fn buildEditorLevelTabs(
 const editor_primary_actions_width: i32 = 2 * top_bar_slot_size + ui_gap;
 
 /// The level-tab strip's wheel-scroll region: from the tab row's left
-/// edge (right of the global top bar's options + undo + redo cells) to the
+/// edge (right of the global top bar's occupied leading cells) to the
 /// primary-actions block, top-aligned with the tabs. One wheel notch over
 /// it scrolls the tab window by one tab (`UiState.editor_level_tab_scroll`).
-pub fn editorLevelTabScrollRegion() Rectangle {
-    const left: i32 = 2 * (slot_size + ui_gap);
+pub fn editorLevelTabScrollRegion(editor: types.Editor) Rectangle {
+    const left = editorLevelTabsLeft(editor);
     return .{
         .x = left,
         .y = 0,
@@ -1210,12 +1217,13 @@ test "buildEditorLevelTabs: one panel button per level, active highlighted, unna
     // add-level "+" (panel + button + glyph) = 15 elements.
     try std.testing.expectEqual(@as(usize, 15), elements.items.len);
 
-    // Tabs sit right of the global top bar's options + undo + redo cells,
-    // 128 high, flush against the top of the screen.
+    // In the standalone editor, tabs sit right of the global top bar's
+    // options + undo + redo cells, 128 high, flush against the top.
     const start_x = 3 * (top_bar_slot_size + ui_gap);
     try std.testing.expectEqual(@as(i32, start_x), elements.items[0].nine_slice_panel.screen_position.x);
     try std.testing.expectEqual(@as(i32, 0), elements.items[0].nine_slice_panel.screen_position.y);
     try std.testing.expectEqual(@as(i32, 128), elements.items[0].nine_slice_panel.height);
+    try std.testing.expectEqual(start_x, editorLevelTabScrollRegion(editor).x);
 
     // Per tab: the button carries the payload + action; only the ACTIVE
     // tab (index 1) is highlighted. Labels: the level's name, else
@@ -1304,6 +1312,32 @@ test "buildEditorLevelTabs: one panel button per level, active highlighted, unna
             else => {},
         };
         try std.testing.expectEqual(@as(usize, 0), close_button_count);
+    }
+
+    // The campaign hand-off reserves the map-return cell too: its first tab
+    // starts one cell later, with the usual gap after the return button.
+    // The pinned right side stays fixed, so the scroll region narrows by the
+    // same stride. Standalone missions retain the original boundary above.
+    {
+        const campaign_editor: types.Editor = .{
+            .campaign_mission = 0,
+            .levels = &levels,
+            .active_level_index = 1,
+        };
+        var campaign_elements: UiElementList = .empty;
+        var campaign_ui_state: UiState = .{};
+        try buildEditorLevelTabs(&campaign_elements, arena.allocator(), metrics, campaign_editor, theme, &campaign_ui_state);
+
+        const stride = top_bar_slot_size + ui_gap;
+        const campaign_start_x = 4 * stride;
+        try std.testing.expectEqual(campaign_start_x, campaign_elements.items[0].nine_slice_panel.screen_position.x);
+        const return_cell_right = 3 * stride + top_bar_slot_size;
+        try std.testing.expectEqual(ui_gap, campaign_start_x - return_cell_right);
+
+        const standalone_scroll_region = editorLevelTabScrollRegion(editor);
+        const campaign_scroll_region = editorLevelTabScrollRegion(campaign_editor);
+        try std.testing.expectEqual(campaign_start_x, campaign_scroll_region.x);
+        try std.testing.expectEqual(standalone_scroll_region.width - stride, campaign_scroll_region.width);
     }
 }
 

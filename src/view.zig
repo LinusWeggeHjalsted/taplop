@@ -403,9 +403,10 @@ pub fn view(
         );
     } else if (current_state.screen == .editor) {
         // Editor top row: one level tab per mission level plus the pinned
-        // + / Test / Validate actions. The options/undo/redo buttons come
-        // from the GLOBAL top bar (emitted at the end of this assembly, on
-        // top of everything); the tab row starts right of its three cells.
+        // + / Test / Validate actions. The global top bar's leading buttons
+        // (emitted at the end of this assembly, on top of everything) come
+        // first; the tab row starts right of its occupied cells, including
+        // the campaign-map return during a campaign mission hand-off.
         // Built before the bottom bar so the bottom bar's hover-highlight
         // pass wins overlaps, matching the level/hub order.
         // The editor is non-null on this screen by invariant (open_editor

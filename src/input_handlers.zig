@@ -4660,7 +4660,7 @@ pub fn handleAnytimeInput(
             }
         } else if (history.current_state.screen == .editor and
             history.current_state.editor != null and
-            ui.editorLevelTabScrollRegion().contains(pointer_position))
+            ui.editorLevelTabScrollRegion(history.current_state.editor.?).contains(pointer_position))
         {
             // Level-tab window scroll (horizontal): one wheel notch = one
             // tab, wheel-up = earlier tabs (the palette window model).
