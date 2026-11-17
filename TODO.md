@@ -50,14 +50,13 @@ Test by running `zig build run` and clicking through.
       the comptime-materialization gotcha if they ever grow a shared
       helper (runtime slicing of the map keys is the reliable shape -
       AGENTS → Zig Gotchas).
-- **Campaign editor + world map** - the next major work: design SETTLED
-  (DESIGN → Campaigns & the Campaign Editor - the hub/mission graph,
-  discovery + travel, the world-map mirror, the campaign view + hub
-  drill-in + mission hand-off + the settled slice-3/4/5 designs: the
-  state split, mint-on-fork, the campaign editor surface, the hub
-  editor surface, the mission editor's campaign context). All open
-  questions are settled; the slices live in Level Editor → campaign
-  editor below.
+- **Campaign editor remainder** - the editor + the in-game world map
+  are BUILT (slices 1-5 + the 2c/2d world-map mirror + travel; the
+  slice history in DONE.md; the design: DESIGN → Campaigns & the
+  Campaign Editor). What remains: the official campaign's validation
+  replays, the in-game load DROP, the new-game campaign picker +
+  speedrun seed, and the campaign-editor UI file split - see Level
+  Editor → campaign editor below.
 - **Combat-log UI** - render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
   "Combat Log" below.
@@ -81,10 +80,6 @@ Test by running `zig build run` and clicking through.
   author. The walker's safety rules (never follows pointers, never calls
   methods) stay as they are - see DESIGN → Input → Console input → dump
   paths.
-- **Web storage model refactor** - the in-memory persistent mount +
-  Import/Export Game (design settled: DESIGN → File System & IO → Web
-  storage model; slices + open questions in Platform Layer → web storage
-  model below).
 - **World overlay stripe scopes batch-flush per tile (session reflection
   rider, unmeasured)** - each highlighted tile opens its own stripe scope
   (~2 batch flushes per tile; a 20-tile move range ≈ 40 flushes/frame).
@@ -116,10 +111,6 @@ Test by running `zig build run` and clicking through.
   rollover swallow (intermittent, either key - that one is DONE, see
   DONE.md "Arrow-key cursor rollover"); only worth touching if random
   eaten taps are ever observed with a hand resting on the mouse.
-- **Console input (stdin - a scripted/TAS input channel)** - COMPLETE,
-      all five slices (DONE.md, "console input slice 1"-"2" + "dump-path
-      walker"; settled design: DESIGN → Input → Console input). Console
-      sessions produce ordinary session logs → valid `--replay` fixtures.
 - **Cross-cutting polish** - 9-slice edge/center TILING (corners are
   aspect-true - DONE.md; `highlighted` edge outlines DONE), missing art
   (the `art_report.md` MISSING list - `scripts/art_report.sh` - is the
@@ -133,9 +124,7 @@ Test by running `zig build run` and clicking through.
   damage/heal numbers), and scrollbar visuals - the fixed grays + plain
   solid-rect track/thumb are placeholder everywhere (the shared
   `scrollbar_*` constants in `element.zig` are the one retune site).
-- **Larger systems (beyond MVP)** - the world-map overlay (the campaign
-  view's read-side mirror - DESIGN → Campaigns & the Campaign Editor;
-  campaign-editor slice 2) + NPC interaction/dialogue (see "NPC
+- **Larger systems (beyond MVP)** - NPC interaction/dialogue (see "NPC
   Interaction" below). Middle panels
   (inventory/gear/skills/inspect), options/settings/top bar, drag-drop, and
   the audio architecture are DONE (history in DONE.md); the full combat-log
@@ -216,12 +205,6 @@ Open:
   DONE.md).
 - buildSkillsPanel: sorting / grouping / search deferred (display slice +
   drag-to-bar DONE - DONE.md).
-- buildWorldMap: the campaign view's READ-side mirror (DESIGN → Campaigns
-  & the Campaign Editor → Discovery + travel): background + all hubs +
-  edges, undiscovered hubs / unavailable missions dimmed; hub click
-  travels (backtrack to discovered), edge click starts the mission (the
-  start hub discovered) - deliberately equivalent to the exit tile.
-  Rides campaign-editor slice 2.
 - buildFullCombatLog: scrollable detailed combat log (renders
   ViewState.combat_log; see Combat Log).
 - **Settings screen** - settled design: DESIGN → UI Framework → Settings
@@ -371,12 +354,14 @@ work:
       warn-over-reject posture. The marker-on-marker case stays vetoed
       (planning.editorSelectionMoveVetoed); this is the non-marker
       members' case.
-- **Campaign editor (hub editing inside) - design SETTLED including the
-  slice-2 identity model (uuids everywhere, scan loading, rename-in-place,
-  the viewing model - see DESIGN → Campaigns & the Campaign Editor, esp.
-  Content identity / Uuid→dir resolution / The editor save model /
-  Campaign switching / Edge geometry / The map surface), build not
-  started.** TWO editors, not three (see DESIGN → Campaigns & the
+- **Campaign editor (hub editing inside) - BUILT through slice 5: the
+  campaign view, hub editor drill-in, mission-editor hand-off, campaign
+  save/export/import, and file-level validation (the slice history in
+  DONE.md; the design - incl. the slice-2 identity model: uuids
+  everywhere, scan loading, rename-in-place, the viewing model - in
+  DESIGN → Campaigns & the Campaign Editor, esp. Content identity /
+  Uuid→dir resolution / The editor save model / Campaign switching /
+  Edge geometry / The map surface).** TWO editors, not three (see DESIGN → Campaigns & the
   Campaign Editor for the full model): the mission editor (built) + the
   campaign editor - the campaign view (background, freely-placed
   draggable hubs, rendered mission edges, dangling ends tolerated);
@@ -401,12 +386,11 @@ work:
   data/campaigns/main_campaign/map.png (the ui/panel.png precedent;
   replace freely, the format is a bare stem + any size, center-anchored).
   Slices (rough, re-cut at implementation):
-  - [ ] 2. Runtime (re-cut; the identity model + viewing model settled in
-        DESIGN → Campaigns & the Campaign Editor - Content identity,
-        Uuid→dir resolution, Campaign switching, Edge geometry):
-    - [ ] later. New-game campaign picker + the speedrun seed
-          (all-hubs-discovered start option, runtime-derived) - main-menu
-          work, rides the same machinery.
+  - [ ] 2. Runtime, the remainder (the identity model, viewing model,
+        and the world-map mirror + travel landed - DONE.md, slices
+        2a-2d): the new-game campaign picker + the speedrun seed
+        (all-hubs-discovered start option, runtime-derived - see DESIGN
+        → Campaign switching) - main-menu work, rides the same machinery.
   - future (post-slice-3 polish): multi-select + multi-reposition of
         hubs on the campaign map (single-select in v1); drag-the-tip
         re-angling of self-loop/dangling stubs (the inspector direction
@@ -903,9 +887,6 @@ Done items in DONE.md. Open:
   is read-only. If the skill-button or gear-slot visuals change, both sites
   need updating. Refactor to a shared core taking an entity + a read-only
   flag - deferred (a deliberate cleanup slice, not urgent).
-- **Awkward-values convention - settled** - the convention + examples
-  live in DESIGN → Testing → Assertion patterns (the bug history is in
-  DONE.md).
 - Snapshot/checkpoint ring buffers are a clean FIFO (slot = ring_index %
   size = oldest), but discardFutureTimeline nulls ahead-of-branch slots,
   leaving holes the marching ring_index won't preferentially reuse - so
