@@ -4632,7 +4632,6 @@ pub const EntityDrawable = struct {
     /// Each colored independently. See DESIGN → Decorations & Footprint.
     layer_sprites: []const SpriteDrawable,
     weapon_sprites: [2]?SpriteDrawable,
-    gear_sprites: []const SpriteDrawable,
     front_effect_sprites: []const SpriteDrawable,
     health_bar: ?HealthBarDrawable,
 };

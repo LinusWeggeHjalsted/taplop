@@ -2319,7 +2319,6 @@ fn entityDrawable(
         },
         .layer_sprites = layer_slice,
         .weapon_sprites = weapon_sprites,
-        .gear_sprites = &.{},
         .front_effect_sprites = front_effect_slice,
         .health_bar = if (show_health_bar) buildHealthBar(entity, active_theme, top_left, zoom, sprite_bounds) else null,
     };
@@ -2447,7 +2446,6 @@ fn npcEntityDrawable(
         },
         .layer_sprites = &.{},
         .weapon_sprites = .{ null, null },
-        .gear_sprites = &.{},
         .front_effect_sprites = &.{},
         .health_bar = null,
     };

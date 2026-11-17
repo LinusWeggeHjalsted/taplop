@@ -376,6 +376,7 @@ working rules).
 - [campaign-editor slice 4-6: the hub editor's metadata sidebar + ctrl+S](#campaign-editor-slice-4-6-the-hub-editors-metadata-sidebar--ctrls)
 - [console input: the wait-idle hold can no longer stall the channel](#console-input-the-wait-idle-hold-can-no-longer-stall-the-channel)
 - [campaign-editor slice 4-7: hub-content validation findings folded into the campaign Validate](#campaign-editor-slice-4-7-hub-content-validation-findings-folded-into-the-campaign-validate)
+- [Gear sprites sub-layer removed (out of scope)](#gear-sprites-sub-layer-removed-out-of-scope)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -22675,3 +22676,22 @@ Slice 4 (the hub editor drill-in) is COMPLETE: 4-1 framing through
 4-7 validation, all landed.
 
 1028 green.
+
+## Gear sprites sub-layer removed (out of scope)
+
+Gear visuals beyond weapons are out of scope for the far future, so the
+placeholder sub-layer was removed rather than left as dead scaffolding:
+the `gear_sprites` field on `EntityDrawable`, its draw pass in
+`src/raylib/draw.zig`, and the two empty emissions in `src/view.zig`
+(the player-entity builder + the NPC builder). The sub-layer never drew
+anything - it was emitted `&.{}` from birth, and no gear art ever
+shipped. Layer order is unchanged for everything that remains: back
+effects, base, entity layers, weapons, front effects, health bar.
+
+The entity's visual sub-layers that DID land (base + entity layers +
+weapons + effect overlays + ground items + decorations) are untouched;
+if non-weapon gear art is ever wanted, it slots into `layer_sprites`
+(the armor/clothing overlay machinery) or a re-added sub-layer - the
+removal is a four-line revert.
+
+TODO entries deleted (NEXT UP bullet + the View section's Open list).

@@ -112,9 +112,6 @@ Test by running `zig build run` and clicking through.
   log and reconstructs the session to its END state (resume mid-session);
   the in-game viewer is the stepping UI on top of the same machinery. See
   "Logging & Replay" below.
-- **Gear sprites** - the last unlanded entity sub-layer (effect overlays,
-  sprite animation, ground items, decorations all DONE - history in
-  DONE.md): needs both the `gear_sprites` wiring in view() and the gear art.
 - **Input/camera leftovers** - tab-targeting (cycle highlighted tiles
   with Tab; reuse cursor resolution) + keyboard inspect binding (e.g.
   alt+Enter opens inspect on the tile-cursor entity; lands as a new
@@ -215,9 +212,6 @@ Reference notes that matter while working here (sprite/asset conventions):
 
 Open:
 
-- Gear sprites - the one unlanded EntityDrawable sub-layer (`gear_sprites`
-  is emitted empty; no gear art has shipped). Base + weapons + entity
-  layers + effect overlays + health bars all DONE - DONE.md.
 - Multi-frame one-shot anims: attack swings, death dissolves - same
   machinery as the landed one-shots (skill-icon pop, hit flash,
   damage/heal numbers - DONE.md; design: DESIGN → Animation), richer

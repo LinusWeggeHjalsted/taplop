@@ -250,7 +250,6 @@ pub fn drawGroundDrawable(
             for (entity.weapon_sprites) |maybe_sprite| {
                 if (maybe_sprite) |sprite| drawSpriteDrawable(backend, sprite, world_scale);
             }
-            for (entity.gear_sprites) |sprite| drawSpriteDrawable(backend, sprite, world_scale);
             for (entity.front_effect_sprites) |sprite| drawSpriteDrawable(backend, sprite, world_scale);
             if (entity.health_bar) |bar| drawHealthBar(backend, bar, world_scale);
         },
