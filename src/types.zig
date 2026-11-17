@@ -104,6 +104,17 @@ pub const Vector2 = struct {
 pub const entity_sprite_frame_width: i32 = 512;
 pub const entity_sprite_frame_height: i32 = 640;
 
+/// The flag's frame dims: the static pole sprite (`world/flag_pole`) and
+/// each animated banner frame (`world/flag`) share one 256x512 frame
+/// (1x2 tiles, pivot 0.5/0.75). Shared by the world scene's flag
+/// drawing (view.zig's `levelEndDrawable`) and the hub editor's
+/// mission-tool cell so the two cannot drift.
+pub const flag_frame_width: i32 = 256;
+pub const flag_frame_height: i32 = 512;
+
+/// Frames in the animated banner strip (`world/flag`).
+pub const flag_banner_frame_count: u32 = 8;
+
 /// The sprite-grid tile size: one tile is 256px (decoration art is whole
 /// multiples of it - the view math chunks one 256px piece per bbox tile;
 /// see DESIGN → Decorations & Footprint). Also the dims assumed when a

@@ -1775,14 +1775,16 @@ const ground_items_size_int: i32 = 256;
 const ground_items_pivot_x: f32 = 0.5;
 const ground_items_pivot_y: f32 = 0.5;
 
-/// Flag pole frame: 256x512 (1 tile wide x 2 tall). Pivot (0.5, 0.75) centers
-/// the bottom tile-half of the frame on the marker's tile. Used for both level
-/// ends and hub mission-start markers; only the static pole is drawn here.
-const flag_pole_width: f32 = 256.0;
-const flag_pole_height: f32 = 512.0;
+/// Flag pole frame: 256x512 (1 tile wide x 2 tall), the shared flag frame
+/// (`types.flag_frame_*` - one source for the pole and every banner
+/// frame). Pivot (0.5, 0.75) centers the bottom tile-half of the frame on
+/// the marker's tile. Used for both level ends and hub mission-start
+/// markers; only the static pole is drawn here.
+const flag_pole_width: f32 = @floatFromInt(types.flag_frame_width);
+const flag_pole_height: f32 = @floatFromInt(types.flag_frame_height);
 /// Integer frame dims for the flag compositing canvas (occlusion inset).
-const flag_pole_width_int: i32 = 256;
-const flag_pole_height_int: i32 = 512;
+const flag_pole_width_int: i32 = types.flag_frame_width;
+const flag_pole_height_int: i32 = types.flag_frame_height;
 const flag_pivot_x: f32 = 0.5;
 const flag_pivot_y: f32 = 0.75;
 
@@ -1791,9 +1793,9 @@ const flag_pivot_y: f32 = 0.75;
 /// same screen position. Looping at `settings.animation_fps` (default 8 →
 /// 125 ms/frame, 1.0 s loop). See DESIGN → Animation.
 const flag_banner_sprite_id = "world/flag";
-const flag_banner_frame_count: u32 = 8;
-const flag_banner_frame_width: i32 = 256;
-const flag_banner_frame_height: i32 = 512;
+const flag_banner_frame_count: u32 = types.flag_banner_frame_count;
+const flag_banner_frame_width: i32 = types.flag_frame_width;
+const flag_banner_frame_height: i32 = types.flag_frame_height;
 
 /// Steps per full outline-stripe cycle (one light + one dark band) - the
 /// crawl speed of the outline stripe shader (see DESIGN → Platform Seam →

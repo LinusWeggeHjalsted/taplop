@@ -469,7 +469,13 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
         .fill_sprite => |fill| drawFillSprite(backend, fill),
         .image => |image| {
             const dest = referenceRectangle(image.screen_position, image.width, image.height);
-            drawSprite(backend, image.sprite_id, dest, null, image.color, image.alpha, image.flip_horizontal);
+            const source: ?rl.Rectangle = if (image.source_rectangle) |rectangle| rl.Rectangle{
+                .x = @floatFromInt(rectangle.x),
+                .y = @floatFromInt(rectangle.y),
+                .width = @floatFromInt(rectangle.width),
+                .height = @floatFromInt(rectangle.height),
+            } else null;
+            drawSprite(backend, image.sprite_id, dest, source, image.color, image.alpha, image.flip_horizontal);
             if (image.highlighted) drawHighlightOutline(backend, image.sprite_id, dest, highlight_color);
         },
         .solid_rect => |rect| {

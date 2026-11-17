@@ -320,8 +320,12 @@ fn emitHubNpcCell(
     } });
 }
 
-/// One Missions-group cell: the flag graphic + the mission's name across
-/// the cell bottom.
+/// One Missions-group cell: the level-end marker's still - pole +
+/// banner frame 0, both fitted to the shared flag frame (`types.flag_frame_*`)
+/// and tinted like the world's `levelEndDrawable` (pole world[5], banner
+/// world[0] - the colors follow the picked wheel via the active theme).
+/// The mission's NAME rides the tooltip: the cell is one tile wide,
+/// no space for a label.
 fn emitHubMissionCell(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -334,6 +338,8 @@ fn emitHubMissionCell(
     button_color: Color,
 ) !void {
     _ = campaign_editor;
+    _ = font_metrics;
+    const name = if (mission.name.len > 0) mission.name else "Unsaved mission";
     try elements.append(allocator, .{ .button = .{
         .sprite_id = emit.button_background_sprite_id,
         .screen_position = cell.position(),
@@ -343,33 +349,35 @@ fn emitHubMissionCell(
         .payload = .{ .hub_tool = .{ .mission = mission.handle } },
         .color = button_color,
         .highlighted = std.meta.eql(hub_editor.active_tool, .{ .mission = mission.handle }),
-        .tooltip = .{ .header = try spanRow(allocator, text("Place the exit marker for this mission")) },
+        .tooltip = .{ .header = try spanRow(allocator, text(name)) },
     } });
-    const fitted = editor_shell.scaleToFit(cell, tool_graphic_tile_size, 2 * tool_graphic_tile_size);
+    const fitted = editor_shell.scaleToFit(cell, types.flag_frame_width, types.flag_frame_height);
+    const world = active_theme.world_gradient.colors;
+    try elements.append(allocator, .{ .image = .{
+        .sprite_id = "world/flag_pole",
+        .screen_position = fitted.position(),
+        .width = fitted.width,
+        .height = fitted.height,
+        .color = world[@min(@as(u32, 5), types.gradient_color_count - 1)],
+        .blocks_input = false,
+    } });
+    // Banner frame 0 (static - UI cells do not animate), sliced out of
+    // the 8-frame strip via the source rect; drawn over the pole at the
+    // same fitted rect, the world flag's exact composition.
     try elements.append(allocator, .{ .image = .{
         .sprite_id = "world/flag",
-        .screen_position = .{
-            .x = fitted.x + @divTrunc(fitted.width - @divTrunc(fitted.width, 2), 2),
-            .y = fitted.y,
-        },
-        .width = @divTrunc(fitted.width, 2),
+        .screen_position = fitted.position(),
+        .width = fitted.width,
         .height = fitted.height,
-        .color = no_tint_color,
-        .blocks_input = false,
-    } });
-    const name = if (mission.name.len > 0) mission.name else "Unsaved mission";
-    const name_font = editor_shell.editor_group_header_font_size;
-    try elements.append(allocator, .{ .text_label = .{
-        .text = name,
-        .screen_position = .{
-            .x = cell.x + ui_element.ui_gap,
-            .y = cell.y + cell.height - name_font - ui_element.ui_gap,
+        .source_rectangle = .{
+            .x = 0,
+            .y = 0,
+            .width = types.flag_frame_width,
+            .height = types.flag_frame_height,
         },
-        .font_size = name_font,
-        .color = active_theme.lightest,
+        .color = world[0],
         .blocks_input = false,
     } });
-    _ = font_metrics;
 }
 
 /// One Decorations-group cell: the type's base sprite (tinted like the
@@ -1087,6 +1095,108 @@ test "buildHubEditorBottomBar: NPC cells - entity-frame fit, the world's player[
         try std.testing.expectEqual(@as(i32, 256), image.height);
         try std.testing.expectEqual(@as(i32, 204), image.width);
         try std.testing.expect(!image.blocks_input);
+    }
+}
+
+test "buildHubEditorBottomBar: mission cells - pole + banner frame, the name in the tooltip" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const world_zero: Color = .{ .r = 11, .g = 12, .b = 13 };
+    const world_five: Color = .{ .r = 21, .g = 22, .b = 23 };
+    const black: Color = .{ .r = 0, .g = 0, .b = 0 };
+    const test_theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{ world_zero, black, black, black, black, world_five } },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
+    };
+    const test_metrics = ui_element.FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+    const campaign_editor = types.CampaignEditor{
+        .start_hub = 0,
+        .hubs = &.{.{ .handle = 0, .name = "Alpha", .position = .{ .x = 0, .y = 0 } }},
+        .missions = &.{
+            .{ .handle = 5, .name = "One", .start = 0, .destination = 0 },
+            .{ .handle = 6, .name = "", .start = 0, .destination = null },
+        },
+        .decoration_types = &.{},
+        .next_handle = 7,
+    };
+    var collapsed = [3]bool{ true, false, true };
+    var scroll_offsets = [3]i32{ 0, 0, 0 };
+    var elements: UiElementList = .empty;
+    defer elements.deinit(arena.allocator());
+    try buildHubEditorBottomBar(&elements, arena.allocator(), test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .active_tool = .select }, test_theme, &collapsed, &scroll_offsets);
+
+    // The button's tooltip carries the mission's name (the unnamed
+    // fallback for an empty name) - the label no longer draws in the
+    // cell.
+    var one_tooltip: ?ui_element.Button = null;
+    var unnamed_tooltip: ?ui_element.Button = null;
+    var drawn_mission_names: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .button => |button| switch (button.payload orelse continue) {
+            .hub_tool => |tool| switch (tool) {
+                .mission => |handle| if (handle == 5) {
+                    one_tooltip = button;
+                } else if (handle == 6) {
+                    unnamed_tooltip = button;
+                },
+                else => {},
+            },
+            else => {},
+        },
+        .text_label => |label| {
+            if (std.mem.eql(u8, label.text, "One") or std.mem.eql(u8, label.text, "Unsaved mission")) {
+                drawn_mission_names += 1;
+            }
+        },
+        else => {},
+    };
+    try std.testing.expectEqualStrings("One", one_tooltip.?.tooltip.?.header.?[0].text);
+    try std.testing.expectEqualStrings("Unsaved mission", unnamed_tooltip.?.tooltip.?.header.?[0].text);
+    try std.testing.expectEqual(@as(usize, 0), drawn_mission_names);
+
+    // The graphic: the level-end marker's still per cell - pole + banner
+    // frame 0 over ONE fitted rect (the shared 256x512 flag frame,
+    // width-limited to 128x256 in the square cell), tinted like the
+    // world's levelEndDrawable (pole world[5], banner world[0]).
+    var pole_images: [2]ui_element.Image = undefined;
+    var banner_images: [2]ui_element.Image = undefined;
+    var pole_count: usize = 0;
+    var banner_count: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .image => |image| {
+            if (std.mem.eql(u8, image.sprite_id, "world/flag_pole")) {
+                pole_images[pole_count] = image;
+                pole_count += 1;
+            } else if (std.mem.eql(u8, image.sprite_id, "world/flag")) {
+                banner_images[banner_count] = image;
+                banner_count += 1;
+            }
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(usize, 2), pole_count);
+    try std.testing.expectEqual(@as(usize, 2), banner_count);
+    for (pole_images, banner_images) |pole, banner| {
+        try std.testing.expectEqual(@as(i32, 128), pole.width);
+        try std.testing.expectEqual(@as(i32, 256), pole.height);
+        try std.testing.expect(std.meta.eql(world_five, pole.color));
+        try std.testing.expectEqual(pole.screen_position, banner.screen_position);
+        try std.testing.expectEqual(pole.width, banner.width);
+        try std.testing.expectEqual(pole.height, banner.height);
+        try std.testing.expect(std.meta.eql(world_zero, banner.color));
+        // Frame 0 sliced out of the strip - not the whole sheet.
+        try std.testing.expectEqual(types.Rectangle{
+            .x = 0,
+            .y = 0,
+            .width = types.flag_frame_width,
+            .height = types.flag_frame_height,
+        }, banner.source_rectangle.?);
+        try std.testing.expect(!pole.blocks_input);
+        try std.testing.expect(!banner.blocks_input);
     }
 }
 

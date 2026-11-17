@@ -902,6 +902,10 @@ pub const Image = struct {
     /// world sprite path's flip trick). Used for off-hand weapon previews
     /// in editor cells - they must mirror like the scene does.
     flip_horizontal: bool = false,
+    /// Optional source-rect crop into the sprite sheet, reference-space
+    /// pixels (the world sprite path's source_rectangle - e.g. one frame
+    /// of an animation strip). Null = the whole texture.
+    source_rectangle: ?Rectangle = null,
     /// Renderer draws a programmatic edge highlight around the sprite's
     /// opaque pixels when set (e.g. the active turn-step indicator).
     highlighted: bool = false,
