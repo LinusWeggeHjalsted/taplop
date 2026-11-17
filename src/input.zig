@@ -656,6 +656,29 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
             player_input.anytime.options_action = .toggle_editor_palette_group;
             player_input.clicked_payload = .{ .editor_group = 2 };
         },
+        // The hub editor drill-in's mirror (Digit1-5, hub context): the
+        // same bridge onto the hub palette's click paths, so keybind and
+        // click share the consumption sites exactly.
+        .hub_select_tool => {
+            player_input.anytime.options_action = .select_hub_tool;
+            player_input.clicked_payload = .{ .hub_tool = .select };
+        },
+        .hub_tile_tool => {
+            player_input.anytime.options_action = .select_hub_tool;
+            player_input.clicked_payload = .{ .hub_tool = .tile };
+        },
+        .toggle_hub_npc_group => {
+            player_input.anytime.options_action = .toggle_hub_palette_group;
+            player_input.clicked_payload = .{ .editor_group = 0 };
+        },
+        .toggle_hub_mission_group => {
+            player_input.anytime.options_action = .toggle_hub_palette_group;
+            player_input.clicked_payload = .{ .editor_group = 1 };
+        },
+        .toggle_hub_decoration_group => {
+            player_input.anytime.options_action = .toggle_hub_palette_group;
+            player_input.clicked_payload = .{ .editor_group = 2 };
+        },
         .select_editor_utility_skill => player_input.anytime.options_action = action,
         .toggle_inventory => player_input.anytime.in_game.toggle_inventory = true,
         .toggle_gear => player_input.anytime.in_game.toggle_gear = true,
@@ -1885,6 +1908,72 @@ test "translateInput: ctrl+S is save_campaign on the campaign editor set, save_e
     // The cross-editor same-combo pair is legal (never co-fires - the
     // load-time conflict predicate).
     try std.testing.expect(!types.bindingContextsCoFire(.{ .editor = true }, .{ .campaign_editor = true }));
+}
+
+test "translateInput: hub tool keybinds bridge onto the hub palette's click actions" {
+    // Digit1-5 on the hub editor set (the same combos as the mission
+    // editor's shortcuts and the in-game skill slots - cross-context,
+    // never co-firing): the keys land on the hub palette's exact click
+    // action + payload pairs (select_hub_tool / toggle_hub_palette_group),
+    // so the click consumption sites serve both.
+    const bindings = [_]InputBinding{
+        .{ .input = .{ .key = "Digit1" }, .action = .hub_select_tool },
+        .{ .input = .{ .key = "Digit2" }, .action = .hub_tile_tool },
+        .{ .input = .{ .key = "Digit3" }, .action = .toggle_hub_npc_group },
+        .{ .input = .{ .key = "Digit4" }, .action = .toggle_hub_mission_group },
+        .{ .input = .{ .key = "Digit5" }, .action = .toggle_hub_decoration_group },
+    };
+    const settings: Settings = .{ .input_bindings = &bindings };
+    const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
+    const hub_contexts: types.BindingContextSet = .{ .anytime = true, .hub_editor = true };
+
+    // The tool pair: Digit1 -> select, Digit2 -> tile (the exact pairs
+    // the palette cell's click dispatch produces).
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(PlatformInput{
+            .events = &.{.{ .key_down = "Digit1" }},
+            .viewport = .{ .width = 2560, .height = 2160 },
+        }, &input_state, settings, camera, 0, null, null, hub_contexts);
+        try std.testing.expectEqual(types.Action.select_hub_tool, result.anytime.options_action);
+        try std.testing.expectEqual(types.HubEditorToolId.select, result.clicked_payload.?.hub_tool);
+    }
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(PlatformInput{
+            .events = &.{.{ .key_down = "Digit2" }},
+            .viewport = .{ .width = 2560, .height = 2160 },
+        }, &input_state, settings, camera, 0, null, null, hub_contexts);
+        try std.testing.expectEqual(types.Action.select_hub_tool, result.anytime.options_action);
+        try std.testing.expectEqual(types.HubEditorToolId.tile, result.clicked_payload.?.hub_tool);
+    }
+
+    // The group toggles: Digit3/4/5 -> the accordion's editor_group
+    // payloads in hub palette order (NPCs, Missions, Decorations).
+    const group_pairs = [_]struct { key: []const u8, group: u32 }{
+        .{ .key = "Digit3", .group = 0 },
+        .{ .key = "Digit4", .group = 1 },
+        .{ .key = "Digit5", .group = 2 },
+    };
+    for (group_pairs) |pair| {
+        var input_state: InputState = .{};
+        const result = translateInput(PlatformInput{
+            .events = &.{.{ .key_down = pair.key }},
+            .viewport = .{ .width = 2560, .height = 2160 },
+        }, &input_state, settings, camera, 0, null, null, hub_contexts);
+        try std.testing.expectEqual(types.Action.toggle_hub_palette_group, result.anytime.options_action);
+        try std.testing.expectEqual(pair.group, result.clicked_payload.?.editor_group);
+    }
+
+    // In-game the same keys are the skill slots - no hub bridge fires.
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(PlatformInput{
+            .events = &.{.{ .key_down = "Digit1" }},
+            .viewport = .{ .width = 2560, .height = 2160 },
+        }, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .game = true });
+        try std.testing.expect(result.anytime.options_action == null);
+    }
 }
 
 test "translateInput: campaign tool keybinds bridge onto the campaign cell's click action" {

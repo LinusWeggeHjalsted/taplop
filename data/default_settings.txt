@@ -255,6 +255,11 @@ action campaign_select_tool
 context campaign_editor
 
 input_type key
+input_name Digit1
+action hub_select_tool
+context hub_editor
+
+input_type key
 input_name Digit2
 action editor_tile_tool
 context editor
@@ -263,6 +268,11 @@ input_type key
 input_name Digit2
 action campaign_hub_tool
 context campaign_editor
+
+input_type key
+input_name Digit2
+action hub_tile_tool
+context hub_editor
 
 input_type key
 input_name Digit3
@@ -275,14 +285,29 @@ action campaign_mission_tool
 context campaign_editor
 
 input_type key
+input_name Digit3
+action toggle_hub_npc_group
+context hub_editor
+
+input_type key
 input_name Digit4
 action toggle_editor_decoration_group
 context editor
 
 input_type key
+input_name Digit4
+action toggle_hub_mission_group
+context hub_editor
+
+input_type key
 input_name Digit5
 action toggle_editor_item_group
 context editor
+
+input_type key
+input_name Digit5
+action toggle_hub_decoration_group
+context hub_editor
 
 input_type key
 input_name KeyN

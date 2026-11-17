@@ -780,6 +780,18 @@ pub const Action = enum {
     toggle_editor_entity_group,
     toggle_editor_decoration_group,
     toggle_editor_item_group,
+    // The hub editor drill-in's mirror (Digit1-5, context hub_editor -
+    // the campaign trio's discipline): payload-less keybind-only actions
+    // bridged onto the hub palette's click paths (select_hub_tool + the
+    // `hub_tool` variant / toggle_hub_palette_group + the `editor_group`
+    // variant), so keybind and click share the consumption site exactly.
+    // Digit1-5 are the same combos as the mission editor's shortcuts and
+    // the in-game skill slots - cross-context, never co-firing.
+    hub_select_tool,
+    hub_tile_tool,
+    toggle_hub_npc_group,
+    toggle_hub_mission_group,
+    toggle_hub_decoration_group,
 };
 
 /// One per editable `Settings` scalar field. Drives the settings-screen
@@ -1323,6 +1335,11 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .toggle_hub_palette_group,
         .select_hub_decoration_sprite,
         .save_hub,
+        .hub_select_tool,
+        .hub_tile_tool,
+        .toggle_hub_npc_group,
+        .toggle_hub_mission_group,
+        .toggle_hub_decoration_group,
         => .{ .hub_editor = true },
         // The mission editor's own surface.
         .overwrite_validation_replay,
@@ -1748,6 +1765,11 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .toggle_editor_decoration_group,
         .toggle_editor_item_group,
         .toggle_campaign_browser,
+        .hub_select_tool,
+        .hub_tile_tool,
+        .toggle_hub_npc_group,
+        .toggle_hub_mission_group,
+        .toggle_hub_decoration_group,
         => null,
     };
 }
