@@ -2193,10 +2193,55 @@ pub fn planHubSelectionMoveActions(
 /// One entry of the mission editor's Tab cycle: a tool + the palette
 /// REGION it occupies (the layout-order ordinal: the fixed tools, then
 /// the groups) - the spatial cycle model's position key.
-const CycleEntry = struct {
-    tool: types.EditorToolId,
-    region: u8,
-};
+/// One entry of an editor's Tab cycle: a tool + the palette REGION it
+/// occupies (the layout-order ordinal: the fixed tools, then the groups)
+/// - the spatial cycle model's position key. Generic over the editor's
+/// tool union (the mission + hub editors share the model, not the tool
+/// types).
+fn ToolCycleEntry(comptime ToolId: type) type {
+    return struct { tool: ToolId, region: u8 };
+}
+
+const CycleEntry = ToolCycleEntry(types.EditorToolId);
+const HubCycleEntry = ToolCycleEntry(types.HubEditorToolId);
+
+/// Step within a Tab cycle (the spatial model, shared by the mission +
+/// hub editors - the drift between two hand-rolled steppers is how the
+/// hub's shift+Tab shipped dead): if the active tool is present in the
+/// cycle, step to the neighbor in the direction, wrapping at the ends;
+/// if its group is COLLAPSED (the tool not in the cycle), keep the
+/// region's position and land on the nearest present tool beyond it in
+/// the direction, wrapping to the cycle's far end when none lies beyond.
+/// Pure.
+fn stepToolCycle(
+    comptime ToolId: type,
+    cycle: []const ToolCycleEntry(ToolId),
+    active_tool: ToolId,
+    active_region: u8,
+    forward: bool,
+) ToolId {
+    for (cycle, 0..) |entry, index| {
+        if (std.meta.eql(entry.tool, active_tool)) {
+            const next_index = if (forward)
+                (index + 1) % cycle.len
+            else
+                (index + cycle.len - 1) % cycle.len;
+            return cycle[next_index].tool;
+        }
+    }
+    if (forward) {
+        for (cycle) |entry| {
+            if (entry.region > active_region) return entry.tool;
+        }
+        return cycle[0].tool;
+    }
+    var index = cycle.len;
+    while (index > 0) {
+        index -= 1;
+        if (cycle[index].region < active_region) return cycle[index].tool;
+    }
+    return cycle[cycle.len - 1].tool;
+}
 
 /// The palette region a tool occupies: the layout order is
 /// [Select][Tile][Entities][Decorations][Items] - collapsed regions are
@@ -2264,33 +2309,80 @@ pub fn nextMissionEditorTool(
 ) types.EditorToolId {
     const cycle = missionEditorToolCycle(allocator, editor, palette_collapsed);
     defer allocator.free(cycle);
-    // The active tool present in the cycle: step within it, wrapping at
-    // the ends.
-    for (cycle, 0..) |entry, index| {
-        if (std.meta.eql(entry.tool, editor.active_tool)) {
-            const next_index = if (forward)
-                (index + 1) % cycle.len
-            else
-                (index + cycle.len - 1) % cycle.len;
-            return cycle[next_index].tool;
+    return stepToolCycle(types.EditorToolId, cycle, editor.active_tool, editorToolRegion(editor.active_tool), forward);
+}
+
+/// The hub editor's Tab-cycle list (the `missionEditorToolCycle` mirror
+/// over the drill-in's palette): the fixed pair (Select, Tile), then each
+/// EXPANDED group's cells in palette order - the NPC pair, the hub's
+/// OUTGOING missions (live membership from the campaign graph), the
+/// campaign-shared decoration types. A group's cells are in the cycle
+/// only while the group is expanded - collapsing a group removes its
+/// tools. Pure; allocates the (small) list into `allocator`.
+fn hubEditorToolCycle(
+    allocator: std.mem.Allocator,
+    hub_editor: types.HubEditor,
+    campaign_editor: types.CampaignEditor,
+    palette_collapsed: [3]bool,
+) []const HubCycleEntry {
+    var cycle: std.ArrayList(HubCycleEntry) = .empty;
+    cycle.append(allocator, .{ .tool = .select, .region = 0 }) catch @panic("failed to append the select tool");
+    cycle.append(allocator, .{ .tool = .tile, .region = 1 }) catch @panic("failed to append the tile tool");
+    // The NPCs group (hub_palette_collapsed[0]): the fixed pair.
+    if (!palette_collapsed[0]) {
+        cycle.append(allocator, .{ .tool = .{ .npc = .gear_upgrader }, .region = 2 }) catch
+            @panic("failed to append an NPC tool");
+        cycle.append(allocator, .{ .tool = .{ .npc = .dream_guide }, .region = 2 }) catch
+            @panic("failed to append an NPC tool");
+    }
+    // The Missions group (hub_palette_collapsed[1]): the missions whose
+    // START is this hub, in campaign-graph order.
+    if (!palette_collapsed[1]) {
+        for (campaign_editor.missions) |mission| {
+            if (mission.start == null or mission.start.? != hub_editor.hub) continue;
+            cycle.append(allocator, .{ .tool = .{ .mission = mission.handle }, .region = 3 }) catch
+                @panic("failed to append a mission tool");
         }
     }
-    // The active tool's group is collapsed (the tool is not in the
-    // cycle): step past its REGION to the nearest present tool in the
-    // direction, wrapping to the cycle's far end when none lies beyond.
-    const active_region = editorToolRegion(editor.active_tool);
-    if (forward) {
-        for (cycle) |entry| {
-            if (entry.region > active_region) return entry.tool;
+    // The Decorations group (hub_palette_collapsed[2]): one cell per
+    // campaign-shared type.
+    if (!palette_collapsed[2]) {
+        for (campaign_editor.decoration_types, 0..) |_, index| {
+            cycle.append(allocator, .{ .tool = .{ .decoration_type = @intCast(index) }, .region = 4 }) catch
+                @panic("failed to append a decoration tool");
         }
-        return cycle[0].tool;
     }
-    var index = cycle.len;
-    while (index > 0) {
-        index -= 1;
-        if (cycle[index].region < active_region) return cycle[index].tool;
-    }
-    return cycle[cycle.len - 1].tool;
+    return cycle.toOwnedSlice(allocator) catch @panic("failed to own the tool cycle");
+}
+
+/// The palette region a hub tool occupies: the layout order is
+/// [Select][Tile][NPCs][Missions][Decorations] - collapsed regions are
+/// skipped by the cycle, but an orphaned active tool keeps its region's
+/// position (see `nextMissionEditorTool`).
+fn hubToolRegion(tool: types.HubEditorToolId) u8 {
+    return switch (tool) {
+        .select => 0,
+        .tile => 1,
+        .npc => 2,
+        .mission => 3,
+        .decoration_type => 4,
+    };
+}
+
+/// The next hub-editor tool in the Tab cycle - `nextMissionEditorTool`'s
+/// exact spatial model over the drill-in's palette (the shared
+/// `stepToolCycle`): Tab cycles right, shift+Tab left, to the nearest
+/// PRESENT tool (collapsed groups are skipped). Pure.
+pub fn nextHubEditorTool(
+    allocator: std.mem.Allocator,
+    hub_editor: types.HubEditor,
+    campaign_editor: types.CampaignEditor,
+    palette_collapsed: [3]bool,
+    forward: bool,
+) types.HubEditorToolId {
+    const cycle = hubEditorToolCycle(allocator, hub_editor, campaign_editor, palette_collapsed);
+    defer allocator.free(cycle);
+    return stepToolCycle(types.HubEditorToolId, cycle, hub_editor.active_tool, hubToolRegion(hub_editor.active_tool), forward);
 }
 
 /// The campaign editor's Tab cycle: the three map tools left-to-right
@@ -2449,6 +2541,129 @@ test "nextMissionEditorTool: an orphaned tool keeps its region's position - the 
     try std.testing.expectEqual(
         types.EditorToolId.select,
         nextMissionEditorTool(allocator, decoration_editor, decorations_collapsed, true),
+    );
+}
+
+test "nextHubEditorTool: the fixed tools cycle when every group is collapsed" {
+    const allocator = std.testing.allocator;
+    const all_collapsed = [3]bool{ true, true, true };
+
+    // The cycle is [select, tile]: forward wraps tile -> select, backward
+    // wraps select -> tile (shift+Tab's direction - the hand-rolled hub
+    // switch shipped ignoring it).
+    try std.testing.expectEqual(
+        types.HubEditorToolId.tile,
+        nextHubEditorTool(allocator, .{ .hub = 0 }, .{}, all_collapsed, true),
+    );
+    try std.testing.expectEqual(
+        types.HubEditorToolId.select,
+        nextHubEditorTool(allocator, .{ .hub = 0, .active_tool = .tile }, .{}, all_collapsed, true),
+    );
+    try std.testing.expectEqual(
+        types.HubEditorToolId.tile,
+        nextHubEditorTool(allocator, .{ .hub = 0, .active_tool = .select }, .{}, all_collapsed, false),
+    );
+    try std.testing.expectEqual(
+        types.HubEditorToolId.select,
+        nextHubEditorTool(allocator, .{ .hub = 0, .active_tool = .tile }, .{}, all_collapsed, false),
+    );
+}
+
+test "nextHubEditorTool: expanded groups' tools ride the cycle in palette order" {
+    const allocator = std.testing.allocator;
+    // One decoration type + two missions (one outgoing from hub handle 0,
+    // one from another hub - only the outgoing one is in the cycle).
+    const missions = [_]types.CampaignMissionEdit{
+        .{ .handle = 10, .start = 0 },
+        .{ .handle = 11, .start = 7 },
+    };
+    const decoration_types = [_]types.DecorationTypeDef{
+        .{ .id = "tree", .sprite = "tree_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+    };
+    const campaign = types.CampaignEditor{
+        .missions = &missions,
+        .decoration_types = &decoration_types,
+    };
+    const hub_editor = types.HubEditor{ .hub = 0 };
+    // All groups expanded: the cycle is [select, tile, npc upgrader, npc
+    // guide, mission 10, decoration 0].
+    const expanded = [3]bool{ false, false, false };
+
+    try std.testing.expectEqual(
+        types.HubEditorToolId.tile,
+        nextHubEditorTool(allocator, hub_editor, campaign, expanded, true),
+    );
+    try std.testing.expectEqual(
+        types.HubEditorToolId{ .npc = .gear_upgrader },
+        nextHubEditorTool(allocator, .{ .hub = 0, .active_tool = .tile }, campaign, expanded, true),
+    );
+    try std.testing.expectEqual(
+        types.HubEditorToolId{ .npc = .dream_guide },
+        nextHubEditorTool(allocator, .{ .hub = 0, .active_tool = .{ .npc = .gear_upgrader } }, campaign, expanded, true),
+    );
+    try std.testing.expectEqual(
+        types.HubEditorToolId{ .mission = 10 },
+        nextHubEditorTool(allocator, .{ .hub = 0, .active_tool = .{ .npc = .dream_guide } }, campaign, expanded, true),
+    );
+    try std.testing.expectEqual(
+        types.HubEditorToolId{ .decoration_type = 0 },
+        nextHubEditorTool(allocator, .{ .hub = 0, .active_tool = .{ .mission = 10 } }, campaign, expanded, true),
+    );
+    try std.testing.expectEqual(
+        types.HubEditorToolId.select,
+        nextHubEditorTool(allocator, .{ .hub = 0, .active_tool = .{ .decoration_type = 0 } }, campaign, expanded, true),
+    );
+    // Backward steps the other way: decoration 0 -> mission 10, and
+    // select wraps to the last entry.
+    try std.testing.expectEqual(
+        types.HubEditorToolId{ .mission = 10 },
+        nextHubEditorTool(allocator, .{ .hub = 0, .active_tool = .{ .decoration_type = 0 } }, campaign, expanded, false),
+    );
+    try std.testing.expectEqual(
+        types.HubEditorToolId{ .decoration_type = 0 },
+        nextHubEditorTool(allocator, .{ .hub = 0, .active_tool = .select }, campaign, expanded, false),
+    );
+}
+
+test "nextHubEditorTool: collapsed groups are skipped - the spatial cycle" {
+    const allocator = std.testing.allocator;
+    const missions = [_]types.CampaignMissionEdit{
+        .{ .handle = 10, .start = 0 },
+    };
+    const decoration_types = [_]types.DecorationTypeDef{
+        .{ .id = "tree", .sprite = "tree_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+        .{ .id = "rock", .sprite = "rock_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+    };
+    const campaign = types.CampaignEditor{
+        .missions = &missions,
+        .decoration_types = &decoration_types,
+    };
+
+    // Missions collapsed, the rest expanded: the cycle is [select, tile,
+    // npc, npc, decoration 0, decoration 1] - a mission tool steps past
+    // its region in the DIRECTION (forward -> decoration 0, backward ->
+    // the second NPC).
+    const missions_collapsed = [3]bool{ false, true, false };
+    try std.testing.expectEqual(
+        types.HubEditorToolId{ .decoration_type = 0 },
+        nextHubEditorTool(allocator, .{ .hub = 0, .active_tool = .{ .mission = 10 } }, campaign, missions_collapsed, true),
+    );
+    try std.testing.expectEqual(
+        types.HubEditorToolId{ .npc = .dream_guide },
+        nextHubEditorTool(allocator, .{ .hub = 0, .active_tool = .{ .mission = 10 } }, campaign, missions_collapsed, false),
+    );
+
+    // Only the NPCs group expanded: a decoration tool (its group
+    // collapsed) steps to the nearest present tool in the direction -
+    // forward wraps to Select, backward lands on the second NPC.
+    const only_npcs = [3]bool{ false, true, true };
+    try std.testing.expectEqual(
+        types.HubEditorToolId.select,
+        nextHubEditorTool(allocator, .{ .hub = 0, .active_tool = .{ .decoration_type = 1 } }, campaign, only_npcs, true),
+    );
+    try std.testing.expectEqual(
+        types.HubEditorToolId{ .npc = .dream_guide },
+        nextHubEditorTool(allocator, .{ .hub = 0, .active_tool = .{ .decoration_type = 1 } }, campaign, only_npcs, false),
     );
 }
 

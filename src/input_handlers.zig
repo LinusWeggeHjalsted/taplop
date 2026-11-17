@@ -1732,51 +1732,19 @@ pub fn handleAnytimeInput(
                 } });
             }
         } else if (history.current_state.screen == .hub_editor) {
-            // The drill-in's cycle over the live palette: the fixed pair,
-            // then the NPC cells, then the outgoing-mission cells (the
-            // palette order - the mission editor's spatial cycle, grown
-            // one arm family at a time; the decoration tools join at
-            // 4-5).
+            // The drill-in's cycle over the live palette (the shared spatial
+            // planner - collapsed groups are skipped, same as the mission
+            // editor's).
             if (history.current_state.hub_editor) |hub_editor_state| {
                 if (history.current_state.campaign_editor) |campaign_editor| {
-                    const next_tool: types.HubEditorToolId = switch (hub_editor_state.active_tool) {
-                        .select => .tile,
-                        .tile => .{ .npc = .gear_upgrader },
-                        .npc => |npc_type| switch (npc_type) {
-                            .gear_upgrader => .{ .npc = .dream_guide },
-                            .dream_guide => first: {
-                                for (campaign_editor.missions) |mission| {
-                                    if (mission.start != null and mission.start.? == hub_editor_state.hub) {
-                                        break :first .{ .mission = mission.handle };
-                                    }
-                                }
-                                break :first .select;
-                            },
-                        },
-                        .mission => |mission_handle| next: {
-                            var seen = false;
-                            for (campaign_editor.missions) |mission| {
-                                if (mission.start == null or mission.start.? != hub_editor_state.hub) continue;
-                                if (mission.handle == mission_handle) {
-                                    seen = true;
-                                    continue;
-                                }
-                                if (seen) break :next .{ .mission = mission.handle };
-                            }
-                            break :next .select;
-                        },
-                        .decoration_type => |type_id| next: {
-                            // The last mission cell wraps to the first
-                            // decoration cell; the decoration cells cycle
-                            // among themselves then wrap to Select.
-                            if (type_id + 1 < campaign_editor.decoration_types.len) {
-                                break :next .{ .decoration_type = type_id + 1 };
-                            }
-                            break :next .select;
-                        },
-                    };
                     pushPlayerActionAndDrain(history, .{ .player_set_hub_tool = .{
-                        .tool = next_tool,
+                        .tool = planning.nextHubEditorTool(
+                            history.current_arena.allocator(),
+                            hub_editor_state,
+                            campaign_editor,
+                            history.session.ui_state.hub_palette_collapsed,
+                            forward,
+                        ),
                     } });
                 }
             }
