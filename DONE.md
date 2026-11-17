@@ -380,6 +380,7 @@ working rules).
 - [The review docs removed (PROJECTREVIEW.md + REVIEWPLAN.md)](#the-review-docs-removed-projectreviewmd--reviewplanmd)
 - [The shipped-defaults binding-lint test + the hub_editor context bugs it caught](#the-shipped-defaults-binding-lint-test--the-hubeditor-context-bugs-it-caught)
 - [swap_hands: the last untested named primitive gets its drain test](#swaphands-the-last-untested-named-primitive-gets-its-drain-test)
+- [Hub editor: the mission-editor mirrors - Tab cycle, Digit1-5, ctrl+O, the options menu, the return button](#hub-editor-the-mission-editor-mirrors---tab-cycle-digit1-5-ctrlo-the-options-menu-the-return-button)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -22783,3 +22784,68 @@ weapon must not linger into the new main hand's slots).
 
 The tech-debt item is trimmed to the general statement (sibling-drift
 lives where coverage lags); no per-verb census list remains to churn.
+
+## Hub editor: the mission-editor mirrors - Tab cycle, Digit1-5, ctrl+O, the options menu, the return button
+
+The author's report: mission editor functionality needed mirroring exactly
+in the hub editor drill-in. Six issues, one root theme - the drill-in had
+wired consumption but not the input surface:
+
+- **Tab + shift+Tab (two bugs, one root)**: the hub cycle was a hand-
+  rolled inline switch in the Tab consumption that (a) ignored
+  `hub_palette_collapsed` (Tab cycled into closed groups) and (b) never
+  read the `forward` flag (shift+Tab acted as Tab). Fix: the stepping is
+  now ONE shared spatial planner - `stepToolCycle`, generic over the
+  tool union, riding the same model for the mission + hub editors (the
+  drift between two hand-rolled steppers is exactly how this shipped).
+  `nextHubEditorTool` builds the drill-in's visible-tool cycle (the
+  fixed pair, then each expanded group's cells: the NPC pair, the hub's
+  outgoing missions, the campaign-shared decoration types) and steps
+  it; the inline switch is deleted. Unit tests mirror the mission
+  editor's cycle suite (collapsed fixed-pair cycle, palette-order ride,
+  orphaned-tool spatial steps).
+- **Digit1-5**: five payload-less keybind-only actions
+  (hub_select_tool, hub_tile_tool, toggle_hub_npc_group /
+  _mission_group / _decoration_group), bridged in translateInput onto
+  the hub palette's existing click actions (select_hub_tool +
+  `hub_tool` payload / toggle_hub_palette_group + `editor_group`
+  payload) - the campaign editor trio's discipline, keybind and click
+  sharing the consumption site exactly. Digit1-5 now carry 3-4
+  same-combo bindings across disjoint contexts (game/editor/campaign/
+  hub) - legal by design, and the shipped-defaults binding lint (the
+  earlier this-session fix) verifies the shipped file stays conflict-
+  free.
+- **ctrl+O**: the editor-browser family's derived contexts gained
+  hub_editor (contexts {editor, campaign_editor, hub_editor}) +
+  `editorBrowserReachableScreen` gained the hub screen - the same chord
+  now opens the browser over the hub editor.
+- **The options menu**: a hub_editor variant block - Save Hub
+  (`.save_hub`, the ctrl+S twin), Open Browser, World Map (the single
+  back-to-the-campaign-view button the author asked for;
+  `.close_hub_editor`, the same destination as the top bar's return
+  button). Structure tests pin the variant's entries + the sibling
+  editors' saves staying absent.
+- **The return button placement**: the top-right flush button
+  (buildHubEditorTopBar) is DELETED; `buildGlobalTopBar`'s map slot -
+  the slot one gap right of redo that carries the in-game world-map
+  button - now shows the campaign-map return on the hub editor screen
+  (`TopBarMapSlot` enum: none / world_map / campaign_map; view() owns
+  the rule, the bar draws what it's told). The in-game placement is
+  mirrored exactly: options, undo, redo, return.
+
+Runtime-verified end to end over the console channel: the collapsed-
+group Tab cycle (select↔tile; the NPC pair joins when expanded),
+backward cycling, the Digit tool switches + radio accordion toggles,
+ctrl+O over the drill-in, the options menu's buttons (Save Hub fired
+the real hub.txt write on a local campaign - byte-identical round
+trip, no drive-artifact cleanup needed; World Map returned to the
+campaign map), and the return button at (432,0) next to redo. The
+mission editor's own Tab + Digit keys regression-checked live after
+the stepper extraction.
+
+Drive-authors' note: the campaign browser row order is mtime-sorted,
+so the local campaigns precede the official one below the fold - the
+scroll-wheel does not currently move the campaign list in a piped
+drive (the console's remembered-pointer scroll merge - same family as
+the known console pointer-position re-merge item in TODO). Scrolling
+to the official campaign row needs a human hand for now.
