@@ -1133,26 +1133,66 @@ pub fn view(
     };
 }
 
+/// The gradient triple one editing surface's theme derives from - the
+/// shared source for the mission editor (its ACTIVE level tab) and the
+/// hub editor drill-in (the drilled hub's grid - a hub grid is an
+/// EditorLevel too), so the two derivations cannot drift. The fields are
+/// the metadata sidebar's gradient rows (DESIGN → Campaigns & the
+/// Campaign Editor → The hub editor surface).
+const GradientTriple = struct {
+    world_index: u32 = 0,
+    enemy_override: ?u32 = null,
+    player_override: ?u32 = null,
+};
+
+/// One EditorLevel's gradient triple (the shared core both editor
+/// screens' active themes derive through).
+fn editorLevelGradientTriple(level: types.EditorLevel) GradientTriple {
+    return .{
+        .world_index = level.color_wheel_index,
+        .enemy_override = level.enemy_gradient_index,
+        .player_override = level.player_gradient_index,
+    };
+}
+
 /// The active color theme for the current screen, derived from its
 /// color_wheel_index (level/hub); a neutral default elsewhere.
 fn activeThemeFor(
     current_state: *const GameState,
     color_theme_definitions: types.ColorThemeDefinitions,
 ) types.ActiveColorTheme {
-    // In edit mode the editor screen has no live level/hub, so the theme
-    // follows the ACTIVE level tab's settings. (During playtest/validate
-    // the instantiated `current.level` exists and takes precedence above.)
-    // Hubs carry no per-role overrides (wheel-only derivation).
-    const world_index: u32, const enemy_override: ?u32, const player_override: ?u32 = if (current_state.level) |level|
-        .{ level.color_wheel_index, level.enemy_gradient_index, level.player_gradient_index }
+    // In edit mode there is no live level/hub, so the theme follows the
+    // EDITING TARGET's settings: the ACTIVE level tab on the mission
+    // editor (during playtest/validate the instantiated
+    // `current.level` exists and takes precedence above), the drilled
+    // hub's grid on the hub editor. The RUNTIME hub carries no per-role
+    // overrides (wheel-only derivation).
+    const triple: GradientTriple = if (current_state.level) |level|
+        .{
+            .world_index = level.color_wheel_index,
+            .enemy_override = level.enemy_gradient_index,
+            .player_override = level.player_gradient_index,
+        }
     else if (current_state.hub) |hub|
-        .{ hub.color_wheel_index, null, null }
+        .{ .world_index = hub.color_wheel_index }
     else if (current_state.editor) |editor| blk: {
-        if (editor.levels.len == 0) break :blk .{ 0, null, null };
-        const level = editor.levels[@min(editor.active_level_index, editor.levels.len - 1)];
-        break :blk .{ level.color_wheel_index, level.enemy_gradient_index, level.player_gradient_index };
-    } else .{ 0, null, null };
-    return loaders.deriveActiveColorTheme(color_theme_definitions, world_index, enemy_override, player_override);
+        if (editor.levels.len == 0) break :blk .{};
+        break :blk editorLevelGradientTriple(
+            editor.levels[@min(editor.active_level_index, editor.levels.len - 1)],
+        );
+    } else if (current_state.hub_editor) |hub_editor| blk: {
+        const campaign_editor = current_state.campaign_editor orelse break :blk .{};
+        for (campaign_editor.hubs) |hub| {
+            if (hub.handle == hub_editor.hub) break :blk editorLevelGradientTriple(hub.grid);
+        }
+        break :blk .{};
+    } else .{};
+    return loaders.deriveActiveColorTheme(
+        color_theme_definitions,
+        triple.world_index,
+        triple.enemy_override,
+        triple.player_override,
+    );
 }
 
 /// Layout region for the middle panels: the horizontal band between the top
@@ -4654,6 +4694,93 @@ test "editor selection overlay: lightest-color outlines around all selected regi
     try std.testing.expectEqual(@as(usize, 4), tile_outlines);
     // The 2-wide decoration's region = 6 boundary edges.
     try std.testing.expectEqual(@as(usize, 6), region_edges);
+}
+
+test "activeThemeFor: the hub editor follows the drilled hub's gradients" {
+    // Nine monochrome-distinguished gradients (the loaders test pattern):
+    // gradient i's colors are value i*20+10, so a theme's gradient picks
+    // read from the first color.
+    var gradients: [9]types.ColorGradient = undefined;
+    for (&gradients, 0..) |*gradient, index| {
+        const value: u8 = @intCast(index * 20 + 10);
+        gradient.* = .{ .colors = @splat(types.Color{ .r = value, .g = value, .b = value }) };
+    }
+    const definitions = types.ColorThemeDefinitions{
+        .lightest = .{ .r = 255, .g = 255, .b = 240 },
+        .darkest = .{ .r = 20, .g = 15, .b = 25 },
+        .gradients = &gradients,
+    };
+
+    // The drilled hub's grid carries the picked triple (world 2, player
+    // override 1, enemy auto).
+    const hubs = [_]types.CampaignHubEdit{
+        .{ .handle = 3, .position = .{ .x = 0, .y = 0 } },
+        .{ .handle = 7, .position = .{ .x = 0, .y = 0 }, .grid = .{
+            .color_wheel_index = 2,
+            .player_gradient_index = 1,
+        } },
+    };
+    const hub_state = GameState{
+        .screen = .hub_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{ .hubs = &hubs },
+        .hub_editor = .{ .hub = 7 },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+    const theme = activeThemeFor(&hub_state, definitions);
+    // World 2; the player override 1; the enemy auto-derived at 2 + 3.
+    try std.testing.expectEqual(@as(u8, 50), theme.world_gradient.colors[0].r);
+    try std.testing.expectEqual(@as(u8, 110), theme.enemy_gradient.colors[0].r);
+    try std.testing.expectEqual(@as(u8, 30), theme.player_gradient.colors[0].r);
+
+    // A dead handle (a crafted log) falls to the neutral default.
+    const stale_state = GameState{
+        .screen = .hub_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{ .hubs = &hubs },
+        .hub_editor = .{ .hub = 99 },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+    const neutral = activeThemeFor(&stale_state, definitions);
+    try std.testing.expectEqual(@as(u8, 10), neutral.world_gradient.colors[0].r);
+    try std.testing.expectEqual(@as(u8, 70), neutral.enemy_gradient.colors[0].r);
+    try std.testing.expectEqual(@as(u8, 130), neutral.player_gradient.colors[0].r);
+
+    // The shared-core contract: the mission editor over an EditorLevel
+    // with the SAME triple derives the SAME theme - the two arms share
+    // one resolution path and cannot drift.
+    const levels = [_]types.EditorLevel{.{
+        .color_wheel_index = 2,
+        .player_gradient_index = 1,
+    }};
+    const editor_state = GameState{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{ .levels = &levels, .active_level_index = 0 },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+    const editor_theme = activeThemeFor(&editor_state, definitions);
+    try std.testing.expectEqualDeep(theme, editor_theme);
 }
 
 test "editor move-drag preview: unselected claim translates the grabbed group, selected claim the selection" {
