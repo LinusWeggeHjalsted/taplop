@@ -397,6 +397,7 @@ working rules).
 - [Console boot gate: commands flow only once the game is ready](#console-boot-gate-commands-flow-only-once-the-game-is-ready)
 - [Hand-off save: the campaign table never lags the persisted mission dir](#hand-off-save-the-campaign-table-never-lags-the-persisted-mission-dir)
 - [Revalidate crash: artifacts ride renames (recorded-path rebase) + checking-mode read failures reject](#revalidate-crash-artifacts-ride-renames-recorded-path-rebase--checking-mode-read-failures-reject)
+- [Replay tolerates anytime input recorded mid-cascade (the mid-drain seed)](#replay-tolerates-anytime-input-recorded-mid-cascade-the-mid-drain-seed)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -23648,3 +23649,32 @@ site could do its job. The panic's own comment called the failure
   revalidate now re-binds those missions (benign edits pass), so the
   campaign Validate should go quiet after a revalidate pass over each
   stale mission.
+
+## Replay tolerates anytime input recorded mid-cascade (the mid-drain seed)
+
+The author's Needle Bush revalidate rejected with "handler would run
+level_event.use_skill, but recorded history has
+player_input_event.player_toggle_ui_surface" - and the content really
+hadn't changed. The artifact told the whole story at event 258-261: the
+author opened the INVENTORY during the enemy turn's 500ms wait, so live
+play recorded a top-level player event BETWEEN the cascade's remaining
+children - a legal interleaving the natural-stack replay model couldn't
+reproduce. The model assumed top-level player events only land at
+drained points; live anytime input fires on any frame, including the
+wait frames that pause a cascade.
+
+- The fix mirrors the live shape exactly: when the replay loops
+  (`replayTo` for undo/redo's slow path, `replayToWithIdleTracking` for
+  reconstruction/revalidate) find the stack mid-drain and the recorded
+  event is a player action, they seed it ON TOP of the stack (LIFO -
+  where live pushed it), through the same legality gates as a drained
+  seed. The cascade's children resume underneath; no-rejection is itself
+  the proof the interleaved events ran in order (a skipped seed would
+  mismatch the next recorded position).
+- Test: the validation fixture's recorded run with a toggle pair
+  spliced MID-SUBTREE (between a move's pickup_around and the remaining
+  children) replays cleanly end-to-end where the old loop rejected.
+- Live: the author's exact artifact (the inventory toggle at recorded
+  event 259) - "Revalidation passed - the stored replay again certifies
+  the current mission content." All three Polpat missions now revalidate;
+  the campaign Validate should report them clean.

@@ -3298,6 +3298,32 @@ pub const GameStateHistory = struct {
                 // (normal mode never records one - rejectReplay panics).
                 if (self.replay_rejection != null) return;
                 self.current_state.event_stack = &.{next};
+            } else {
+                // Mid-drain: a recorded PLAYER action at this position is a
+                // live anytime input that fired while the cascade was
+                // paused (the inventory toggle mid-enemy-turn - a wait's
+                // ticking frames are input-active, so the panel opens
+                // between a parent's remaining children). Live pushed it
+                // ON TOP of the paused cascade; mirror that shape - seed
+                // it on the stack top, LIFO - so the recorded
+                // interleaving replays. The drained-only seeding below was
+                // the natural-stack model's gap. Non-player events here
+                // are the cascade's own handler-pushed children: no seed,
+                // the verify below checks them against the stack top.
+                const next = self.event_history.items[self.current_event_index];
+                if (self.isPlayerAction(next)) {
+                    self.validatePlayerAction(next);
+                    // Checking mode: abort at the first recorded rejection
+                    // (normal mode never records one - rejectReplay panics).
+                    if (self.replay_rejection != null) return;
+                    var stack: std.ArrayList(Event) = .empty;
+                    stack.appendSlice(self.current_arena.allocator(), self.current_state.event_stack) catch
+                        @panic("failed to copy replay stack for mid-drain seed");
+                    stack.append(self.current_arena.allocator(), next) catch
+                        @panic("failed to append mid-drain seed");
+                    self.current_state.event_stack = stack.toOwnedSlice(self.current_arena.allocator()) catch
+                        @panic("failed to own mid-drain replay stack");
+                }
             }
 
             // Verify: the event about to run (stack top) matches the recording.
@@ -3377,6 +3403,32 @@ pub const GameStateHistory = struct {
                 // (normal mode never records one - rejectReplay panics).
                 if (self.replay_rejection != null) return;
                 self.current_state.event_stack = &.{next};
+            } else {
+                // Mid-drain: a recorded PLAYER action at this position is a
+                // live anytime input that fired while the cascade was
+                // paused (the inventory toggle mid-enemy-turn - a wait's
+                // ticking frames are input-active, so the panel opens
+                // between a parent's remaining children). Live pushed it
+                // ON TOP of the paused cascade; mirror that shape - seed
+                // it on the stack top, LIFO - so the recorded
+                // interleaving replays. The drained-only seeding below was
+                // the natural-stack model's gap. Non-player events here
+                // are the cascade's own handler-pushed children: no seed,
+                // the verify below checks them against the stack top.
+                const next = self.event_history.items[self.current_event_index];
+                if (self.isPlayerAction(next)) {
+                    self.validatePlayerAction(next);
+                    // Checking mode: abort at the first recorded rejection
+                    // (normal mode never records one - rejectReplay panics).
+                    if (self.replay_rejection != null) return;
+                    var stack: std.ArrayList(Event) = .empty;
+                    stack.appendSlice(self.current_arena.allocator(), self.current_state.event_stack) catch
+                        @panic("failed to copy replay stack for mid-drain seed");
+                    stack.append(self.current_arena.allocator(), next) catch
+                        @panic("failed to append mid-drain seed");
+                    self.current_state.event_stack = stack.toOwnedSlice(self.current_arena.allocator()) catch
+                        @panic("failed to own mid-drain replay stack");
+                }
             }
 
             // Verify: the event about to run (stack top) matches the recording.

@@ -1424,6 +1424,22 @@ that true (`src/session_log_bundle.zig`):
   the old virtual-depth bookkeeping (idle = stack empties). This is also the
   primitive the Online Services TODO wants for server-side replay validation
   (leaderboard anti-cheat).
+- **Mid-drain seeding: anytime input recorded inside a cascade.** Live play
+  can fire an anytime action while a cascade is PAUSED on its wait (the
+  enemy turn's ticking frames are input-active - the author opened the
+  inventory mid-enemy-turn, and the recording interleaved the toggle
+  BETWEEN the cascade's remaining children). The natural-stack model's
+  "top-level player events land only at drained points" was a gap: the
+  replay hit the toggle's recorded position with the cascade's next child
+  on the stack and rejected. The loops now mirror the live shape: when the
+  stack is mid-drain and the recorded event is a player action, it is
+  seeded ON TOP of the stack (LIFO - exactly where live pushed it), runs
+  through the same legality gates as a drained seed, and the cascade's
+  children resume underneath it. No-rejection is itself the proof the
+  interleaved events ran in order (a skipped seed would mismatch the next
+  recorded position). Applies to both replay loops (`replayTo` /
+  `replayToWithIdleTracking` - so undo/redo and reconstruction both
+  tolerate the interleaving too).
 - **Replay CHECKING mode (the revalidate seam).** All three verification
   layers route through `GameStateHistory.rejectReplay`: normal mode
   (`replay_checking = false`, every standard replay origin) fails fast via

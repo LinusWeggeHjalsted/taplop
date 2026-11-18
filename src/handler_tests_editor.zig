@@ -9034,3 +9034,75 @@ test "revalidate: a referenced file gone missing rejects, never crashes" {
     try testing.expect(std.mem.indexOf(u8, history.session.pending_error.?, "revalidation failed") != null);
     try testing.expect(std.mem.indexOf(u8, history.session.pending_error.?, "no longer matches") != null);
 }
+
+test "reconstructFromEventLogChecking: an anytime toggle recorded mid-cascade replays (seeded on top)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    try writeValidationFixtureMission(&harness);
+
+    const levels = [_]types.EditorLevel{ .{}, .{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
+    }));
+    runToIdle(&history);
+    try playFixtureRunToCompletion(&history, false);
+
+    const result = try readFixtureReplay(&harness, arena);
+
+    // The motivating recording shape (the author's Needle Bush artifact):
+    // an anytime input fired while a cascade was paused on its wait - the
+    // panel toggle landed BETWEEN a parent's remaining children, a legal
+    // live interleaving the drained-only seeding could not replay (the
+    // revalidate rejection: "handler would run level_event.use_skill, but
+    // recorded history has player_input_event.player_toggle_ui_surface").
+    // Insert the toggle pair mid-subtree: after the first move's
+    // pickup_around, with the cascade's own children still following.
+    var insert_index: usize = 0;
+    for (result.replay.events, 0..) |event, index| {
+        switch (event) {
+            .sub_level_event => |sub| switch (sub) {
+                .pickup_around => {
+                    insert_index = index + 1;
+                    break;
+                },
+                else => {},
+            },
+            else => {},
+        }
+    }
+    try testing.expect(insert_index > 0);
+    // The recorded events AFTER the insert point include the move
+    // cascade's remaining children - the insert is genuinely mid-subtree.
+    try testing.expect(insert_index + 1 < result.replay.events.len);
+
+    var interleaved: std.ArrayList(events.Event) = .empty;
+    try interleaved.appendSlice(arena, result.replay.events[0..insert_index]);
+    try interleaved.append(arena, .{ .player_input_event = .{ .player_toggle_ui_surface = .{
+        .surface = .inventory,
+    } } });
+    try interleaved.append(arena, .{ .meta_event = .{ .toggle_ui_surface = .{
+        .surface = .inventory,
+    } } });
+    try interleaved.appendSlice(arena, result.replay.events[insert_index..]);
+
+    var scratch_start = test_harness.defaultStartingState();
+    scratch_start.event_stack = &.{};
+    var scratch = harness.newHistory(scratch_start);
+    const rejection = scratch.reconstructFromEventLogChecking(
+        interleaved.items,
+        @intCast(interleaved.items.len),
+        &event_handlers.processEvent,
+    );
+
+    // The mid-drain seed replays the interleaving. "No rejection" is
+    // itself the proof both interleaved events RAN in recorded order: a
+    // skipped toggle would have left the cascade's next child on the
+    // stack against the recorded toggle_ui_surface - an immediate
+    // verifyReplayMatch mismatch.
+    try testing.expect(rejection == null);
+    try testing.expect(scratch.current_state.screen == .main_menu);
+    try testing.expect(scratch.current_state.mission == null);
+}
