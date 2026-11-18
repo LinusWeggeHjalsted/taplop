@@ -383,6 +383,18 @@ fn campaignMissionInspectorEntries(
             } },
         } });
     }
+    // The hand-off entry (the Open Hub Editor twin): the return button +
+    // the save target are the only differences (DESIGN → The
+    // mission-editor hand-off). ABOVE the import affordance - the
+    // more-used action reads first when scrolled.
+    try entries.append(allocator, .{ .field = .{
+        .label = "Drill-in",
+        .control = .{ .action_button = .{
+            .label = "Open Mission Editor",
+            .action = .open_mission_editor,
+            .payload = .{ .editor_campaign_mission = mission.handle },
+        } },
+    } });
     // The import affordance (a picked import lands UNWIRED and selected -
     // the author re-attaches it).
     try entries.append(allocator, .{ .field = .{
@@ -391,17 +403,6 @@ fn campaignMissionInspectorEntries(
             .label = "Import Mission",
             .action = .open_campaign_import_picker,
             .payload = null,
-        } },
-    } });
-    // The hand-off entry (the Open Hub Editor twin): the return button +
-    // the save target are the only differences (DESIGN → The
-    // mission-editor hand-off).
-    try entries.append(allocator, .{ .field = .{
-        .label = "Drill-in",
-        .control = .{ .action_button = .{
-            .label = "Open Mission Editor",
-            .action = .open_mission_editor,
-            .payload = .{ .editor_campaign_mission = mission.handle },
         } },
     } });
     return entries.toOwnedSlice(allocator);
@@ -1754,18 +1755,25 @@ test "buildCampaignEditorView: the mission inspector + edge buttons + the draw p
     try std.testing.expectEqual(@as(u32, 3), mission_name_field.?.ref.target.campaign_mission);
     try std.testing.expectEqual(@as(u32, 3), direction_field.?.ref.target.campaign_mission);
 
-    // The hand-off entry (the slice-5 open) sits UNDER Import - the
-    // section's 13 units overflow the panel's 11 visible rows, so at
-    // scroll 0 the button is WINDOWED OUT (the shared renderer skips
-    // entries that don't fully fit; the scrollbar marks the overflow).
+    // The hand-off entry (the slice-5 open) sits ABOVE Import - the
+    // more-used action reads first. The section's 13 units overflow the
+    // panel's 11 visible rows, so at scroll 0 the hand-off IS in the
+    // window while the Import affordance below it is WINDOWED OUT (the
+    // shared renderer skips entries that don't fully fit; the scrollbar
+    // marks the overflow).
     var open_mission_button: ?ui_element.Button = null;
+    var import_button: ?ui_element.Button = null;
     for (elements.items) |element| switch (element) {
         .button => |button| if (button.action == .open_mission_editor) {
             open_mission_button = button;
+        } else if (button.action == .open_campaign_import_picker) {
+            import_button = button;
         },
         else => {},
     };
-    try std.testing.expect(open_mission_button == null);
+    try std.testing.expect(open_mission_button != null);
+    try std.testing.expectEqual(@as(u32, 3), open_mission_button.?.payload.?.editor_campaign_mission);
+    try std.testing.expect(import_button == null);
     var scrollbar_tracks: usize = 0;
     for (elements.items) |element| switch (element) {
         .solid_rect => |rect| if (std.meta.eql(rect.color, ui_element.scrollbar_track_color)) {
@@ -1776,8 +1784,8 @@ test "buildCampaignEditorView: the mission inspector + edge buttons + the draw p
     try std.testing.expectEqual(@as(usize, 1), scrollbar_tracks);
 
     // Scrolled to the bottom (a seeded out-of-range offset clamps to
-    // max_scroll = 13 - 11 = 2): the hand-off button enters the window,
-    // carrying the selected mission's handle.
+    // max_scroll = 13 - 11 = 2): the import button enters the window
+    // under the hand-off (the swapped order: the hand-off above).
     ui_state.editor_inspector_scroll = 99;
     var scrolled_elements: UiElementList = .empty;
     defer scrolled_elements.deinit(arena.allocator());
@@ -1804,6 +1812,18 @@ test "buildCampaignEditorView: the mission inspector + edge buttons + the draw p
     };
     try std.testing.expect(open_mission_button != null);
     try std.testing.expectEqual(@as(u32, 3), open_mission_button.?.payload.?.editor_campaign_mission);
+
+    // The swapped order at the scrolled window: the hand-off entry sits
+    // ABOVE the import affordance (the more-used action first).
+    import_button = null;
+    for (scrolled_elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .open_campaign_import_picker) {
+            import_button = button;
+        },
+        else => {},
+    };
+    try std.testing.expect(import_button != null);
+    try std.testing.expect(open_mission_button.?.screen_position.y < import_button.?.screen_position.y);
 
     var reattach_buttons: usize = 0;
     var alpha_row = false;
