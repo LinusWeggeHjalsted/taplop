@@ -7184,7 +7184,7 @@ test "hub exit click resolves the destination through the campaign edge table (d
         var history = harness.newHistory(.{
             .screen = .hub,
             .event_stack = &.{},
-            .player_data = .{ .current_campaign = "main_campaign", .current_hub = "camp_at_the_crossroads" },
+            .player_data = .{ .current_hub = "camp_at_the_crossroads" },
             .camera = null,
             .editor = null,
             .replay_viewer = null,
@@ -7220,7 +7220,7 @@ test "hub exit click resolves the destination through the campaign edge table (d
         var history = harness.newHistory(.{
             .screen = .hub,
             .event_stack = &.{},
-            .player_data = .{ .current_campaign = "main_campaign", .current_hub = "camp_at_the_crossroads" },
+            .player_data = .{ .current_hub = "camp_at_the_crossroads" },
             .camera = null,
             .editor = null,
             .replay_viewer = null,

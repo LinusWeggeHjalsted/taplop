@@ -128,11 +128,6 @@ fn officialMissionLevelCount(dir_path: []const u8) u32 {
     return count;
 }
 
-/// The embedded OFFICIAL campaign dirs (content-root-relative, e.g.
-/// "campaigns/main_campaign") - the campaign-level counterpart of
-/// `official_mission_dir_paths`. Comptime from the embedded map: every
-/// `data/campaigns/<campaign>/campaign.txt` key with a single plain
-/// campaign segment.
 /// The embedded map's keys (project-root-relative, `data/`-prefixed for
 /// campaign content). The raw comptime list for scans that walk arbitrary
 /// embedded subtrees (the hub-dir scan). Returns a RUNTIME slice duped

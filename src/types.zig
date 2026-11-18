@@ -2862,9 +2862,9 @@ pub const DiscoveredCampaignHubs = struct {
 
 pub const PlayerData = struct {
     player_name: []const u8 = &.{},
-    /// The active campaign's storage dir (the resolution root pointer -
-    /// verified against `current_campaign_uuid` at load) + its identity.
-    current_campaign: []const u8 = &.{},
+    /// The active campaign's identity (PlayerData references identity
+    /// only - the resume path resolves the uuid to a dir by scan; see
+    /// DESIGN → Campaigns & the Campaign Editor → Uuid→dir resolution).
     current_campaign_uuid: []const u8 = &.{},
     /// The last-visited hub, as a hub uuid (the single resume point - see
     /// DESIGN → Campaigns & the Campaign Editor → Campaign switching).

@@ -2267,7 +2267,7 @@ test "write_save failure: sets pending_error, no crash, no state corruption" {
     const starting_state = GameState{
         .screen = .main_menu,
         .event_stack = &.{.{ .meta_event = .open_main_menu }},
-        .player_data = .{ .current_campaign = "test_campaign", .player_name = "Test" },
+        .player_data = .{ .player_name = "Test" },
         .camera = null,
         .editor = null,
         .replay_viewer = null,

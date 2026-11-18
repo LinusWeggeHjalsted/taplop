@@ -72,8 +72,8 @@ pub const MetaEvent = union(enum) {
     // campaign branch): load the target campaign's graph through the
     // reconstruction cache (the load_save / start_level precedent - a
     // recorded read, so replay is deterministic) + install it on
-    // GameState, updating the PlayerData identity fields
-    // (current_campaign_uuid / current_campaign). NO screen transition -
+    // GameState, updating the PlayerData identity
+    // (current_campaign_uuid). NO screen transition -
     // the event rides INSIDE a map-acting cascade beneath the real
     // arrival/entry (a transitionScreen would clear the event stack and
     // eat it; see player_travel_to_hub / player_start_mission_from_map).

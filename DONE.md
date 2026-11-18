@@ -399,6 +399,7 @@ working rules).
 - [Revalidate crash: artifacts ride renames (recorded-path rebase) + checking-mode read failures reject](#revalidate-crash-artifacts-ride-renames-recorded-path-rebase--checking-mode-read-failures-reject)
 - [Replay tolerates anytime input recorded mid-cascade (the mid-drain seed)](#replay-tolerates-anytime-input-recorded-mid-cascade-the-mid-drain-seed)
 - [That Which Explodes: effect-sourced attacks never trigger effects](#that-which-explodes-effect-sourced-attacks-never-trigger-effects)
+- [Savefile resume by campaign uuid (drop `current_campaign`)](#savefile-resume-by-campaign-uuid-drop-currentcampaign)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -23704,3 +23705,50 @@ the attacker's, until one died.
   exact combo (mutual holders, one enemy attack) - the cascade ends
   after one explosion with both alive (pre-fix it chained until a
   death). 1079 tests green.
+
+## Savefile resume by campaign uuid (drop `current_campaign`)
+
+The author hit the rename bug: a savefile written while the campaign
+dir was `617898a6-..._Main Campaign` stopped loading after the
+campaign editor renamed it to Polpat - the save stored the STORAGE DIR
+(`current_campaign`) and the resume path loaded by dir name, with
+`current_campaign_uuid` used only as a post-hoc "identity changed"
+warning. DESIGN → Campaigns → Uuid→dir resolution already settled the
+opposite ("PlayerData references identity only - never storage"), but
+the code only implemented it for hubs/missions (scan-based
+`resolveUuidDir`); the campaign itself was the last name-based
+reference. This change finishes the settle:
+
+- `loaders.resolveCampaignDir` (the campaign-level sibling of
+  `resolveCampaignHubs`): resolves a campaign uuid to its dir via
+  `file_source.resolveUuidDir` (persistent `campaigns/` + the embedded
+  official campaign, latest-mtime duplicate resolution + warning).
+  `loadCampaignAndPushHub` now resumes by uuid SCAN; the uuid-vs-dir
+  verification warning is deleted (structurally impossible - the dir
+  now comes FROM the uuid). An unresolvable uuid is the recoverable
+  popup ("the save's campaign ... is not installed"), the same posture
+  as a missing save file. The scan sits at the same site as the
+  hub/mission scans `installCampaignGraph` already runs - the same
+  replay posture, no new purity class.
+- `current_campaign` deleted through the stack: PlayerData field, the
+  save writer/reader, `save_info_keys`, the shipped default saves, and
+  every test literal. Migration is free (every accepted save is format
+  v3, which mandates the uuid); a stale `current_campaign` line in an
+  old savefile now loads with a benign unknown-key warning and
+  disappears at the next save. No version bump: the field removal is
+  backward-tolerant and saves are local per-player artifacts.
+- Runtime readers switched from the PlayerData mirror to the installed
+  graph: `start_hub`'s hub path and the hub mission-exit path build
+  from `current.campaign.?.dir` (the graph IS the resolution root; both
+  sites already required an installed campaign). Continue-button
+  availability reads `current_campaign_uuid`.
+- Tests: `writeFixtureCampaignAt` (the map-acting fixture writer,
+  dir-parameterized) backs two new drain tests - resume with the
+  campaign dir renamed out from under the save (lands in the hub, dir
+  resolved by uuid), and the uninstalled-uuid recoverable popup.
+  1081 tests green.
+- Pre-existing drift cleaned in passing: `file_source.zig` carried an
+  orphaned doc block describing a COMPTIME campaign-dir scan that no
+  longer exists - exactly the recipe the comptime-materialization
+  gotcha forbids; the live implementation is the runtime-sliced
+  `embeddedCampaignDirs` in loaders.zig.

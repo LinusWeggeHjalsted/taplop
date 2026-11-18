@@ -32,35 +32,53 @@ const campaign_uuid = "cccccccc-0000-0000-0000-000000000003";
 const mission_uuid = "dddddddd-0000-0000-0000-000000000004";
 const mission_path = "campaigns/test_campaign/missions/m1";
 
+/// Write the fixture campaign's files under `campaigns/<campaign_dir>/`
+/// (dir-parameterized: the resume tests exercise uuid-only resolution,
+/// which must not care what the dir is named - the editor's cosmetic
+/// dir tidy can rename it at any save).
+fn writeFixtureCampaignAt(history: *state.GameStateHistory, campaign_dir: []const u8) void {
+    const fs = history.file_source;
+    const allocator = history.current_arena.allocator();
+    const campaign_path = std.fmt.allocPrint(allocator, "campaigns/{s}/campaign.txt", .{campaign_dir}) catch
+        @panic("failed to build fixture campaign path");
+    fs.writeFile(
+        campaign_path,
+        "Metadata\nfile_format_version 5\nname Test Campaign\ncampaign_uuid " ++ campaign_uuid ++ "\nstart_hub " ++ hub_a_uuid ++ "\n\nHubs\n\nhub_uuid " ++ hub_a_uuid ++ "\nposition 0 0\n\nhub_uuid " ++ hub_b_uuid ++ "\nposition 900 0\n\nMissions\n\nmission_uuid " ++ mission_uuid ++ "\nstart_hub " ++ hub_a_uuid ++ "\ndestination_hub " ++ hub_b_uuid ++ "\n",
+    ) catch @panic("write fixture campaign");
+    const hub_a_path = std.fmt.allocPrint(allocator, "campaigns/{s}/hubs/hub_a/hub.txt", .{campaign_dir}) catch
+        @panic("failed to build fixture hub a path");
+    fs.writeFile(
+        hub_a_path,
+        "Metadata\nfile_format_version 5\nhub_uuid " ++ hub_a_uuid ++ "\nname Hub A\n\nLayout 3\n...\n.!E\n...\n\nExits\ncharacter_code E\nmission_uuid " ++ mission_uuid ++ "\n",
+    ) catch @panic("write fixture hub a");
+    const hub_b_path = std.fmt.allocPrint(allocator, "campaigns/{s}/hubs/hub_b/hub.txt", .{campaign_dir}) catch
+        @panic("failed to build fixture hub b path");
+    fs.writeFile(
+        hub_b_path,
+        "Metadata\nfile_format_version 5\nhub_uuid " ++ hub_b_uuid ++ "\nname Hub B\n\nLayout 3\n...\n.!.\n...\n",
+    ) catch @panic("write fixture hub b");
+    const mission_path_at_dir = std.fmt.allocPrint(allocator, "campaigns/{s}/missions/m1/mission.txt", .{campaign_dir}) catch
+        @panic("failed to build fixture mission path");
+    fs.writeFile(
+        mission_path_at_dir,
+        "Metadata\nfile_format_version 3\nmission_uuid " ++ mission_uuid ++ "\nname Map Mission\n",
+    ) catch @panic("write fixture mission");
+    const level_path = std.fmt.allocPrint(allocator, "campaigns/{s}/missions/m1/level_1.txt", .{campaign_dir}) catch
+        @panic("failed to build fixture level path");
+    fs.writeFile(
+        level_path,
+        "Metadata\nfile_format_version 2\n\nLayout 1\n!=\n",
+    ) catch @panic("write fixture level");
+}
+
 /// Write the fixture campaign into the history's scratch persistent dir
 /// (readFile resolves persistent-first, so it shadows nothing embedded)
 /// and enter it: player_continue with the campaign identity populated
 /// runs loadCampaignAndPushHub -> start_hub{A} -> discovered A. Returns
 /// with the session in hub A.
 fn enterFixtureCampaign(history: *state.GameStateHistory) void {
-    const fs = history.file_source;
-    fs.writeFile(
-        "campaigns/test_campaign/campaign.txt",
-        "Metadata\nfile_format_version 5\nname Test Campaign\ncampaign_uuid " ++ campaign_uuid ++ "\nstart_hub " ++ hub_a_uuid ++ "\n\nHubs\n\nhub_uuid " ++ hub_a_uuid ++ "\nposition 0 0\n\nhub_uuid " ++ hub_b_uuid ++ "\nposition 900 0\n\nMissions\n\nmission_uuid " ++ mission_uuid ++ "\nstart_hub " ++ hub_a_uuid ++ "\ndestination_hub " ++ hub_b_uuid ++ "\n",
-    ) catch @panic("write fixture campaign");
-    fs.writeFile(
-        "campaigns/test_campaign/hubs/hub_a/hub.txt",
-        "Metadata\nfile_format_version 5\nhub_uuid " ++ hub_a_uuid ++ "\nname Hub A\n\nLayout 3\n...\n.!E\n...\n\nExits\ncharacter_code E\nmission_uuid " ++ mission_uuid ++ "\n",
-    ) catch @panic("write fixture hub a");
-    fs.writeFile(
-        "campaigns/test_campaign/hubs/hub_b/hub.txt",
-        "Metadata\nfile_format_version 5\nhub_uuid " ++ hub_b_uuid ++ "\nname Hub B\n\nLayout 3\n...\n.!.\n...\n",
-    ) catch @panic("write fixture hub b");
-    fs.writeFile(
-        "campaigns/test_campaign/missions/m1/mission.txt",
-        "Metadata\nfile_format_version 3\nmission_uuid " ++ mission_uuid ++ "\nname Map Mission\n",
-    ) catch @panic("write fixture mission");
-    fs.writeFile(
-        "campaigns/test_campaign/missions/m1/level_1.txt",
-        "Metadata\nfile_format_version 2\n\nLayout 1\n!=\n",
-    ) catch @panic("write fixture level");
+    writeFixtureCampaignAt(history, "test_campaign");
 
-    history.current_state.player_data.current_campaign = "test_campaign";
     history.current_state.player_data.current_campaign_uuid = campaign_uuid;
     history.current_state.player_data.current_hub = hub_a_uuid;
     event_push.pushPlayerAction(
@@ -69,6 +87,62 @@ fn enterFixtureCampaign(history: *state.GameStateHistory) void {
         history.current_arena.allocator(),
     );
     runToIdle(history);
+}
+
+test "player_continue resolves the campaign uuid by scan - the dir name never rides the save" {
+    // The rename-regression shape: a save written while the campaign dir
+    // carried one name resumes fine after the editor's cosmetic dir tidy
+    // renamed it - PlayerData carries identity only, and the resume scan
+    // resolves the uuid (DESIGN → Campaigns & the Campaign Editor →
+    // Uuid→dir resolution).
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    writeFixtureCampaignAt(&history, "renamed_after_save");
+
+    history.current_state.player_data.current_campaign_uuid = campaign_uuid;
+    history.current_state.player_data.current_hub = hub_a_uuid;
+    event_push.pushPlayerAction(
+        &history.current_state,
+        .player_continue,
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    try testing.expectEqual(state.Screen.hub, history.current_state.screen);
+    try testing.expectEqualStrings("renamed_after_save", history.current_state.campaign.?.dir);
+    try testing.expectEqualStrings("Hub A", history.current_state.hub.?.name);
+    try testing.expectEqualStrings(campaign_uuid, history.current_state.player_data.current_campaign_uuid);
+}
+
+test "player_continue with an uninstalled campaign uuid is the recoverable popup" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+
+    history.current_state.player_data.current_campaign_uuid = "eeeeeeee-0000-0000-0000-000000000009";
+    history.current_state.player_data.current_hub = hub_a_uuid;
+    event_push.pushPlayerAction(
+        &history.current_state,
+        .player_continue,
+        history.current_arena.allocator(),
+    );
+    // Drain manually, stopping on load_error (runToIdle would panic - it
+    // asserts no load_error for valid test content; the autosave test's
+    // drain-loop shape).
+    while (history.current_state.event_stack.len > 0) {
+        event_handlers.processEvent(&history);
+        if (history.load_error) break;
+    }
+
+    try testing.expect(history.load_error);
+    try testing.expect(history.session.pending_error != null);
+    try testing.expect(std.mem.indexOf(u8, history.session.pending_error.?, "not installed") != null);
+    // No campaign installed, no screen transition - the revert-ready state.
+    try testing.expect(history.current_state.campaign == null);
+    try testing.expect(history.current_state.hub == null);
 }
 
 /// The discovery route for hub B in tests: the machinery start_hub (what
@@ -267,7 +341,7 @@ test "cross-campaign travel: a never-entered campaign's start hub is act-legal" 
 
     try testing.expectEqual(state.Screen.hub, history.current_state.screen);
     try testing.expectEqualStrings(hub_x_uuid, history.current_state.player_data.current_hub);
-    try testing.expectEqualStrings("second_campaign", history.current_state.player_data.current_campaign);
+    try testing.expectEqualStrings("second_campaign", history.current_state.campaign.?.dir);
     try testing.expectEqualStrings(campaign2_uuid, history.current_state.player_data.current_campaign_uuid);
     try testing.expectEqualStrings("Hub X", history.current_state.hub.?.name);
     // The arrival created the second campaign's discovered group.
@@ -289,7 +363,7 @@ test "cross-campaign travel: a never-entered campaign's start hub is act-legal" 
         .campaign_dir = "test_campaign",
     } });
     try testing.expectEqual(state.Screen.hub, history.current_state.screen);
-    try testing.expectEqualStrings("test_campaign", history.current_state.player_data.current_campaign);
+    try testing.expectEqualStrings("test_campaign", history.current_state.campaign.?.dir);
     try testing.expectEqualStrings(hub_a_uuid, history.current_state.player_data.current_hub);
     try testing.expectEqualStrings("Hub A", history.current_state.hub.?.name);
 }
@@ -319,7 +393,7 @@ test "cross-campaign mission entry: installs the campaign + enters from the edge
     try testing.expectEqualStrings(mission2_path, history.current_state.mission.?.path);
     try testing.expectEqualStrings(hub_y_uuid, history.current_state.mission.?.end_hub.?);
     try testing.expectEqualStrings(hub_x_uuid, history.current_state.player_data.current_hub);
-    try testing.expectEqualStrings("second_campaign", history.current_state.player_data.current_campaign);
+    try testing.expectEqualStrings("second_campaign", history.current_state.campaign.?.dir);
 }
 
 test "map click path: hub button + edge button drive the recorded orchestrators" {

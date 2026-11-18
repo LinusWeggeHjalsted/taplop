@@ -196,18 +196,23 @@ pub fn handleMetaEvent(
                 const message = std.fmt.allocPrint(
                     history.history_arena.allocator(),
                     "start_hub: no hub resolves to uuid '{s}' in campaign '{s}'",
-                    .{ start.hub_id, current.player_data.current_campaign },
+                    .{
+                        start.hub_id,
+                        if (current.campaign) |campaign| campaign.dir else "<no installed campaign>",
+                    },
                 ) catch @panic("failed to format hub resolution error");
                 history.session.setPendingError(history.history_arena.allocator(), message);
                 return;
             };
             // Build hub file path: campaigns/{campaign}/hubs/{hub_dir}/hub.txt
             // (content-root-relative - see DESIGN → Campaigns & the
-            // Campaign Editor → Campaign content paths).
+            // Campaign Editor → Campaign content paths). The installed
+            // graph's own dir is the resolution root - PlayerData carries
+            // identity only.
             const hub_path = std.fmt.allocPrint(
                 allocator,
                 "campaigns/{s}/hubs/{s}/hub.txt",
-                .{ current.player_data.current_campaign, hub_dir },
+                .{ current.campaign.?.dir, hub_dir },
             ) catch @panic("failed to allocate hub path");
 
             const hub_sections = blk: {

@@ -187,40 +187,47 @@ pub fn installCampaignGraph(
     loaders.checkCampaignGraph(current.campaign.?, allocator, &campaign_warnings);
     surfaceWarnings(history, &campaign_warnings, allocator);
 
-    // The PlayerData identity fields follow the installed graph.
-    current.player_data.current_campaign = current.campaign.?.dir;
+    // The PlayerData identity follows the installed graph.
     current.player_data.current_campaign_uuid = current.campaign.?.uuid;
 }
 
 /// Load the player's current campaign (through the reconstruction cache)
 /// and push start_hub for `player_data.current_hub` - the continue /
-/// load-save resume path over `installCampaignGraph`.
+/// load-save resume path over `installCampaignGraph`. PlayerData
+/// references identity only (DESIGN → Campaigns & the Campaign Editor →
+/// Uuid→dir resolution): the campaign uuid resolves to its dir by scan
+/// here (a listing, same site + posture as the hub/mission scans
+/// installCampaignGraph runs), so a campaign dir renamed out from under
+/// the save still resumes. An unresolvable uuid is the recoverable
+/// popup (popup + revert, not a crash).
 pub fn loadCampaignAndPushHub(
     current: *GameState,
     history: *GameStateHistory,
     allocator: std.mem.Allocator,
 ) void {
-    const resume_uuid = current.player_data.current_campaign_uuid;
-    installCampaignGraph(current, history, allocator, current.player_data.current_campaign);
-    if (current.campaign == null) return; // the recoverable-read path fired
+    var campaign_warnings: std.ArrayList([]const u8) = .empty;
+    const campaign_dir = loaders.resolveCampaignDir(
+        history.file_source,
+        current.player_data.current_campaign_uuid,
+        allocator,
+        &campaign_warnings,
+    ) orelse {
+        campaign_warnings.deinit(allocator);
+        failReconstructionRead(
+            history,
+            std.fmt.allocPrint(
+                history.history_arena.allocator(),
+                "the save's campaign (uuid {s}) is not installed - no campaign in campaigns/ or the official content carries it",
+                .{current.player_data.current_campaign_uuid},
+            ) catch @panic("failed to format campaign resolution error"),
+        );
+        return;
+    };
+    defer allocator.free(campaign_dir);
+    surfaceWarnings(history, &campaign_warnings, allocator);
 
-    // Verify the save's campaign identity against the loaded campaign
-    // (a mismatch means the dir's content changed under the save - the
-    // shadow case; warn + proceed, the untrusted-content posture).
-    if (resume_uuid.len > 0 and
-        current.campaign.?.uuid.len > 0 and
-        !std.mem.eql(u8, resume_uuid, current.campaign.?.uuid))
-    {
-        var campaign_warnings: std.ArrayList([]const u8) = .empty;
-        defer campaign_warnings.deinit(allocator);
-        campaign_warnings.append(allocator, std.fmt.allocPrint(
-            allocator,
-            "campaign '{s}' identity changed since the save was written (expected uuid {s}, found {s})",
-            .{ current.campaign.?.dir, resume_uuid, current.campaign.?.uuid },
-        ) catch @panic("failed to format campaign identity warning")) catch
-            @panic("failed to append campaign identity warning");
-        surfaceWarnings(history, &campaign_warnings, allocator);
-    }
+    installCampaignGraph(current, history, allocator, campaign_dir);
+    if (current.campaign == null) return; // the recoverable-read path fired
 
     // Push start_hub with the player's current hub
     const hub_id = current.player_data.current_hub;

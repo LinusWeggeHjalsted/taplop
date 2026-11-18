@@ -269,7 +269,7 @@ pub fn handlePlayerInputEvent(
         // loadCampaignAndPushHub resumes at player_data.current_hub. See
         // DESIGN → File System & IO (autosave).
         .player_continue => {
-            if (current.player_data.current_campaign.len > 0) {
+            if (current.player_data.current_campaign_uuid.len > 0) {
                 loadCampaignAndPushHub(current, history, allocator);
                 if (history.load_error) return;
             } else {
@@ -1501,7 +1501,7 @@ pub fn handlePlayerInputEvent(
                         const mission_path = std.fmt.allocPrint(
                             allocator,
                             "campaigns/{s}/missions/{s}",
-                            .{ current.player_data.current_campaign, mission_dir },
+                            .{ current.campaign.?.dir, mission_dir },
                         ) catch @panic("failed to allocate mission path");
                         // The campaign edge's to-end: the edge table's
                         // destination for this mission rides the event (a

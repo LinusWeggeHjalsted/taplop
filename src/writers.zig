@@ -45,7 +45,6 @@ fn writePlayerSave(
     try buffer.print(allocator, "file_format_version {d}\n", .{player_save_file_format_version});
     try buffer.appendSlice(allocator, "\nInfo\n");
     try buffer.print(allocator, "player_name {s}\n", .{player_data.player_name});
-    try buffer.print(allocator, "current_campaign {s}\n", .{player_data.current_campaign});
     try buffer.print(allocator, "current_campaign_uuid {s}\n", .{player_data.current_campaign_uuid});
     try buffer.print(allocator, "current_hub {s}\n", .{player_data.current_hub});
     try buffer.print(allocator, "turns {d}\n", .{player_data.turns});
@@ -857,7 +856,7 @@ test "writePlayerSave round-trips through loadPlayerSave" {
     // Build a PlayerData with values in every field
     const original = PlayerData{
         .player_name = "Round Trip Player",
-        .current_campaign = "main_campaign",
+        .current_campaign_uuid = "8ecb3f44-9a3d-497c-95a9-a000b8517b7d",
         .current_hub = "test_hub",
         .materials = .{
             .wood = 10,
@@ -957,7 +956,7 @@ test "writePlayerSave round-trips through loadPlayerSave" {
 
     // Info
     try std.testing.expectEqualStrings("Round Trip Player", loaded.player_name);
-    try std.testing.expectEqualStrings("main_campaign", loaded.current_campaign);
+    try std.testing.expectEqualStrings("8ecb3f44-9a3d-497c-95a9-a000b8517b7d", loaded.current_campaign_uuid);
     try std.testing.expectEqualStrings("test_hub", loaded.current_hub);
     try std.testing.expectEqual(200, loaded.turns);
     try std.testing.expectEqual(5, loaded.deaths);

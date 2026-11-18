@@ -3104,6 +3104,69 @@ pub fn deriveCampaignEdges(
     campaign.edges = edges.toOwnedSlice(allocator) catch @panic("failed to own campaign edges slice");
 }
 
+/// Resolve a campaign's uuid to its dir name under campaigns/ (both
+/// tiers: the persistent campaigns/ + the embedded official campaign) -
+/// the save-resume side of the loading contract (PlayerData references
+/// identity only, so the resume path resolves the uuid by scan; see
+/// DESIGN → Campaigns & the Campaign Editor → Uuid→dir resolution).
+/// Returns the winning dir's basename (caller-owned), or null when no
+/// installed campaign carries the uuid. Duplicate uuids resolve
+/// latest-mtime-wins + a warning naming the winner.
+pub fn resolveCampaignDir(
+    file_source: *const FileSource,
+    campaign_uuid: []const u8,
+    allocator: std.mem.Allocator,
+    warnings: ?*std.ArrayList([]const u8),
+) ?[]const u8 {
+    const embedded_dirs = embeddedCampaignDirs(allocator);
+    defer allocator.free(embedded_dirs);
+    const resolved = file_source_mod.resolveUuidDir(
+        file_source,
+        allocator,
+        "campaigns",
+        embedded_dirs,
+        "campaign.txt",
+        &parser.campaign_sections,
+        "campaign_uuid",
+        campaign_uuid,
+    ) orelse return null;
+    defer allocator.free(resolved.dir);
+    if (resolved.duplicate) {
+        appendWarning(
+            warnings,
+            allocator,
+            "duplicate campaign uuid '{s}': resolved to {s} (latest-updated wins; delete one of the copies to split them)",
+            .{ campaign_uuid, resolved.dir },
+        );
+    }
+    return dupeString(allocator, std.fs.path.basename(resolved.dir));
+}
+
+/// The embedded campaign dirs (the official campaigns' map keys minus
+/// the `data/` prefix + file suffix, so readConfigUuid's `dir ++
+/// config_name` rebuilds the bridge path). Runtime slicing of static map
+/// keys - the comptime-array gotcha (AGENTS → Zig Gotchas) - same shape
+/// as embeddedHubDirs. The outer slice is heap-owned; the elements are
+/// runtime slices into static key bytes - never freed individually.
+fn embeddedCampaignDirs(allocator: std.mem.Allocator) []const []const u8 {
+    var dirs: std.ArrayList([]const u8) = .empty;
+    const keys = file_source_mod.embeddedMapKeys(allocator);
+    defer allocator.free(keys);
+    for (keys) |key| {
+        if (!std.mem.startsWith(u8, key, "data/campaigns/")) continue;
+        if (!std.mem.endsWith(u8, key, "/campaign.txt")) continue;
+        const campaign_dir = key["data/".len .. key.len - "/campaign.txt".len];
+        // Campaign roots only (the same single-segment rule as
+        // isOfficialCampaignKey): the stripped key is content-root-
+        // relative ("campaigns/<name>"), so the no-slash test applies to
+        // the segment AFTER the campaigns/ prefix.
+        if (!std.mem.startsWith(u8, campaign_dir, "campaigns/")) continue;
+        if (std.mem.indexOfScalar(u8, campaign_dir["campaigns/".len..], '/') != null) continue;
+        dirs.append(allocator, campaign_dir) catch @panic("failed to append embedded campaign dir");
+    }
+    return dirs.toOwnedSlice(allocator) catch @panic("failed to own embedded campaign dirs");
+}
+
 /// Resolve every placed hub's storage dir (uuid -> dir) into
 /// `campaign.hubs[i].dir` in place - the scan side of the loading
 /// contract (DESIGN → Campaigns & the Campaign Editor → Uuid→dir
@@ -3725,7 +3788,6 @@ pub fn loadPlayerSave(
         if (section.entry_groups.len > 0) {
             const pairs = section.entry_groups[0].pairs;
             if (findValue(pairs, "player_name")) |value| player_data.player_name = value;
-            if (findValue(pairs, "current_campaign")) |value| player_data.current_campaign = value;
             if (findValue(pairs, "current_campaign_uuid")) |value| player_data.current_campaign_uuid = value;
             if (findValue(pairs, "current_hub")) |value| player_data.current_hub = value;
             if (findValue(pairs, "turns")) |value| player_data.turns = asU32(value) orelse 0;

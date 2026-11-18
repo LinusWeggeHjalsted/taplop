@@ -302,7 +302,6 @@ test "escape: mission fail exits the mission" {
         &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 }, .max_health = 20, .current_health = 0 }},
         &three_by_three,
     ));
-    history.current_state.player_data.current_campaign = "main_campaign";
     // The entering hub (the mission-exit path reads current_hub - the hub
     // the player was in when the mission started), as a hub uuid. The
     // loaded campaign resolves uuid -> dir for the start_hub read.

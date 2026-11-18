@@ -729,7 +729,7 @@ pub fn view(
         // at startup into session.autosave_available). See DESIGN → File
         // System & IO (autosave).
         const continue_available =
-            current_state.player_data.current_campaign.len > 0 or session.autosave_available;
+            current_state.player_data.current_campaign_uuid.len > 0 or session.autosave_available;
         ui.buildMainMenu(
             &ui_elements,
             frame_allocator,

@@ -855,13 +855,12 @@ pub const tips_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
 // clone_name + turn count + materials. DiscoveredHubs entries carry `name`.
 
 const save_info_keys = [_][]const u8{
-    "player_name",           "current_campaign",
-    "current_campaign_uuid", "current_hub",
-    "turns",                 "deaths",
-    "defeated_enemies",      "skills_used",
-    "wood_salvage",          "metal_salvage",
-    "leather_salvage",       "cloth_salvage",
-    "knowledge",
+    "player_name",   "current_campaign_uuid",
+    "current_hub",   "turns",
+    "deaths",        "defeated_enemies",
+    "skills_used",   "wood_salvage",
+    "metal_salvage", "leather_salvage",
+    "cloth_salvage", "knowledge",
 };
 const save_unlocked_skills_keys = [_][]const u8{"name"};
 const save_weapon_keys = [_][]const u8{ "item_name", "weapon_type", "damage" };
@@ -1444,7 +1443,6 @@ test "validateKeys: no warnings for player save with CloneData" {
         \\
         \\Info
         \\player_name Test Player
-        \\current_campaign first_mission
         \\current_hub starting_village
         \\turns 0
         \\deaths 0
