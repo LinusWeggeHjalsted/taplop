@@ -6175,9 +6175,20 @@ test "a validation run chains the mission's levels (turns accumulate) and comple
     runToIdle(&history);
     try testing.expectEqual(@as(u32, 2), history.current_state.mission.?.turns_spent);
 
-    // A mid-run mutation (an in-level event) - the chained level start
-    // must neither rebuild the run data nor re-capture the backup.
-    history.current_state.player_data.player_name = "Mutated In Run";
+    // A mid-run mutation ON THE ENTITY (the in-level source of truth -
+    // gameplay verbs mutate the entity; the level-end preserve harvests
+    // it into the run's PlayerData): unequip the fixture sword into
+    // inventory slot 0.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_event = .{ .unequip_item = .{
+            .gear_slot = .main_hand,
+            .inventory_slot_index = 0,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.level.?.entities[0].main_hand_weapon == null);
 
     // Completing level 1 chains level 2 FROM THE FILE (the editor's
     // single level is irrelevant): level_2.txt's '!' is at raw x=2
@@ -6199,7 +6210,16 @@ test "a validation run chains the mission's levels (turns accumulate) and comple
     try testing.expectEqual(@as(u32, 2), history.current_state.mission.?.current_level_index);
     // Turns carried over: the level-2 chain began the third turn.
     try testing.expectEqual(@as(u32, 3), history.current_state.mission.?.turns_spent);
-    try testing.expectEqualStrings("Mutated In Run", history.current_state.player_data.player_name);
+    // The carry (the preserve's contract): the entity mutation survived
+    // the level transition - the harvest synced the run's PlayerData,
+    // and level 2's build_player_from_data rebuilt the player from the
+    // harvested state (the run data was NOT rebuilt from player.txt).
+    try testing.expect(history.current_state.level.?.entities[0].main_hand_weapon == null);
+    try testing.expectEqualStrings(
+        "Fixture Sword",
+        history.current_state.level.?.entities[0].inventory.slots[0].?.weapon.name,
+    );
+    try testing.expect(history.current_state.player_data.main_hand_weapon == null);
     try testing.expectEqualStrings(
         "Campaign Player",
         history.current_state.editor.?.pre_playtest_player_data.?.player_name,

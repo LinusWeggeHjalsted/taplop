@@ -629,10 +629,12 @@ pub fn handleMetaEvent(
             // rides the mission working copy, so replay reproduces it).
             // The continuation mirrors the campaign's own next-
             // start_level chaining, with validation ends instead of
-            // end_mission → start_hub. build_data_from_player + the
-            // autosave are skipped (discard semantics). See DESIGN →
-            // Level Editor (exit guard) + DESIGN → Custom Missions &
-            // Online Services → Validation replay.
+            // end_mission → start_hub. The AUTOSAVE is skipped (the
+            // session's real PlayerData is never touched mid-run -
+            // discard semantics); the entity-to-PlayerData sync is NOT
+            // (the run's own carry, see the chaining branch below).
+            // See DESIGN → Level Editor (exit guard) + DESIGN → Custom
+            // Missions & Online Services → Validation replay.
             const validation_run = if (current.editor) |editor|
                 editor.mode == .validate
             else
@@ -679,11 +681,28 @@ pub fn handleMetaEvent(
                     // Natural completion with levels left: the
                     // campaign's own next-level chain (start_level
                     // re-reads the level file through the cache; turns
-                    // accumulate on the mission across levels).
-                    pushEvents(current, &.{.{ .meta_event = .{ .start_level = .{
-                        .mission_path = current.mission.?.path,
-                        .level_index = current.mission.?.current_level_index + 1,
-                    } } }}, allocator);
+                    // accumulate on the mission across levels) WITH the
+                    // campaign's player preserve on top - LIFO, so the
+                    // entity-to-PlayerData sync runs FIRST and the next
+                    // level's build_player_from_data rebuilds from the
+                    // run's carried state: gear/skill changes survive
+                    // the level transition exactly like in-game play.
+                    // The run's PlayerData IS the temporary (dormancy
+                    // holds the session's real data); the autosave
+                    // stays skipped - discard semantics apply to the
+                    // session's real data, not the run's carry. A
+                    // restart stays FRESH (player_start_validation
+                    // re-reads player.txt - a restart is a fresh
+                    // attempt by design).
+                    pushEvents(current, &.{
+                        .{ .meta_event = .{ .start_level = .{
+                            .mission_path = current.mission.?.path,
+                            .level_index = current.mission.?.current_level_index + 1,
+                        } } },
+                        .{ .super_event = .{ .build_data_from_player = .{
+                            .entity_index = 0,
+                        } } },
+                    }, allocator);
                 } else {
                     // Last level done: the run succeeded.
                     pushEvents(current, &.{.{ .meta_event = .{ .end_validation = .{

@@ -5514,14 +5514,20 @@ for the validation-replay slice; see DESIGN → Custom Missions & Online
 Services → Validation replay); an Exit Mission continuation ABORTS the
 run (`end_validation{success=false}` - only successful runs write a
 replay); the default continuation is the campaign's own
-next-`start_level` push (file-based, cache-read) or, on the last level,
+next-`start_level` push (file-based, cache-read) - for VALIDATION with
+the campaign's player preserve on top (LIFO: `build_data_from_player`
+harvests the run entity into the run's PlayerData first, so gear/skill
+changes carry across the run's level transitions exactly like in-game
+play; the AUTOSAVE stays skipped) - or, on the last level,
 `end_validation{success=true}`. In BOTH modes an
 Exit-to-Main-Menu continuation tears down inline (same transitionScreen
 constraint - and the restore must precede `close_editor`, whose scope swap
 discards the Editor carrying the backup) and chains `close_editor`: the
-button means the MAIN MENU, not the editor. `build_data_from_player`
+button means the MAIN MENU, not the editor. The AUTOSAVE (`write_save`)
 is skipped in editor mode (playtest/validate are discard-semantics - the
-player's real PlayerData is unchanged). `end_mission` also guards: if an
+player's real PlayerData is never touched; the run's OWN PlayerData is
+the temporary, and validation's mid-run `build_data_from_player` carry
+writes only that). `end_mission` also guards: if an
 editor is active, suppress the `start_hub` continuation (defensive -
 `end_level`'s guard should redirect before `end_mission` is ever reached).
 No other gameplay handler knows about the editor.
