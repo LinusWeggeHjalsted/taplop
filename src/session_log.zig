@@ -11,6 +11,7 @@ const std = @import("std");
 const build_info = @import("build_info");
 const events_mod = @import("events.zig");
 const parser = @import("parser.zig");
+const types = @import("types.zig");
 
 const Event = events_mod.Event;
 const Section = parser.Section;
@@ -218,6 +219,15 @@ fn writeEventField(
             // appendEventScalar guard would reject them).
             if (comptime isStringBearingStructSlice(@TypeOf(value))) {
                 try writeIndexedSliceField(buffer, allocator, name, value);
+            } else if (comptime isStringBearingStruct(@TypeOf(value))) {
+                // A SINGLE string-bearing struct (e.g. end_mission's
+                // completed_mission): the same indexed multi-line encoding
+                // as a one-element slice, so every string sits on its own
+                // line and spaces round-trip.
+                const Struct = @TypeOf(value);
+                const one_element: [1]Struct = .{value};
+                const one_slice: []const Struct = &one_element;
+                try writeIndexedSliceField(buffer, allocator, name, one_slice);
             } else {
                 try buffer.appendSlice(allocator, name);
                 try buffer.appendSlice(allocator, " ");
@@ -256,6 +266,16 @@ fn typeContainsString(comptime T: type) bool {
         },
         else => false,
     };
+}
+
+/// Is T a plain struct carrying a `[]const u8` somewhere inside (not a
+/// slice of them - `isStringBearingStructSlice` covers those)? A single such
+/// struct as a payload field (e.g. `?MissionCompleteInfo` on
+/// end_mission/start_hub) can't flatten to one token line - a string's
+/// spaces break the reader's positional regrouping - so it takes the same
+/// indexed multi-line encoding as a one-element slice.
+fn isStringBearingStruct(comptime T: type) bool {
+    return @typeInfo(T) == .@"struct" and typeContainsString(T);
 }
 
 /// Write a string-bearing struct slice as INDEXED lines:
@@ -342,6 +362,14 @@ fn appendEventScalar(
             }
         },
         .@"struct" => |info| {
+            // A struct carrying strings can't take the flattened-token path
+            // (a string's spaces break the reader's positional regrouping) -
+            // `writeEventField` routes single structs and slices of them to
+            // the indexed encoding, and this guard keeps any other path
+            // (union payload, array element) honest at compile time.
+            if (comptime typeContainsString(T)) {
+                @compileError("string-bearing struct must use the indexed encoding: " ++ @typeName(T));
+            }
             inline for (info.field_names, 0..) |field_name, index| {
                 if (index != 0) try buffer.appendSlice(allocator, " ");
                 try appendEventScalar(buffer, allocator, @field(value, field_name));
@@ -496,7 +524,17 @@ fn parseEvent(
                         ) |payload_field_name, payload_field_type| {
                             // A string-bearing struct slice reads back its
                             // indexed lines (the writer's mirror - see
-                            // writeIndexedSliceField).
+                            // writeIndexedSliceField). A SINGLE string-bearing
+                            // struct (e.g. end_mission's completed_mission)
+                            // reads the same indexed lines (the one-element
+                            // slice shape); legacy logs wrote one flattened
+                            // token line, which still parses when its strings
+                            // carry no spaces - fall back to that reader when
+                            // the `_count` line is absent.
+                            const unwrapped_field_type = comptime if (@typeInfo(payload_field_type) == .optional)
+                                @typeInfo(payload_field_type).optional.child
+                            else
+                                payload_field_type;
                             @field(payload, payload_field_name) =
                                 if (comptime isStringBearingStructSlice(payload_field_type))
                                     try parseIndexedSliceField(
@@ -505,6 +543,20 @@ fn parseEvent(
                                         pairs,
                                         allocator,
                                     )
+                                else if (comptime isStringBearingStruct(unwrapped_field_type))
+                                    if (findValue(pairs, payload_field_name ++ "_count") != null)
+                                        try parseIndexedStructField(
+                                            unwrapped_field_type,
+                                            payload_field_name,
+                                            pairs,
+                                            allocator,
+                                        )
+                                    else
+                                        try parseEventFieldValue(
+                                            payload_field_type,
+                                            findValue(pairs, payload_field_name),
+                                            allocator,
+                                        )
                                 else
                                     try parseEventFieldValue(
                                         payload_field_type,
@@ -554,6 +606,22 @@ fn parseIndexedSliceField(
         try elements.append(allocator, element);
     }
     return try elements.toOwnedSlice(allocator);
+}
+
+/// The reader's mirror of `writeEventField`'s single-string-bearing-struct
+/// routing: the writer emits the indexed lines of a ONE-ELEMENT slice, so
+/// parse the slice shape and return element 0. A count other than 1 is
+/// malformed (the writer never emits it).
+fn parseIndexedStructField(
+    comptime Struct: type,
+    comptime name: []const u8,
+    pairs: []const KeyValuePair,
+    allocator: std.mem.Allocator,
+) SessionLogError!Struct {
+    const elements = try parseIndexedSliceField([]const Struct, name, pairs, allocator);
+    defer allocator.free(elements);
+    if (elements.len != 1) return error.MalformedSessionLog;
+    return elements[0];
 }
 
 /// Read one payload field. An absent key is null for optionals (matching the
@@ -942,4 +1010,97 @@ test "writeEventLog serializes representative event shapes" {
             try std.testing.expectEqualDeep(history[history.len - 13 + offset], log.events[log.events.len - 13 + offset]);
         }
     }
+}
+
+test "single string-bearing struct field round-trips (spaces in name/path)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // The motivating shape: a completed campaign mission whose display
+    // name and folder path both contain spaces ("Deep Forest" - the
+    // official campaign names do). A `?MissionCompleteInfo` payload field
+    // can't flatten to one token line (the spaces break the reader's
+    // regrouping - the crash-bundle load failure this encoding replaces);
+    // the writer must emit the indexed one-element-slice lines.
+    const mission_info = types.MissionCompleteInfo{
+        .uuid = "4490b2d6-60d5-4f92-8503-dc3607651636",
+        .name = "Deep Forest",
+        .path = "campaigns/617898a6-9560-43f1-8168-e51f4c4cb67b_Main Campaign/missions/4490b2d6-60d5-4f92-8503-dc3607651636_Deep Forest",
+        .turns_spent = 19,
+        .converted_materials = .{ .wood = 12, .metal = 8, .leather = 6, .cloth = 6, .knowledge = 27 },
+        .harvested_materials = .{ .wood = 8, .metal = 8, .leather = 7, .cloth = 7, .knowledge = 29 },
+        .tiles_moved = 22,
+        .damage_dealt = 123,
+        .damage_taken = 66,
+        .skills_used = 24,
+        .overwrite_offered = false,
+        .validation = false,
+    };
+    const history = [_]Event{
+        .{ .meta_event = .{ .end_mission = .{ .hub_id = null, .completed_mission = mission_info } } },
+        // null still omits every line (the writeEventField convention).
+        .{ .meta_event = .{ .end_mission = .{ .hub_id = "hub-1", .completed_mission = null } } },
+    };
+
+    const output = try writeEventLog(&history, "20260815_143022", allocator);
+    // The indexed shape: count + one line per field, each string on its
+    // own line so spaces survive verbatim.
+    try std.testing.expect(std.mem.indexOf(u8, output,
+        \\event meta_event end_mission
+        \\completed_mission_count 1
+        \\completed_mission_0_uuid 4490b2d6-60d5-4f92-8503-dc3607651636
+        \\completed_mission_0_name Deep Forest
+        \\
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "completed_mission_0_path campaigns/617898a6-9560-43f1-8168-e51f4c4cb67b_Main Campaign/missions/4490b2d6-60d5-4f92-8503-dc3607651636_Deep Forest\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "completed_mission_0_turns_spent 19\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "completed_mission_0_converted_materials 12 8 6 6 27\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "completed_mission_0_skills_used 24\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "completed_mission_0_validation false\n") != null);
+
+    // Round-trip: parse the serialized form back and compare deeply
+    // (slices compare by pointer under expectEqual - see AGENTS → Zig
+    // Gotchas).
+    const sections = try parser.parseConfigFile(output, allocator, &parser.session_log_sections);
+    const log = try loadEventLog(sections, allocator);
+    try std.testing.expectEqual(@as(usize, 2), log.events.len);
+    const loaded = log.events[0].meta_event.end_mission;
+    try std.testing.expect(loaded.completed_mission != null);
+    try std.testing.expectEqualDeep(mission_info, loaded.completed_mission.?);
+    try std.testing.expect(log.events[1].meta_event.end_mission.completed_mission == null);
+}
+
+test "legacy flattened single string-bearing struct field still reads" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // Logs written before the indexed encoding flattened a single
+    // string-bearing struct to one token line. That shape still parses
+    // when the embedded strings carry no spaces - the reader falls back
+    // to the token path when the `_count` line is absent (the legacy
+    // grammar precedent, like bare `Layout`).
+    const log_text =
+        \\Metadata
+        \\file_format_version 3
+        \\game_version 2026.11.237
+        \\created 20260815_143022
+        \\
+        \\EventLog
+        \\
+        \\event_index 0
+        \\event meta_event end_mission
+        \\completed_mission 4490b2d6-60d5-4f92-8503-dc3607651636 NeedleBush campaigns/x/missions/4490b2d6-60d5-4f92-8503-dc3607651636_NeedleBush 19 12 8 6 6 27 8 8 7 7 29 22 123 66 24 false false
+        \\
+        \\
+    ;
+    const sections = try parser.parseConfigFile(log_text, allocator, &parser.session_log_sections);
+    const log = try loadEventLog(sections, allocator);
+    const loaded = log.events[0].meta_event.end_mission.completed_mission.?;
+    try std.testing.expectEqualStrings("NeedleBush", loaded.name);
+    try std.testing.expectEqualStrings("campaigns/x/missions/4490b2d6-60d5-4f92-8503-dc3607651636_NeedleBush", loaded.path);
+    try std.testing.expectEqual(@as(u32, 19), loaded.turns_spent);
+    try std.testing.expectEqual(@as(u32, 123), loaded.damage_dealt);
+    try std.testing.expect(!loaded.validation);
 }

@@ -391,6 +391,7 @@ working rules).
 - [Campaign map + hub editor UX pass: drill-in rows, double-click, any-tool edge clicks, the inferred inspector](#campaign-map--hub-editor-ux-pass-drill-in-rows-double-click-any-tool-edge-clicks-the-inferred-inspector)
 - [Validation runs: the player carry across levels + the campaign context through runs](#validation-runs-the-player-carry-across-levels--the-campaign-context-through-runs)
 - [Native crash on media keys - the evdev joystick-claim guard (interposed open)](#native-crash-on-media-keys---the-evdev-joystick-claim-guard-interposed-open)
+- [Session-log round trip: single string-bearing struct fields (completed_mission)](#session-log-round-trip-single-string-bearing-struct-fields-completedmission)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -23424,3 +23425,37 @@ keys are the same class) trapped the native build:
   upstream, the interposition is deletable dead code: remove
   `src/raylib/evdev_guard.zig` + `src/evdev_guard.zig` +
   the comptime import in `src/native.zig`, keep nothing.
+
+## Session-log round trip: single string-bearing struct fields (completed_mission)
+
+The crash bundle above couldn't even be loaded:
+`MalformedSessionLog` at the `end_mission`/`start_hub` events. Root
+cause: `?MissionCompleteInfo` (name + path carry spaces - "Deep
+Forest", the official campaign names do) was written by
+`appendEventScalar`'s struct branch as ONE flattened token line; the
+reader's positional token regrouping splits `name` at the first space
+and then fails `parseInt` on the leftover path tokens. Every session
+log recorded after a campaign-mission completion was unloadable - a
+whole class of crash bundles and validation replays silently
+unusable.
+
+- The writer had a guard for SLICES of string-bearing structs
+  (`isStringBearingStructSlice` -> indexed lines) but nothing for a
+  single such struct field. Fix:
+  `isStringBearingStruct` routes single structs (and optionals of
+  them, unwrapped at `writeEventField`'s existing optional arm)
+  through the SAME indexed multi-line encoding as a one-element
+  slice (`completed_mission_count 1` + per-field lines), reader
+  mirrored (`parseIndexedStructField`, prefer indexed, fall back to
+  the legacy flattened line when `_count` is absent - the bare
+  `Layout` legacy-grammar precedent: old logs with space-less names
+  still read).
+- `appendEventScalar`'s struct branch now has the mirror of the slice
+  guard's `@compileError` - a future event field of this shape fails
+  the build instead of silently writing unloadable logs. The compile
+  passing is the proof no OTHER field has the shape today.
+- Tests: a write+read round-trip of the exact motivating value
+  ("Deep Forest" name + space-bearing path + both Materials structs),
+  plus the legacy flattened-line read. The crash bundle itself was
+  hand-converted (two events) to reproduce the undo crash before the
+  orchestrator fix landed.
