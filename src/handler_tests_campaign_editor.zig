@@ -3828,3 +3828,134 @@ test "campaign import: an OS-wrapped zip strips the root folder; a re-import is 
     try testing.expectEqual(@as(usize, 1), local_campaigns.len);
     try testing.expectEqualStrings(imported_dir, local_campaigns[0].dir);
 }
+
+test "saveCampaignEditor: the campaign root follows the campaign name (cosmetic dir tidy)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const campaign_uuid = "11111111-2222-3333-4444-555555555555";
+    const old_dir = "campaigns/11111111-2222-3333-4444-555555555555_Old Name";
+    const new_dir = "campaigns/11111111-2222-3333-4444-555555555555_New Name";
+
+    // Seed the persistent tier with the campaign under its OLD name. The
+    // file's CONTENT doesn't matter here (the save writes from state) -
+    // its EXISTENCE is what routes the identity resolution in-place
+    // instead of minting a fork.
+    const file_source_mod = @import("file_source.zig");
+    const seeded_campaign = "Metadata\nfile_format_version 5\nname Old Name\n";
+    harness.file_source.writeFile("campaigns/11111111-2222-3333-4444-555555555555_Old Name/campaign.txt", seeded_campaign) catch
+        @panic("seed write failed");
+
+    var history = harness.newHistory(.{
+        .screen = .campaign_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "New Name",
+            .campaign_uuid = campaign_uuid,
+            .campaign_dir = old_dir,
+            .start_hub = 0,
+            .hubs = &.{
+                .{
+                    .handle = 0,
+                    .name = "Alpha",
+                    .position = .{ .x = 0, .y = 0 },
+                    .grid = .{
+                        .level_tiles = &.{.{ .x = 0, .y = 0 }},
+                        .player_start = .{ .x = 0, .y = 0 },
+                    },
+                },
+            },
+            .missions = &.{},
+            .decoration_types = &.{},
+            .next_handle = 1,
+        },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    runToIdle(&history);
+
+    const campaign_editor_io = @import("campaign_editor/io.zig");
+    const saved_dir = campaign_editor_io.saveCampaignEditor(&history) orelse {
+        if (history.session.pending_error) |error_message| {
+            std.debug.print("SAVE ERROR: {s}\n", .{error_message});
+        }
+        return error.SaveFailed;
+    };
+
+    // The root followed the rename: the save reports the NEW dir, the
+    // old one is gone, and campaign.txt inside carries the new name.
+    try testing.expectEqualStrings(new_dir, saved_dir);
+    try testing.expect(!file_source_mod.persistentFileExists(history.file_source, old_dir ++ "/campaign.txt"));
+    try testing.expect(file_source_mod.persistentFileExists(history.file_source, new_dir ++ "/campaign.txt"));
+    const saved_txt = history.file_source.readFile(backing.allocator(), new_dir ++ "/campaign.txt") catch
+        return error.CouldNotReadSavedCampaign;
+    try testing.expect(std.mem.indexOf(u8, saved_txt, "name New Name\n") != null);
+
+    // The session continues under the RENAMED dir (the memo carries it
+    // forward - last-wins, the fork memo's rule; the state still holds
+    // the original dir).
+    const memo = campaign_editor_io.campaignSaveMemoFor(&history, types.campaign_save_memo_handle).?;
+    try testing.expectEqualStrings(new_dir, memo.dir);
+    try testing.expectEqualStrings(campaign_uuid, memo.uuid);
+
+    // A SECOND save resolves the memo (no further rename - the dir is
+    // already canonical) and stays in place.
+    const second_dir = campaign_editor_io.saveCampaignEditor(&history) orelse return error.SaveFailed;
+    try testing.expectEqualStrings(new_dir, second_dir);
+    try testing.expect(file_source_mod.persistentFileExists(history.file_source, new_dir ++ "/campaign.txt"));
+
+    // The collision rule: a sibling campaign already owning the canonical
+    // target keeps the old dir (no rename, no data loss) - the
+    // duplicate-uuid sibling rule's mirror at the campaign root.
+    const colliding_uuid = "99999999-8888-7777-6666-000000000000";
+    const colliding_dir = "campaigns/99999999-8888-7777-6666-000000000000_New Name";
+    harness.file_source.writeFile("campaigns/99999999-8888-7777-6666-000000000000_New Name/campaign.txt", seeded_campaign) catch
+        @panic("seed write failed");
+    var history2 = harness.newHistory(.{
+        .screen = .campaign_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "New Name",
+            .campaign_uuid = colliding_uuid,
+            .campaign_dir = "campaigns/99999999-8888-7777-6666-000000000000_Other Name",
+            .start_hub = 0,
+            .hubs = &.{
+                .{
+                    .handle = 0,
+                    .name = "Alpha",
+                    .position = .{ .x = 0, .y = 0 },
+                    .grid = .{
+                        .level_tiles = &.{.{ .x = 0, .y = 0 }},
+                        .player_start = .{ .x = 0, .y = 0 },
+                    },
+                },
+            },
+            .missions = &.{},
+            .decoration_types = &.{},
+            .next_handle = 1,
+        },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    runToIdle(&history2);
+    // The opened dir must exist for the in-place branch.
+    harness.file_source.writeFile("campaigns/99999999-8888-7777-6666-000000000000_Other Name/campaign.txt", seeded_campaign) catch
+        @panic("seed write failed");
+    const collision_saved = campaign_editor_io.saveCampaignEditor(&history2) orelse return error.SaveFailed;
+    try testing.expectEqualStrings("campaigns/99999999-8888-7777-6666-000000000000_Other Name", collision_saved);
+    try testing.expect(file_source_mod.persistentFileExists(history2.file_source, colliding_dir ++ "/campaign.txt"));
+    try testing.expect(file_source_mod.persistentFileExists(history2.file_source, "campaigns/99999999-8888-7777-6666-000000000000_Other Name/campaign.txt"));
+}

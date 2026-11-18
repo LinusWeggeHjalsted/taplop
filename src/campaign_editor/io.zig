@@ -521,7 +521,9 @@ pub fn recordCampaignContentDeletion(history: *GameStateHistory, dir: []const u8
 ///   4. campaign.txt (v4: Metadata + Hubs + Orphans);
 ///   5. the deletion reconciliation: each deleted dir from this session
 ///      whose content is NOT in the current graph (an undo restored it)
-///      is removed, directory-level.
+///      is removed, directory-level;
+///   6. the campaign root's cosmetic dir tidy: the dir follows the
+///      campaign's CURRENT name (the mission/hub saves' mirror).
 /// A pure input-layer side effect (the mission save's class): no
 /// recorded event, never replayed.
 /// Returns the SAVED campaign's content dir ("campaigns/<id>" - the memo
@@ -771,10 +773,42 @@ pub fn saveCampaignEditor(
         history.file_source.deleteDir(mission_path) catch {};
     }
 
+    // 5. The campaign root's cosmetic dir tidy (the mission/hub save's
+    // mirror): the dir follows the campaign's CURRENT name. The tidy rides
+    // only the FULL save - the name lives in campaign.txt, which only this
+    // save rewrites (a hand-off/hub save resolving the campaign identity
+    // never renames the root out from under a campaign.txt it doesn't
+    // write). After the config writes succeed (content is the truth, the
+    // rename is cosmetics), only when the canonical target is free (a
+    // collision keeps the old dir - the duplicate-uuid sibling rule). A
+    // fresh-mint identity already carries the canonical dir (the mint
+    // built it from the current name), so only an in-place save of a
+    // RENAMED campaign takes this path.
+    const sanitized_name = sanitizeNameForDir(editor.campaign_name, allocator);
+    const canonical_dir = std.fmt.allocPrint(
+        allocator,
+        "campaigns/{s}_{s}",
+        .{ campaign_memo.uuid, sanitized_name },
+    ) catch @panic("failed to format canonical campaign dir");
+    var saved_dir = campaign_memo.dir;
+    if (!std.mem.eql(u8, campaign_memo.dir, canonical_dir)) {
+        if (history.file_source.renameDir(campaign_memo.dir, canonical_dir)) |_| {
+            saved_dir = canonical_dir;
+            // The session continues under the RENAMED dir (the fork
+            // memo's rule: the state still carries the original dir, so
+            // the memo carries the rename forward - last-wins).
+            appendCampaignSaveMemo(history, .{
+                .handle = types.campaign_save_memo_handle,
+                .uuid = campaign_memo.uuid,
+                .dir = canonical_dir,
+            });
+        } else |_| {} // collision / platform failure: keep the old dir
+    }
+
     // The session continues under the SAVED identity (a fork's saves hit
-    // the fork) - the memo carries it; ALSO the browser lists need a
-    // rescan next open (they rescan on open anyway).
-    return campaign_memo.dir;
+    // the fork; a rename's too) - the memo carries it; ALSO the browser
+    // lists need a rescan next open (they rescan on open anyway).
+    return saved_dir;
 }
 
 /// Whether a memo for `handle` existed BEFORE this save's resolution

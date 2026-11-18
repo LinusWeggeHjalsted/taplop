@@ -393,6 +393,7 @@ working rules).
 - [Native crash on media keys - the evdev joystick-claim guard (interposed open)](#native-crash-on-media-keys---the-evdev-joystick-claim-guard-interposed-open)
 - [Undo crash across the editor drill-in returns: non-player events at idle points](#undo-crash-across-the-editor-drill-in-returns-non-player-events-at-idle-points)
 - [Session-log round trip: single string-bearing struct fields (completed_mission)](#session-log-round-trip-single-string-bearing-struct-fields-completedmission)
+- [Campaign save: the root dir follows the campaign name (the cosmetic tidy the DESIGN already promised)](#campaign-save-the-root-dir-follows-the-campaign-name-the-cosmetic-tidy-the-design-already-promised)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -23499,3 +23500,35 @@ unusable.
   plus the legacy flattened-line read. The crash bundle itself was
   hand-converted (two events) to reproduce the undo crash before the
   orchestrator fix landed.
+
+## Campaign save: the root dir follows the campaign name (the cosmetic tidy the DESIGN already promised)
+
+The author renamed "Main Campaign" to "Polpat" and the directory stayed
+`<uuid>_Main Campaign` - the campaign root was the ONE content kind
+without the cosmetic dir tidy. DESIGN → The editor save model already
+documented the rule ("Keeps `missions/` / `campaigns/` self-describing")
+and the mission/hub saves implemented it (rename in passing, only when
+the canonical target is free); `resolveCampaignIdentity`'s in-place
+branch simply returned the state dir verbatim, so a rename-save wrote
+the new `name` into campaign.txt forever while the dir lagged.
+
+- The tidy rides ONLY the full campaign save (`saveCampaignEditor`),
+  after campaign.txt + the deletion reconciliation: the name lives in
+  campaign.txt, which only that save rewrites (a hand-off/hub save
+  resolving the campaign identity never renames the root out from
+  under a campaign.txt it doesn't write). Content is the truth, the
+  rename is cosmetics - the mission/hub tidy's ordering rule.
+- A successful rename APPENDS the campaign identity memo (the fork
+  memo's last-wins rule): the state still carries the original dir, so
+  without the memo every later save in the session would re-resolve
+  against the state's dead dir. The save returns the RENAMED dir (the
+  Validate consumption certifies what the player receives).
+- Collision keeps the old dir (the duplicate-uuid sibling rule's
+  mirror at the root); a fresh-mint identity never takes the path (the
+  mint already built `<uuid>_<name>` from the current name).
+- Test: in-place save of a seeded `..._Old Name` campaign renamed to
+  "New Name" (returned dir, old dir gone, campaign.txt carries the new
+  name, the memo + a second save stay in place) + the collision case
+  (a sibling owning the target keeps the old dir). Live drive: the
+  author's exact state (campaign.txt "Polpat", dir `..._ReproCopy`) -
+  one save renamed the dir to `..._Polpat`.
