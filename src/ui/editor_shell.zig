@@ -469,19 +469,18 @@ fn appendDecorationLayerCellImage(
     );
 }
 
-/// The small delete button flush in a palette tool cell's top-right corner
-/// - the shared close-button visual (`close_button_sprite_id`, the picker
-/// panel / in-game middle-panel close class). Deletes the tool's palette
-/// type + every placement referencing it across all levels
-/// (`.delete_editor_palette_type`); the cell's tool rides the
-/// `editor_tool` payload. Emitted AFTER the tool cell so hit-testing
-/// (last-wins) prefers it where the two overlap.
-fn emitEditorToolDeleteButton(
+/// The small delete button flush in a palette tool cell's top-right
+/// corner - the shared close-button visual (`close_button_sprite_id`, the
+/// picker panel / in-game middle-panel close class), shared by the
+/// mission editor's palette cells and the hub editor's. Emitted AFTER the
+/// tool cell so hit-testing (last-wins) prefers it where the two overlap.
+pub fn emitToolDeleteButton(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     cell: Rectangle,
-    tool: types.EditorToolId,
-    type_name: []const u8,
+    action: types.Action,
+    payload: types.ButtonPayload,
+    tooltip_header: []const u8,
 ) !void {
     try elements.append(allocator, .{ .button = .{
         .sprite_id = close_button_sprite_id,
@@ -491,12 +490,31 @@ fn emitEditorToolDeleteButton(
         },
         .width = close_button_size,
         .height = close_button_size,
-        .action = .delete_editor_palette_type,
-        .payload = .{ .editor_tool = tool },
-        .tooltip = .{ .header = try spanRow(allocator, text(
-            try std.fmt.allocPrint(allocator, "Delete {s} + its placements", .{type_name}),
-        )) },
+        .action = action,
+        .payload = payload,
+        .tooltip = .{ .header = try spanRow(allocator, text(tooltip_header)) },
     } });
+}
+
+/// The mission editor's palette-cell delete: deletes the tool's palette
+/// type + every placement referencing it across all levels
+/// (`.delete_editor_palette_type`); the cell's tool rides the
+/// `editor_tool` payload.
+fn emitEditorToolDeleteButton(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    cell: Rectangle,
+    tool: types.EditorToolId,
+    type_name: []const u8,
+) !void {
+    try emitToolDeleteButton(
+        elements,
+        allocator,
+        cell,
+        .delete_editor_palette_type,
+        .{ .editor_tool = tool },
+        try std.fmt.allocPrint(allocator, "Delete {s} + its placements", .{type_name}),
+    );
 }
 
 fn editorLevelTabsLeft(editor: types.Editor) i32 {

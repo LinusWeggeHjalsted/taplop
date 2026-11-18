@@ -264,7 +264,7 @@ pub fn buildHubEditorBottomBar(
                             break;
                         }
                     },
-                    2 => try emitHubDecorationCell(elements, allocator, font_metrics, cell, campaign_editor.decoration_types[first_visible + ordinal], @intCast(first_visible + ordinal), hub_editor, active_theme, button_color, world),
+                    2 => try emitHubDecorationCell(elements, allocator, cell, campaign_editor.decoration_types[first_visible + ordinal], @intCast(first_visible + ordinal), hub_editor, button_color, world),
                     else => {},
                 }
             }
@@ -381,16 +381,15 @@ fn emitHubMissionCell(
 
 /// One Decorations-group cell: the mission editor's own graphic stack
 /// (`editor_shell.emitDecorationCellGraphics` - base + layers over one
-/// fitted rect, the 4-5d reuse) + the corner delete button.
+/// fitted rect, the 4-5d reuse) + the corner delete button (the shared
+/// close-button visual).
 fn emitHubDecorationCell(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
-    font_metrics: ui_element.FontMetrics,
     cell: Rectangle,
     type_definition: types.DecorationTypeDef,
     type_id: u32,
     hub_editor: types.HubEditor,
-    active_theme: types.ActiveColorTheme,
     button_color: Color,
     world: [types.gradient_color_count]Color,
 ) !void {
@@ -407,40 +406,16 @@ fn emitHubDecorationCell(
     } });
     try editor_shell.emitDecorationCellGraphics(elements, allocator, cell, type_definition, world);
 
-    // The delete button (the mission palette's corner-cell shape).
-    const delete_size = editor_shell.editor_plus_size;
-    const delete_cell = Rectangle{
-        .x = cell.x + cell.width - delete_size,
-        .y = cell.y,
-        .width = delete_size,
-        .height = delete_size,
-    };
-    try elements.append(allocator, .{ .nine_slice_panel = .{
-        .sprite_id = "ui/panel",
-        .screen_position = delete_cell.position(),
-        .width = delete_size,
-        .height = delete_size,
-        .color = active_theme.darkest,
-        .blocks_input = false,
-    } });
-    try elements.append(allocator, .{ .button = .{
-        .sprite_id = null,
-        .screen_position = delete_cell.position(),
-        .width = delete_size,
-        .height = delete_size,
-        .action = .delete_hub_decoration_type,
-        .payload = .{ .hub_tool = .{ .decoration_type = type_id } },
-        .tooltip = .{ .header = try spanRow(allocator, text("Delete this decoration type (and its placements in every hub)")) },
-    } });
-    const delete_label = "X";
-    const delete_width = font_metrics.measureSpanWidth(text(delete_label), editor_shell.editor_group_header_font_size);
-    try elements.append(allocator, .{ .text_label = .{
-        .text = delete_label,
-        .screen_position = delete_cell.placeCenter(delete_width, editor_shell.editor_group_header_font_size).position(),
-        .font_size = editor_shell.editor_group_header_font_size,
-        .color = active_theme.lightest,
-        .blocks_input = false,
-    } });
+    // The delete button (the mission palette's corner-cell shape - the
+    // shared close-button visual).
+    try editor_shell.emitToolDeleteButton(
+        elements,
+        allocator,
+        cell,
+        .delete_hub_decoration_type,
+        .{ .hub_tool = .{ .decoration_type = type_id } },
+        "Delete this decoration type (and its placements in every hub)",
+    );
 }
 
 /// The hub editor drill-in's centered SPRITE PICKER: the shared core
@@ -992,18 +967,20 @@ test "buildHubEditorBottomBar: the fixed pair - Select + Tile cells, the active 
     defer expanded_elements.deinit(arena.allocator());
     try buildHubEditorBottomBar(&expanded_elements, arena.allocator(), test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .active_tool = .tile }, test_theme, &collapsed, &scroll_offsets);
     // One CELL (the button_background button) + its corner delete button
-    // (sprite-less) - both carry the type payload; the cell is the
-    // backgrounded one.
+    // (the shared close-button visual) - both carry the type payload; the
+    // cell is the backgrounded one.
     var decoration_cells: usize = 0;
     var decoration_delete_cells: usize = 0;
     for (expanded_elements.items) |element| switch (element) {
         .button => |button| switch (button.payload orelse continue) {
             .hub_tool => |tool| switch (tool) {
                 .decoration_type => {
-                    if (button.sprite_id != null) {
-                        decoration_cells += 1;
-                    } else {
-                        decoration_delete_cells += 1;
+                    if (button.sprite_id) |sprite_id| {
+                        if (std.mem.eql(u8, sprite_id, ui_element.close_button_sprite_id)) {
+                            decoration_delete_cells += 1;
+                        } else {
+                            decoration_cells += 1;
+                        }
                     }
                 },
                 else => {},
