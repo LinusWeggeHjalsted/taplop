@@ -398,6 +398,7 @@ working rules).
 - [Hand-off save: the campaign table never lags the persisted mission dir](#hand-off-save-the-campaign-table-never-lags-the-persisted-mission-dir)
 - [Revalidate crash: artifacts ride renames (recorded-path rebase) + checking-mode read failures reject](#revalidate-crash-artifacts-ride-renames-recorded-path-rebase--checking-mode-read-failures-reject)
 - [Replay tolerates anytime input recorded mid-cascade (the mid-drain seed)](#replay-tolerates-anytime-input-recorded-mid-cascade-the-mid-drain-seed)
+- [That Which Explodes: effect-sourced attacks never trigger effects](#that-which-explodes-effect-sourced-attacks-never-trigger-effects)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -23678,3 +23679,28 @@ wait frames that pause a cascade.
   event 259) - "Revalidation passed - the stored replay again certifies
   the current mission content." All three Polpat missions now revalidate;
   the campaign Validate should report them clean.
+
+## That Which Explodes: effect-sourced attacks never trigger effects
+
+The author found the infinite combo: the player and an enemy both
+carrying That Which Explodes chained explosion-vs-explosion - each hit
+triggered the defender's effect, whose explosion hit back, triggering
+the attacker's, until one died.
+
+- Root cause: the effect's `onIncomingDamage` pushed plain
+  `sub_level_event attack` events (defaulted `triggers_effects = true`),
+  so the explosion's damage ran the full effect-callback pipeline - the
+  defender's own That Which Explodes included.
+- The fix rides the seam that already existed: Reflect's reflected
+  attacks carry `triggers_effects = false` (the "no reflect-vs-reflect
+  loops" rule). The explosion's attacks now carry the same flag - every
+  effect callback (on_attack, interceptors, on_damage) is suppressed on
+  effect-sourced attacks, not just the source effect. The rule moved to
+  DESIGN (Architecture): "any future effect that pushes attacks
+  inherits the rule - an effect's attacks are resolved damage, not new
+  hits."
+- Tests: the two explosion unit tests pin `triggers_effects = false` on
+  every returned attack, and a drain-level regression test walks the
+  exact combo (mutual holders, one enemy attack) - the cascade ends
+  after one explosion with both alive (pre-fix it chained until a
+  death). 1079 tests green.

@@ -1045,3 +1045,50 @@ test "accelerating waits: one shared counter per skill use, reset on use_skill" 
     } });
     try testing.expectEqual(@as(u32, 1), history.current_state.wait_acceleration);
 }
+
+test "attack: mutual That Which Explodes terminates (explosion attacks do not trigger effects)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // The infinite combo: the player AND the adjacent enemy both carry
+    // That Which Explodes. The enemy's attack lands on the player, the
+    // player's explosion hits the enemy - and WITHOUT the effect-sourced
+    // attacks carrying triggers_effects = false, that explosion re-
+    // triggered the enemy's effect, whose explosion re-triggerged the
+    // player's, chaining until one died. With the rule, the cascade ends
+    // after exactly one explosion.
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{
+                .team = 0,
+                .position = .{ .x = 0, .y = 0 },
+                .current_health = 100,
+                .max_health = 100,
+                .amulet = .{ .spell_damage = 6 },
+                .active_effects = &.{.{ .effect_id = .that_which_explodes, .duration = 3 }},
+            },
+            .{
+                .team = 1,
+                .position = .{ .x = 1, .y = 0 },
+                .current_health = 100,
+                .max_health = 100,
+                .is_active = true,
+                .amulet = .{ .spell_damage = 4 },
+                .active_effects = &.{.{ .effect_id = .that_which_explodes, .duration = 3 }},
+            },
+        },
+        &three_by_three,
+    ));
+    pushAndRunSub(&history, .{ .attack = .{ .attacker_index = 1, .defender_index = 0, .outgoing_damage = 5 } });
+
+    // The enemy's attack landed (5 off the player) and the player's
+    // explosion answered ONCE (6 off the enemy) - the enemy's own effect
+    // never fired back (the explosion damage does not trigger effects),
+    // so the drain completed with both alive and the healths settled.
+    try testing.expectEqual(@as(u32, 95), levelEntity(&history, 0).current_health);
+    try testing.expectEqual(@as(u32, 94), levelEntity(&history, 1).current_health);
+    try testing.expect(levelEntity(&history, 0).current_health > 0);
+    try testing.expect(levelEntity(&history, 1).current_health > 0);
+}

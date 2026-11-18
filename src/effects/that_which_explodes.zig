@@ -13,7 +13,11 @@ const Effect = effect_mod.Effect;
 /// That Which Explodes: while active, when the holder is dealt attack
 /// damage, the holder attacks every hostile within its EFFECTIVE radius
 /// (base 1, effects carry no per-skill config) for 1x effective SPELL
-/// damage (utility-skill damage rule - see DESIGN → Architecture).
+/// damage (utility-skill damage rule - see DESIGN → Architecture). The
+/// explosion's attacks carry `triggers_effects = false` (the reflected-
+/// attack rule): effect-sourced attacks never trigger effects - without
+/// it, two holders hitting each other would chain explosion-vs-explosion
+/// until one died.
 pub const effect = Effect{
     .name = "That Which Explodes",
     .description = "Attack each enemy within radius when dealt damage",
@@ -47,6 +51,7 @@ fn onIncomingDamage(
             .attacker_index = entity_index,
             .defender_index = @intCast(other_index),
             .outgoing_damage = damage,
+            .triggers_effects = false,
         } } }) catch @panic("failed to append explosion attack");
     }
 

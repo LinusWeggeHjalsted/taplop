@@ -4750,6 +4750,16 @@ the game cheating):
   damage through a Reflect shield, so the skill/effect descriptions say
   "incoming ATTACK damage". Any future interceptor inherits the same
   attack-only scope.
+  **Effect-sourced attacks never trigger effects (`triggers_effects`).**
+  The `attack` (and its handed-off `damage`) events carry a
+  `triggers_effects` flag, defaulted true. Attacks sourced FROM an effect
+  carry `false`: Reflect's reflected attack (the original rule - no
+  reflect-vs-reflect interception loop) and That Which Explodes'
+  explosion attacks (without it, two holders hitting each other chained
+  explosion-vs-explosion until one died - every on_attack / interceptor /
+  on_damage callback, not just the source effect, is suppressed on those
+  attacks). Any future effect that pushes attacks inherits the rule: an
+  effect's attacks are resolved damage, not new hits.
   **Damage apply is split from hit resolution (the `damage` event).**
   `attack` and `collision` are RESOLUTION stages (aggro activation, their
   own effect callbacks, the intercept fold - attack only - + defense) that

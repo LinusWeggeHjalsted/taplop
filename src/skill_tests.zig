@@ -2291,6 +2291,10 @@ test "that which explodes: the effect attacks hostiles in radius for spell damag
         try testing.expectEqual(@as(u32, 0), attack.attacker_index);
         try testing.expectEqual(@as(u32, 6), attack.outgoing_damage); // spell damage rule
         try testing.expect(attack.defender_index == 1 or attack.defender_index == 2);
+        // Effect-sourced attacks never trigger effects (the reflected-
+        // attack rule) - without it, two holders hitting each other
+        // chained explosion-vs-explosion until one died.
+        try testing.expect(!attack.triggers_effects);
     }
 }
 
@@ -2322,6 +2326,7 @@ test "that which explodes: the radius goes through the holder's effective radius
     for (events.?) |event| {
         const attack = event.sub_level_event.attack;
         try testing.expect(attack.defender_index == 1 or attack.defender_index == 2);
+        try testing.expect(!attack.triggers_effects);
     }
 }
 
