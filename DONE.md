@@ -389,6 +389,7 @@ working rules).
 - [campaign editor: the inspector rides the shared windowed renderer (slice-5c rider)](#campaign-editor-the-inspector-rides-the-shared-windowed-renderer-slice-5c-rider)
 - [Hub editor palette + viewport fixes: theme following, right-drag pan, cell art](#hub-editor-palette--viewport-fixes-theme-following-right-drag-pan-cell-art)
 - [Campaign map + hub editor UX pass: drill-in rows, double-click, any-tool edge clicks, the inferred inspector](#campaign-map--hub-editor-ux-pass-drill-in-rows-double-click-any-tool-edge-clicks-the-inferred-inspector)
+- [Validation runs: the player carry across levels + the campaign context through runs](#validation-runs-the-player-carry-across-levels--the-campaign-context-through-runs)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -23314,3 +23315,51 @@ editor (screen dump), the return to the map, a HUB-TOOL click on a
 self-loop edge selected the mission (selection dump, no hub placed),
 and the fast second click drilled into the mission editor with the
 campaign context intact - clean exit 0.
+
+## Validation runs: the player carry across levels + the campaign context through runs
+
+Two validation-run bugs found building the new main campaign:
+
+- **Each validation level reset the player.** The machinery was already
+  shaped for a temporary PlayerData (dormancy: the session's real data
+  backed up, the run's built from the saved player.txt) - the missing
+  half was the sync-back: `end_level`'s validation branch pushed the
+  next `start_level` and returned BEFORE the in-game preserve block, so
+  `build_data_from_player` never ran mid-run and level N+1 rebuilt the
+  player from the stale loadout (gear picked up in level 1, skill bar
+  changes, all lost). The natural-completion chain now pushes the
+  harvest on top (LIFO: entity-to-PlayerData sync first, then the level
+  start) - the in-game chain's exact shape minus the autosave. The
+  discard semantics are now correctly scoped in prose: they apply to
+  the SESSION's real data (restored at run end), not the run's carry.
+  Restarts stay fresh by design (player_start_validation re-reads
+  player.txt - a restart is a fresh attempt, which the
+  validation-replay slice rule also wants).
+- **The campaign drill-in's runs lost the authored campaign graph.**
+  `Screen.scope()`'s `.level` carried `editor` (why runs return to the
+  mission editor with its payload intact) but not `campaign_editor` -
+  so a validation or playtest launched from the drill-in nulled the
+  graph at the run's level transition, the post-run ctrl+S hit the 5b
+  save belt ("the campaign below the mission editor was lost"), and
+  the world-map return rendered blank. `.level`'s scope gains
+  `campaign_editor` - the same carry reasoning as editor; no leak path,
+  every other route into `.level` already dropped the campaign. The
+  latent playtest twin (the Test button from the drill-in) is fixed by
+  the same line.
+
+Tests: the chained-levels validation test's mutation moved from a
+direct PlayerData write (the wrong layer - gameplay verbs mutate the
+entity, and the new sync would have clobbered it) to a real
+`unequip_item` verb, with the carry asserted at both the entity and the
+data level (level 2 starts with an empty main hand + the sword in
+inventory; the backup untouched). The campaign-context test runs the
+full arc: the never-saved hand-off open, `start_validation` into the
+level screen with the graph alive, and `end_validation` back on the
+editor with the context intact. DESIGN's exit-guard prose and the
+Screens + scopes bullet record both settles.
+
+Runtime-verified over the console channel on the real official
+campaign: the drill-in mission editor (campaign context dumped), the
+Validate button into the run - "Main Campaign" alive on every level
+screen - three ctrl+Enter level skips through the run, and the return
+to the mission editor with the graph still alive, clean exit 0.
