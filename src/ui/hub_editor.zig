@@ -700,6 +700,101 @@ pub fn hubPaletteGroupSize(
 /// editing stays on the campaign map - name, re-attach, and direction each
 /// have exactly one editing site there), and a selected NPC shows the
 /// empty-for-now placeholder (semantics arrive with NPC interaction).
+/// What the hub editor's inspector is showing - the mission editor's
+/// `editorInspectorTarget` rules over the hub grid's kinds: the ACTIVE
+/// placement tool wins; under the select/tile/mission tools the
+/// SELECTION infers. Tiles and the player spawn contribute NOTHING
+/// (legitimately uninspectable - mixing them with a decoration still
+/// shows the decoration); a decoration placement contributes its type,
+/// an NPC placement its kind, an exit marker its summary target.
+/// EXACTLY ONE distinct reference wins; two or more (a marquee across
+/// kinds, or two different decoration types) fall back to the EMPTY
+/// panel - the hub's fallback (no player.txt for hubs). An out-of-range
+/// placement index or a stale palette type id is an unresolvable
+/// bug-state reference and forces the fallback (defensive only - the
+/// delete arms keep the selection consistent). See DESIGN → Architecture
+/// → Level Editor → Selection model (Inspector tool-type inference).
+const HubInspectorTarget = union(enum) {
+    decoration_type: u32,
+    npc: types.NpcType,
+    exit_placement: u32,
+};
+
+fn hubInspectorTarget(
+    campaign_editor: types.CampaignEditor,
+    hub_editor: types.HubEditor,
+) ?HubInspectorTarget {
+    switch (hub_editor.active_tool) {
+        .decoration_type => |type_id| return if (type_id < campaign_editor.decoration_types.len)
+            .{ .decoration_type = type_id }
+        else
+            null,
+        .npc => |npc_type| return .{ .npc = npc_type },
+        // The inferring tools: the selection below decides.
+        .select, .tile, .mission => {},
+    }
+    // Resolve the drilled-in hub's grid (the placements index into it).
+    var drilled: ?types.CampaignHubEdit = null;
+    for (campaign_editor.hubs) |candidate_hub| {
+        if (candidate_hub.handle == hub_editor.hub) drilled = candidate_hub;
+    }
+    const hub = drilled orelse return null;
+    var inferred: ?HubInspectorTarget = null;
+    for (hub_editor.selection) |selected| {
+        const referenced: ?HubInspectorTarget = switch (selected) {
+            // Legitimately uninspectable - contributes nothing.
+            .tile, .player_start => null,
+            // Mission-selection kinds that never appear in a hub grid.
+            .entity_placement, .ground_item_placement, .level_end => null,
+            .decoration_placement => |index| blk: {
+                if (index >= hub.grid.decoration_placements.len) return null;
+                const type_id = hub.grid.decoration_placements[index].type_id;
+                if (type_id >= campaign_editor.decoration_types.len) return null;
+                break :blk .{ .decoration_type = type_id };
+            },
+            .npc_placement => |index| blk: {
+                if (index >= hub.grid.npc_placements.len) return null;
+                break :blk .{ .npc = hub.grid.npc_placements[index].npc_type };
+            },
+            .exit_placement => |index| blk: {
+                if (index >= hub.grid.exit_placements.len) return null;
+                break :blk .{ .exit_placement = index };
+            },
+        };
+        const resolved = referenced orelse continue;
+        if (inferred) |existing| {
+            if (!hubInspectorTargetsEqual(existing, resolved)) return null;
+        } else {
+            inferred = resolved;
+        }
+    }
+    return inferred;
+}
+
+fn hubInspectorTargetsEqual(first: HubInspectorTarget, second: HubInspectorTarget) bool {
+    if (std.meta.activeTag(first) != std.meta.activeTag(second)) return false;
+    return switch (first) {
+        .decoration_type => |type_id| type_id == second.decoration_type,
+        .npc => |npc_type| npc_type == second.npc,
+        .exit_placement => |index| index == second.exit_placement,
+    };
+}
+
+/// The hub inspector's DECORATION type target - the input layer's
+/// projection of `hubInspectorTarget`: the field-commit sites that edit
+/// a decoration's content resolve the SAME target the panel shows (the
+/// mission editor's editorInspectorTarget convention - editing a field
+/// in an inferred-content panel commits to the inferred type).
+pub fn hubEditorDecorationTarget(
+    hub_editor: types.HubEditor,
+    campaign_editor: types.CampaignEditor,
+) ?u32 {
+    return switch (hubInspectorTarget(campaign_editor, hub_editor) orelse return null) {
+        .decoration_type => |type_id| type_id,
+        .npc, .exit_placement => null,
+    };
+}
+
 pub fn buildHubEditorInspector(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -762,13 +857,10 @@ pub fn buildHubEditorInspector(
         .height = panel_rect.height - 2 * ui_element.ui_gap,
     };
 
-    // The target inference: a SINGLE-entry selection of the right kind.
-    // A multi-selection (marquee) shows the empty panel - the read-only
-    // summary addresses ONE marker.
-    const single: ?types.Selectable = if (hub_editor.selection.len == 1)
-        hub_editor.selection[0]
-    else
-        null;
+    // The target inference (`hubInspectorTarget` - the mission editor's
+    // rule, hub-flavored). The null target IS the empty default (no
+    // player.txt for hubs).
+    const target: ?HubInspectorTarget = hubInspectorTarget(campaign_editor, hub_editor);
 
     // Resolve the drilled-in hub (the placements index into its grid).
     var drilled: ?types.CampaignHubEdit = null;
@@ -783,122 +875,120 @@ pub fn buildHubEditorInspector(
         }
     }.at;
 
-    // The decoration-type content: the ACTIVE TOOL's type (the mission
-    // editor's tool-driven content rule) through the mission editor's
-    // OWN entries fn + renderer - spacing, section strips, row units,
-    // windowing + scroll identical by construction (the 4-5d reuse).
-    // The footprint + layers rows render in the mission's live shapes;
-    // their picks go live for the hub surface with 4-5c(ii).
-    if (hub_editor.active_tool == .decoration_type) {
-        const type_id = hub_editor.active_tool.decoration_type;
-        if (type_id >= campaign_editor.decoration_types.len) return;
-        const type_definition = campaign_editor.decoration_types[type_id];
-        const world = active_theme.world_gradient.colors;
-        const decoration_button_color = world[@min(@as(u32, 5), types.gradient_color_count - 1)];
-        const entries = try editor_inspector.editorInspectorDecorationEntries(
-            allocator,
-            type_definition,
-            &ui_state.editor_inspector_section_expanded,
-        );
-        try editor_inspector.renderInspectorEntries(
-            elements,
-            allocator,
-            font_metrics,
-            entries,
-            .{
-                .decoration = .{ .type_definition = type_definition },
-                .button_color = decoration_button_color,
-            },
-            active_theme,
-            ui_state,
-        );
-        return;
-    }
+    switch (target orelse return) {
+        // The decoration-type content: the active decoration tool, or a
+        // selection that uniquely determines one type - through the
+        // mission editor's OWN entries fn + renderer (spacing, section
+        // strips, row units, windowing + scroll identical by
+        // construction, the 4-5d reuse). The footprint + layers rows
+        // render in the mission's live shapes.
+        .decoration_type => |type_id| {
+            if (type_id >= campaign_editor.decoration_types.len) return;
+            const type_definition = campaign_editor.decoration_types[type_id];
+            const world = active_theme.world_gradient.colors;
+            const decoration_button_color = world[@min(@as(u32, 5), types.gradient_color_count - 1)];
+            const entries = try editor_inspector.editorInspectorDecorationEntries(
+                allocator,
+                type_definition,
+                &ui_state.editor_inspector_section_expanded,
+            );
+            try editor_inspector.renderInspectorEntries(
+                elements,
+                allocator,
+                font_metrics,
+                entries,
+                .{
+                    .decoration = .{ .type_definition = type_definition },
+                    .button_color = decoration_button_color,
+                },
+                active_theme,
+                ui_state,
+            );
+        },
+        // The exit marker's read-only summary (mission name, destination
+        // hub, the dangling note) - all editing stays on the campaign map.
+        .exit_placement => |placement_index| {
+            const hub = drilled orelse return;
+            if (placement_index >= hub.grid.exit_placements.len) return;
+            const placement = hub.grid.exit_placements[placement_index];
 
-    if (single != null and single.? == .exit_placement) {
-        const placement_index = single.?.exit_placement;
-        const hub = drilled orelse return;
-        if (placement_index >= hub.grid.exit_placements.len) return;
-        const placement = hub.grid.exit_placements[placement_index];
-
-        // The mission (by handle) + its destination hub (by handle).
-        var mission: ?types.CampaignMissionEdit = null;
-        for (campaign_editor.missions) |candidate| {
-            if (candidate.handle == placement.mission) mission = candidate;
-        }
-        var destination: ?types.CampaignHubEdit = null;
-        if (mission) |resolved| {
-            if (resolved.destination) |destination_handle| {
-                for (campaign_editor.hubs) |candidate_hub| {
-                    if (candidate_hub.handle == destination_handle) destination = candidate_hub;
+            // The mission (by handle) + its destination hub (by handle).
+            var mission: ?types.CampaignMissionEdit = null;
+            for (campaign_editor.missions) |candidate| {
+                if (candidate.handle == placement.mission) mission = candidate;
+            }
+            var destination: ?types.CampaignHubEdit = null;
+            if (mission) |resolved| {
+                if (resolved.destination) |destination_handle| {
+                    for (campaign_editor.hubs) |candidate_hub| {
+                        if (candidate_hub.handle == destination_handle) destination = candidate_hub;
+                    }
                 }
             }
-        }
 
-        var y = content.y;
-        try elements.append(allocator, .{ .text_label = .{
-            .text = "Exit Marker",
-            .screen_position = .{ .x = content.x, .y = y },
-            .font_size = font,
-            .color = active_theme.lightest,
-            .blocks_input = false,
-        } });
-        y += font + ui_element.ui_gap;
-        const mission_name = if (mission) |resolved|
-            (if (resolved.name.len > 0) resolved.name else "Unsaved mission")
-        else
-            "Unknown mission";
-        try elements.append(allocator, .{ .text_label = .{
-            .text = mission_name,
-            .screen_position = .{ .x = content.x, .y = line(y) },
-            .font_size = font,
-            .color = active_theme.lightest,
-            .blocks_input = false,
-        } });
-        y += font + ui_element.ui_gap;
-        const destination_text = if (mission == null)
-            "Dangling - no destination hub"
-        else if (destination == null)
-            "Dangling - no destination hub"
-        else
-            (if (destination.?.name.len > 0) destination.?.name else "Unnamed hub");
-        try elements.append(allocator, .{ .text_label = .{
-            .text = destination_text,
-            .screen_position = .{ .x = content.x, .y = line(y) },
-            .font_size = font,
-            .color = if (destination == null) button_color else active_theme.lightest,
-            .blocks_input = false,
-        } });
-        y += font + ui_element.ui_gap;
-        try elements.append(allocator, .{ .text_label = .{
-            .text = "Edit on the campaign map",
-            .screen_position = .{ .x = content.x, .y = line(y) },
-            .font_size = font,
-            .color = active_theme.darkest,
-            .blocks_input = false,
-        } });
-        return;
+            var y = content.y;
+            try elements.append(allocator, .{ .text_label = .{
+                .text = "Exit Marker",
+                .screen_position = .{ .x = content.x, .y = y },
+                .font_size = font,
+                .color = active_theme.lightest,
+                .blocks_input = false,
+            } });
+            y += font + ui_element.ui_gap;
+            const mission_name = if (mission) |resolved|
+                (if (resolved.name.len > 0) resolved.name else "Unsaved mission")
+            else
+                "Unknown mission";
+            try elements.append(allocator, .{ .text_label = .{
+                .text = mission_name,
+                .screen_position = .{ .x = content.x, .y = line(y) },
+                .font_size = font,
+                .color = active_theme.lightest,
+                .blocks_input = false,
+            } });
+            y += font + ui_element.ui_gap;
+            const destination_text = if (mission == null)
+                "Dangling - no destination hub"
+            else if (destination == null)
+                "Dangling - no destination hub"
+            else
+                (if (destination.?.name.len > 0) destination.?.name else "Unnamed hub");
+            try elements.append(allocator, .{ .text_label = .{
+                .text = destination_text,
+                .screen_position = .{ .x = content.x, .y = line(y) },
+                .font_size = font,
+                .color = if (destination == null) button_color else active_theme.lightest,
+                .blocks_input = false,
+            } });
+            y += font + ui_element.ui_gap;
+            try elements.append(allocator, .{ .text_label = .{
+                .text = "Edit on the campaign map",
+                .screen_position = .{ .x = content.x, .y = line(y) },
+                .font_size = font,
+                .color = active_theme.darkest,
+                .blocks_input = false,
+            } });
+        },
+        // The NPC placeholder (the active NPC tool or a selection that
+        // uniquely determines one NPC kind - interaction semantics land
+        // with NPC interaction).
+        .npc => {
+            try elements.append(allocator, .{ .text_label = .{
+                .text = "NPC",
+                .screen_position = .{ .x = content.x, .y = content.y },
+                .font_size = font,
+                .color = active_theme.lightest,
+                .blocks_input = false,
+            } });
+            try elements.append(allocator, .{ .text_label = .{
+                .text = "Interaction semantics land with NPC interaction",
+                .screen_position = .{ .x = content.x, .y = content.y + font + ui_element.ui_gap },
+                .font_size = font,
+                .color = active_theme.darkest,
+                .blocks_input = false,
+            } });
+        },
     }
-
-    if (single != null and single.? == .npc_placement) {
-        try elements.append(allocator, .{ .text_label = .{
-            .text = "NPC",
-            .screen_position = .{ .x = content.x, .y = content.y },
-            .font_size = font,
-            .color = active_theme.lightest,
-            .blocks_input = false,
-        } });
-        try elements.append(allocator, .{ .text_label = .{
-            .text = "Interaction semantics land with NPC interaction",
-            .screen_position = .{ .x = content.x, .y = content.y + font + ui_element.ui_gap },
-            .font_size = font,
-            .color = active_theme.darkest,
-            .blocks_input = false,
-        } });
-        return;
-    }
-
-    // The default: empty (no player.txt for hubs).
 }
 
 /// The tool graphic's fitted tile size (the mission editor's fixed-tool
@@ -1411,6 +1501,158 @@ test "buildHubEditorInspector: the exit summary, the NPC placeholder, the empty 
             else => {},
         };
         try std.testing.expectEqual(@as(usize, 1), panel_count); // the strip's own panel only
+    }
+}
+
+test "buildHubEditorInspector: the selection infers the tool (the mission editor's rule, hub-flavored)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const black: Color = .{ .r = 0, .g = 0, .b = 0 };
+    const test_theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
+    };
+    const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
+    const test_metrics = ui_element.FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+    var ui_state: ui_state_mod.UiState = .{};
+
+    // A drilled-in hub whose grid carries: two placements of decoration
+    // type 0, one of type 1, an NPC, and an exit marker.
+    const campaign_editor = types.CampaignEditor{
+        .start_hub = 0,
+        .hubs = &.{.{
+            .handle = 0,
+            .name = "Alpha",
+            .position = .{ .x = 0, .y = 0 },
+            .grid = .{
+                .decoration_placements = &.{
+                    .{ .type_id = 0, .position = .{ .x = 0, .y = 0 } },
+                    .{ .type_id = 0, .position = .{ .x = 1, .y = 0 } },
+                    .{ .type_id = 1, .position = .{ .x = 2, .y = 0 } },
+                },
+                .npc_placements = &.{.{ .npc_type = .dream_guide, .position = .{ .x = 3, .y = 0 } }},
+                .exit_placements = &.{.{ .mission = 5, .position = .{ .x = 4, .y = 0 } }},
+            },
+        }},
+        .missions = &.{.{ .handle = 5, .name = "One", .start = 0, .destination = 0 }},
+        .decoration_types = &.{
+            .{ .id = "tree", .sprite = "tree_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+            .{ .id = "rock", .sprite = "rock_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+        },
+        .next_handle = 6,
+    };
+
+    // The content markers: the keep-colors toggle (decoration content),
+    // the NPC placeholder's label, the exit summary's label.
+    const hasKeepColorsToggle = struct {
+        fn at(elements: []const UiElement) bool {
+            for (elements) |element| switch (element) {
+                .button => |button| if (button.action == .toggle_editor_decoration_keep_original_colors) return true,
+                else => {},
+            };
+            return false;
+        }
+    }.at;
+    const hasLabel = struct {
+        fn at(elements: []const UiElement, needle: []const u8) bool {
+            for (elements) |element| switch (element) {
+                .text_label => |label| if (std.mem.eql(u8, label.text, needle)) return true,
+                else => {},
+            };
+            return false;
+        }
+    }.at;
+
+    // A single decoration placement under the SELECT tool: the decoration
+    // content for its type - the 4-5d identity contract against the
+    // ACTIVE-TOOL panel over the same type (elements from the strip's
+    // end, deep-equal).
+    {
+        const select_selection = [_]types.Selectable{.{ .decoration_placement = 0 }};
+        var inferred: UiElementList = .empty;
+        defer inferred.deinit(allocator);
+        try buildHubEditorInspector(&inferred, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .active_tool = .select, .selection = &select_selection }, test_theme, button_color, &ui_state);
+        try std.testing.expect(hasKeepColorsToggle(inferred.items));
+        var tool_driven: UiElementList = .empty;
+        defer tool_driven.deinit(allocator);
+        try buildHubEditorInspector(&tool_driven, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .active_tool = .{ .decoration_type = 0 } }, test_theme, button_color, &ui_state);
+        try std.testing.expect(inferred.items.len >= 5);
+        try std.testing.expectEqual(tool_driven.items.len, inferred.items.len);
+        for (tool_driven.items[4..], inferred.items[4..]) |tool_element, inferred_element| {
+            try std.testing.expectEqualDeep(tool_element, inferred_element);
+        }
+    }
+
+    // SAME-type multi placements still resolve (one distinct reference).
+    {
+        const same_type_selection = [_]types.Selectable{ .{ .decoration_placement = 0 }, .{ .decoration_placement = 1 } };
+        var elements: UiElementList = .empty;
+        defer elements.deinit(allocator);
+        try buildHubEditorInspector(&elements, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .active_tool = .select, .selection = &same_type_selection }, test_theme, button_color, &ui_state);
+        try std.testing.expect(hasKeepColorsToggle(elements.items));
+    }
+
+    // Two DIFFERENT decoration types: ambiguous - the empty panel.
+    {
+        const mixed_selection = [_]types.Selectable{ .{ .decoration_placement = 0 }, .{ .decoration_placement = 2 } };
+        var elements: UiElementList = .empty;
+        defer elements.deinit(allocator);
+        try buildHubEditorInspector(&elements, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .active_tool = .select, .selection = &mixed_selection }, test_theme, button_color, &ui_state);
+        try std.testing.expect(!hasKeepColorsToggle(elements.items));
+        try std.testing.expect(!hasLabel(elements.items, "NPC"));
+        try std.testing.expect(!hasLabel(elements.items, "Exit Marker"));
+    }
+
+    // A decoration + an NPC: kind ambiguity - the empty panel.
+    {
+        const kind_mix = [_]types.Selectable{ .{ .decoration_placement = 0 }, .{ .npc_placement = 0 } };
+        var elements: UiElementList = .empty;
+        defer elements.deinit(allocator);
+        try buildHubEditorInspector(&elements, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .active_tool = .select, .selection = &kind_mix }, test_theme, button_color, &ui_state);
+        try std.testing.expect(!hasKeepColorsToggle(elements.items));
+        try std.testing.expect(!hasLabel(elements.items, "NPC"));
+    }
+
+    // The ACTIVE tool still wins over any selection (the mission rule):
+    // a decoration tool with an exit selected shows the decoration.
+    {
+        const exit_selection = [_]types.Selectable{.{ .exit_placement = 0 }};
+        var elements: UiElementList = .empty;
+        defer elements.deinit(allocator);
+        try buildHubEditorInspector(&elements, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .active_tool = .{ .decoration_type = 1 }, .selection = &exit_selection }, test_theme, button_color, &ui_state);
+        try std.testing.expect(hasKeepColorsToggle(elements.items));
+        try std.testing.expect(!hasLabel(elements.items, "Exit Marker"));
+    }
+
+    // A unique NPC (mixed with an uninspectable tile - the mission's
+    // mixing rule) and an active NPC tool both show the placeholder.
+    {
+        const npc_selection = [_]types.Selectable{ .{ .npc_placement = 0 }, .{ .tile = .{ .x = 0, .y = 0 } } };
+        var elements: UiElementList = .empty;
+        defer elements.deinit(allocator);
+        try buildHubEditorInspector(&elements, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .active_tool = .select, .selection = &npc_selection }, test_theme, button_color, &ui_state);
+        try std.testing.expect(hasLabel(elements.items, "NPC"));
+
+        var tool_elements: UiElementList = .empty;
+        defer tool_elements.deinit(allocator);
+        try buildHubEditorInspector(&tool_elements, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .active_tool = .{ .npc = .dream_guide } }, test_theme, button_color, &ui_state);
+        try std.testing.expect(hasLabel(tool_elements.items, "NPC"));
+    }
+
+    // A unique exit marker (mixed with a tile) shows the read-only
+    // summary.
+    {
+        const exit_selection = [_]types.Selectable{ .{ .exit_placement = 0 }, .{ .tile = .{ .x = 0, .y = 0 } } };
+        var elements: UiElementList = .empty;
+        defer elements.deinit(allocator);
+        try buildHubEditorInspector(&elements, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .active_tool = .select, .selection = &exit_selection }, test_theme, button_color, &ui_state);
+        try std.testing.expect(hasLabel(elements.items, "Exit Marker"));
+        try std.testing.expect(hasLabel(elements.items, "One"));
     }
 }
 

@@ -522,22 +522,6 @@ fn footprintFromDraft(
     return footprint.items;
 }
 
-/// The hub editor drill-in's inspector target: the ACTIVE TOOL's
-/// decoration type id, bounds-checked against the campaign palette (the
-/// mission's editorInspectorTarget analogue for the tool-driven content
-/// rule).
-fn hubDecorationToolTypeId(
-    hub_editor_state: types.HubEditor,
-    campaign_editor_state: types.CampaignEditor,
-) ?u32 {
-    const type_id = switch (hub_editor_state.active_tool) {
-        .decoration_type => |resolved_type_id| resolved_type_id,
-        else => return null,
-    };
-    if (type_id >= campaign_editor_state.decoration_types.len) return null;
-    return type_id;
-}
-
 /// A registry prefab's authored layer color for a stem, else 0 - a NEW
 /// layer adopts the authored value on a registry-stem pick (the layer
 /// pick arm's shared half, both editor surfaces).
@@ -2382,7 +2366,7 @@ pub fn handleAnytimeInput(
                 if (current.screen == .hub_editor) {
                     const hub_editor_state = current.hub_editor orelse return;
                     const campaign_editor = current.campaign_editor orelse return;
-                    if (hub_editor_state.active_tool != .decoration_type) return;
+                    if (ui.hubEditorDecorationTarget(hub_editor_state, campaign_editor) == null) return;
                     rescanHubSprites(history, campaign_editor, hub_editor_state);
                     // The Official tab's registry: loaded at the mission
                     // editor's open there - the campaign-editor session
@@ -2463,11 +2447,7 @@ pub fn handleAnytimeInput(
                 if (current.screen == .hub_editor) {
                     const hub_editor_state = current.hub_editor orelse return;
                     const campaign_editor_state = current.campaign_editor orelse return;
-                    const type_id = switch (hub_editor_state.active_tool) {
-                        .decoration_type => |resolved_type_id| resolved_type_id,
-                        else => return,
-                    };
-                    if (type_id >= campaign_editor_state.decoration_types.len) return;
+                    const type_id = ui.hubEditorDecorationTarget(hub_editor_state, campaign_editor_state) orelse return;
                     if (!seedFootprintDraft(history, campaign_editor_state.decoration_types[type_id])) return;
                     pushPlayerActionAndDrain(history, .{ .player_open_hub_picker = .{
                         .target = .{ .decoration_footprint = type_id },
@@ -3063,7 +3043,7 @@ pub fn handleAnytimeInput(
                         .decoration_layer => |picker_layer_index| picker_layer_index,
                         else => return,
                     };
-                    const type_id = hubDecorationToolTypeId(hub_editor_state, campaign_editor_state) orelse return;
+                    const type_id = ui.hubEditorDecorationTarget(hub_editor_state, campaign_editor_state) orelse return;
                     const current_definition = campaign_editor_state.decoration_types[type_id];
                     const arena = history.current_arena.allocator();
 
@@ -3300,11 +3280,7 @@ pub fn handleAnytimeInput(
                 const campaign_editor_state = current.campaign_editor orelse return;
                 if (hub_editor_state.picker == null or hub_editor_state.picker.? != .decoration_sprite) return;
                 const sprite = payloadAs(.editor_sprite, clicked_payload) orelse return;
-                const type_id = switch (hub_editor_state.active_tool) {
-                    .decoration_type => |resolved_type_id| resolved_type_id,
-                    else => return,
-                };
-                if (type_id >= campaign_editor_state.decoration_types.len) return;
+                const type_id = ui.hubEditorDecorationTarget(hub_editor_state, campaign_editor_state) orelse return;
                 const current_definition = campaign_editor_state.decoration_types[type_id];
                 const arena = history.current_arena.allocator();
 
@@ -3518,11 +3494,7 @@ pub fn handleAnytimeInput(
                 const resolved: Resolved = if (current.screen == .hub_editor) resolved_hub: {
                     const hub_editor_state = current.hub_editor orelse return;
                     const campaign_editor_state = current.campaign_editor orelse return;
-                    const tool_type_id = switch (hub_editor_state.active_tool) {
-                        .decoration_type => |resolved_type_id| resolved_type_id,
-                        else => return,
-                    };
-                    if (tool_type_id >= campaign_editor_state.decoration_types.len) return;
+                    const tool_type_id = ui.hubEditorDecorationTarget(hub_editor_state, campaign_editor_state) orelse return;
                     break :resolved_hub .{
                         .type_id = tool_type_id,
                         .current_color = campaign_editor_state.decoration_types[tool_type_id].color_index,
@@ -3565,7 +3537,7 @@ pub fn handleAnytimeInput(
                 if (current.screen == .hub_editor) {
                     const hub_editor_state = current.hub_editor orelse return;
                     const campaign_editor_state = current.campaign_editor orelse return;
-                    const type_id = hubDecorationToolTypeId(hub_editor_state, campaign_editor_state) orelse return;
+                    const type_id = ui.hubEditorDecorationTarget(hub_editor_state, campaign_editor_state) orelse return;
                     const definition = campaign_editor_state.decoration_types[type_id];
                     if (layer_index >= definition.layers.len) return;
                     var layers: std.ArrayList(types.DecorationLayer) = .empty;
@@ -3627,7 +3599,7 @@ pub fn handleAnytimeInput(
                 if (current.screen == .hub_editor) {
                     const hub_editor_state = current.hub_editor orelse return;
                     const campaign_editor_state = current.campaign_editor orelse return;
-                    const type_id = hubDecorationToolTypeId(hub_editor_state, campaign_editor_state) orelse return;
+                    const type_id = ui.hubEditorDecorationTarget(hub_editor_state, campaign_editor_state) orelse return;
                     const definition = campaign_editor_state.decoration_types[type_id];
                     if (layer_index >= definition.layers.len) return;
                     const current_layer = definition.layers[layer_index];
@@ -3722,11 +3694,7 @@ pub fn handleAnytimeInput(
                 const resolved: Resolved = if (current.screen == .hub_editor) resolved_hub: {
                     const hub_editor_state = current.hub_editor orelse return;
                     const campaign_editor_state = current.campaign_editor orelse return;
-                    const tool_type_id = switch (hub_editor_state.active_tool) {
-                        .decoration_type => |resolved_type_id| resolved_type_id,
-                        else => return,
-                    };
-                    if (tool_type_id >= campaign_editor_state.decoration_types.len) return;
+                    const tool_type_id = ui.hubEditorDecorationTarget(hub_editor_state, campaign_editor_state) orelse return;
                     break :resolved_hub .{
                         .type_id = tool_type_id,
                         .current_flag = campaign_editor_state.decoration_types[tool_type_id].keep_original_colors,

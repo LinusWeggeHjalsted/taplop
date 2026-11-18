@@ -230,6 +230,7 @@ pub const buildHubEditorMetadataSidebar = ui_hub_editor.buildHubEditorMetadataSi
 pub const hubPaletteGroupAt = ui_hub_editor.hubPaletteGroupAt;
 pub const buildHubSpritePicker = ui_hub_editor.buildHubSpritePicker;
 pub const hubPaletteGroupSize = ui_hub_editor.hubPaletteGroupSize;
+pub const hubEditorDecorationTarget = ui_hub_editor.hubEditorDecorationTarget;
 pub const buildCampaignEditorPrimaryActions = ui_campaign_editor.buildCampaignEditorPrimaryActions;
 pub const HubPositionOverride = ui_campaign_editor.HubPositionOverride;
 pub const buildGlobalTopBar = ui_screens.buildGlobalTopBar;

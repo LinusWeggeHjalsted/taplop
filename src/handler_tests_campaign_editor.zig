@@ -969,6 +969,112 @@ test "campaign editor: a double-click on a hub or mission drills into its editor
     try testing.expect(fresh_history.session.ui_state.last_campaign_click == null);
 }
 
+test "hub editor: an inferred inspector target commits to the inferred type" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const input_handlers_mod = @import("input_handlers.zig");
+
+    // The SELECT tool with a single decoration placement selected: the
+    // keep-colors toggle commits to the INFERRED type (the placement's
+    // type 1), not any active tool.
+    {
+        const selection = [_]types.Selectable{.{ .decoration_placement = 0 }};
+        var history = harness.newHistory(.{
+            .screen = .hub_editor,
+            .event_stack = &.{},
+            .player_data = .{},
+            .camera = null,
+            .editor = null,
+            .campaign_editor = .{
+                .campaign_name = "Local",
+                .campaign_uuid = "cu",
+                .campaign_dir = "campaigns/local",
+                .start_hub = 0,
+                .hubs = &.{.{ .handle = 0, .name = "Alpha", .position = .{ .x = 0, .y = 0 }, .grid = .{
+                    .decoration_placements = &.{.{ .type_id = 1, .position = .{ .x = 0, .y = 0 } }},
+                } }},
+                .decoration_types = &.{
+                    .{ .id = "tree", .sprite = "tree_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+                    .{ .id = "rock", .sprite = "rock_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+                },
+                .next_handle = 1,
+            },
+            .hub_editor = .{
+                .hub = 0,
+                .active_tool = .select,
+                .selection = &selection,
+            },
+            .replay_viewer = null,
+            .campaign = null,
+            .mission = null,
+            .level = null,
+            .hub = null,
+        });
+        runToIdle(&history);
+        input_handlers_mod.handleAnytimeInput(
+            &history,
+            .{ .options_action = .toggle_editor_decoration_keep_original_colors },
+            null,
+            .{ .x = 512, .y = 624 },
+            &.{},
+        );
+        try testing.expect(history.current_state.campaign_editor.?.decoration_types[1].keep_original_colors);
+        try testing.expect(!history.current_state.campaign_editor.?.decoration_types[0].keep_original_colors);
+    }
+
+    // An AMBIGUOUS selection (two placements of different types): no
+    // inferred target - the commit no-ops.
+    {
+        const ambiguous = [_]types.Selectable{ .{ .decoration_placement = 0 }, .{ .decoration_placement = 1 } };
+        var history = harness.newHistory(.{
+            .screen = .hub_editor,
+            .event_stack = &.{},
+            .player_data = .{},
+            .camera = null,
+            .editor = null,
+            .campaign_editor = .{
+                .campaign_name = "Local",
+                .campaign_uuid = "cu",
+                .campaign_dir = "campaigns/local",
+                .start_hub = 0,
+                .hubs = &.{.{ .handle = 0, .name = "Alpha", .position = .{ .x = 0, .y = 0 }, .grid = .{
+                    .decoration_placements = &.{
+                        .{ .type_id = 1, .position = .{ .x = 0, .y = 0 } },
+                        .{ .type_id = 0, .position = .{ .x = 1, .y = 0 } },
+                    },
+                } }},
+                .decoration_types = &.{
+                    .{ .id = "tree", .sprite = "tree_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+                    .{ .id = "rock", .sprite = "rock_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+                },
+                .next_handle = 1,
+            },
+            .hub_editor = .{
+                .hub = 0,
+                .active_tool = .select,
+                .selection = &ambiguous,
+            },
+            .replay_viewer = null,
+            .campaign = null,
+            .mission = null,
+            .level = null,
+            .hub = null,
+        });
+        runToIdle(&history);
+        input_handlers_mod.handleAnytimeInput(
+            &history,
+            .{ .options_action = .toggle_editor_decoration_keep_original_colors },
+            null,
+            .{ .x = 512, .y = 624 },
+            &.{},
+        );
+        try testing.expect(!history.current_state.campaign_editor.?.decoration_types[0].keep_original_colors);
+        try testing.expect(!history.current_state.campaign_editor.?.decoration_types[1].keep_original_colors);
+    }
+}
+
 test "saveCampaignEditor: the full round trip - save, reopen, compare; the deletion reconciliation" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
