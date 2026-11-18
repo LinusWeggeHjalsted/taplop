@@ -521,6 +521,15 @@ pub fn build(b: *std.Build) !void {
 ///     history (and no dirty flag, since there's nothing to compare against).
 /// This is a free-form string (not semver), so a zero-padded month / word in
 /// the last field is fine.
+///
+/// STALENESS: the dirty flag (and count) snapshot the git state at the
+/// moment configure RUNS, not at the build or the run - and the 0.17
+/// build system caches configure, never re-running it until a declared
+/// input changes. Git state cannot be a declared configure dependency,
+/// so a committed tree can keep building with a -dirty stamp (and vice
+/// versa) until some real change re-triggers configure. Advisory only
+/// (the main-menu stamp + replay warning); when a stale stamp bothers
+/// you, any committed content change - including this file - re-stamps.
 fn computeGameVersion(b: *std.Build) []const u8 {
     const now_seconds: u64 = @intCast(std.Io.Clock.now(.real, b.graph.io).toSeconds());
     const epoch_seconds = std.time.epoch.EpochSeconds{ .secs = now_seconds };
