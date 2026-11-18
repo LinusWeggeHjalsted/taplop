@@ -322,6 +322,12 @@ fn saveCampaignContextMission(
     // 3. The art carry (the single-dir rule, same as standalone).
     if (!copyReferencedCustomSprites(history, editor, target.dir_path)) return null;
 
+    // 4. The graph table write (the in-place rule -
+    //    campaign_io.saveCampaignGraphAtMissionSave): campaign.txt must
+    //    reference the mission dir this save just persisted, in the same
+    //    save. A fork/minted target stays invisible by design.
+    if (!campaign_io.saveCampaignGraphAtMissionSave(history, campaign)) return null;
+
     return durable.dupe(u8, target.dir_path) catch
         @panic("failed to dupe the campaign mission dir path");
 }

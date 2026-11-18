@@ -395,6 +395,7 @@ working rules).
 - [Session-log round trip: single string-bearing struct fields (completed_mission)](#session-log-round-trip-single-string-bearing-struct-fields-completedmission)
 - [Campaign save: the root dir follows the campaign name (the cosmetic tidy the DESIGN already promised)](#campaign-save-the-root-dir-follows-the-campaign-name-the-cosmetic-tidy-the-design-already-promised)
 - [Console boot gate: commands flow only once the game is ready](#console-boot-gate-commands-flow-only-once-the-game-is-ready)
+- [Hand-off save: the campaign table never lags the persisted mission dir](#hand-off-save-the-campaign-table-never-lags-the-persisted-mission-dir)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -23560,3 +23561,43 @@ new_editor_campaign` records the seed + exactly one orchestrator; the
 dumped bundle replays through `--replay` where the old shape failed at
 event 0. The drive-authoring workaround (start scripts with
 `wait idle`) is no longer needed.
+
+## Hand-off save: the campaign table never lags the persisted mission dir
+
+The author's campaign data exposed the gap: delete an edge, place a new
+one, save the mission from the mission editor - and campaign.txt still
+carried the DELETED edge while the new mission's dir sat orphaned in
+missions/ (unresolvable-mission warning on every campaign open, the new
+mission invisible in the campaign graph on reload). The hand-off save
+persisted a mission dir but never the edge table that references it -
+the table was the campaign save's file alone, so any graph edit between
+campaign saves went stale the moment a mission save landed in between.
+
+- The rule (DESIGN → The mission-editor hand-off, "the table never
+  lags the persisted dir"): a hand-off save that lands in the
+  campaign's OPENED, listed dir also writes campaign.txt in the same
+  save. Identity resolution rides the shared memo machinery (loaded
+  content in place, fresh content mints + memos - which also makes the
+  later full save skip the fresh-template write for it, correct since
+  the hand-off wrote real files). The campaign.txt write itself is ONE
+  shared helper (`writeCampaignGraphFile`) used by both the full save
+  and the hand-off save, so the two writers can never drift.
+- A minted fork stays INVISIBLE: the gate is `memo.dir ==
+  campaign_dir` (in-place); fork/fresh targets get no campaign.txt
+  until the full save - the invisibility rule a dir without a readable
+  campaign.txt never lists (the existing fork test now pins this too).
+- The motivating recovery, by hand, in the author's campaign data:
+  campaign.txt's stale edge `mission_uuid cb683a48-...` re-pointed to
+  the authored dir's real uuid `f85e784e-..._Needle Bush` (one line;
+  nothing else referenced the old uuid - hub exit markers reference
+  only placed markers, and the re-made edge had none). The campaign
+  now loads clean (pending_error null, the mission resolves and is
+  wired Camp in the Thicket -> Driftwood Beach). One pre-existing
+  finding stands: the re-made mission has no exit marker in its start
+  hub, so Validate reports it unstartable.
+- Verified: the unit test (seeded persistent campaign -> place a fresh
+  edge -> hand-off save -> campaign.txt references the minted uuid,
+  the hub stays in-place, no fork), the fork-invisibility pin, and the
+  live console drive of the author's exact flow (delete edge + new
+  edge + mission-editor save -> the old edge gone, the new uuid in the
+  table AND the dir written, one save).

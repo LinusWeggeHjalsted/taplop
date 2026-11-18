@@ -4226,6 +4226,20 @@ the sections above; this section is the hand-off's own wiring).
   template (the memo-existence check). A fresh campaign mints its
   campaign identity AT the hand-off save; an official-origin
   campaign does the root carry. No "save the campaign first" gate.
+- **The table never lags the persisted dir** (the in-place rule): when
+  the hand-off save lands in the campaign's OPENED, listed dir (an
+  in-place persistent campaign), it also writes campaign.txt - the
+  edge table must reference the mission dir the save just persisted,
+  in the same save. Without this, the delete-edge + place-edge +
+  save-from-the-mission-editor flow left a listed campaign whose
+  table still carried the DELETED edge while the new mission's dir
+  sat orphaned (found in the author's campaign data). A minted fork
+  stays INVISIBLE: no campaign.txt until the full save (the
+  root-carry rule's complement - campaignMissionSaveTarget carries
+  everything except campaign.txt). Fresh hubs/missions mint + memo
+  at the table write; a minted identity without its content file is
+  a load-side validation finding, never a save blocker (the
+  finalized-campaign doctrine).
 - **No mission-editor-owned marker (the 5b correction)**: the full
   save's lean mission.txt write STAYS for hand-off-saved missions.
   It looked like a clobber (the mission editor "owns" the file),

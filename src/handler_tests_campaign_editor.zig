@@ -3683,6 +3683,14 @@ test "mission editor hand-off save: an official-origin campaign forks at the han
 
     // The official campaign's own files stay embedded-only.
     try testing.expect(!file_source_mod.persistentFileExists(&harness.file_source, "campaigns/main_campaign/campaign.txt"));
+
+    // The fork stays INVISIBLE after the hand-off save: no campaign.txt
+    // until the full save (the in-place gate on the graph write - a dir
+    // without a readable campaign.txt never lists).
+    try testing.expect(!file_source_mod.persistentFileExists(
+        &harness.file_source,
+        try std.fmt.allocPrint(arena, "{s}/campaign.txt", .{fork_dir}),
+    ));
 }
 
 test "campaign export + import: the zip round trip through exported_campaigns/ and the marker poll" {
@@ -3958,4 +3966,111 @@ test "saveCampaignEditor: the campaign root follows the campaign name (cosmetic 
     try testing.expectEqualStrings("campaigns/99999999-8888-7777-6666-000000000000_Other Name", collision_saved);
     try testing.expect(file_source_mod.persistentFileExists(history2.file_source, colliding_dir ++ "/campaign.txt"));
     try testing.expect(file_source_mod.persistentFileExists(history2.file_source, "campaigns/99999999-8888-7777-6666-000000000000_Other Name/campaign.txt"));
+}
+
+test "mission hand-off save: an in-place campaign's table references the persisted mission in the same save" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    const campaign_editor_io = @import("campaign_editor/io.zig");
+    const mission_io = @import("editor/mission_io.zig");
+
+    // A seeded PERSISTENT campaign (listed: campaign.txt present) with one
+    // hub and NO missions. The hub dir + hub.txt keep the hub's identity
+    // in-place at the graph write (resolveContentIdentity's
+    // persistent-config rule).
+    const campaign_uuid = "aaaaaaa1-0000-0000-0000-000000000001";
+    const hub_uuid = "hhhhhhh1-0000-0000-0000-000000000001";
+    harness.file_source.writeFile("campaigns/inplace_test/campaign.txt",
+        \\Metadata
+        \\file_format_version 5
+        \\name Inplace Test
+        \\campaign_uuid aaaaaaa1-0000-0000-0000-000000000001
+        \\start_hub hhhhhhh1-0000-0000-0000-000000000001
+        \\
+        \\Hubs
+        \\hub_uuid hhhhhhh1-0000-0000-0000-000000000001
+        \\position 0 0
+        \\
+    ) catch @panic("seed campaign write failed");
+    harness.file_source.writeFile("campaigns/inplace_test/hubs/hhhhhhh1-0000-0000-0000-000000000001_Seed Hub/hub.txt",
+        \\Metadata
+        \\file_format_version 5
+        \\name Seed Hub
+        \\hub_uuid hhhhhhh1-0000-0000-0000-000000000001
+        \\
+        \\Layout 2
+        \\.!
+        \\..
+        \\
+    ) catch @panic("seed hub write failed");
+
+    var history = harness.newHistory(null);
+    runToIdle(&history);
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+            .campaign_dir = "campaigns/inplace_test",
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    if (history.session.pending_error) |error_message| {
+        std.debug.print("OPEN ERROR: {s}\n", .{error_message});
+        return error.TestUnexpectedResult;
+    }
+    const opened = history.current_state.campaign_editor orelse return error.TestUnexpectedResult;
+    const hub_handle = opened.hubs[0].handle;
+
+    // The motivating authoring flow's live half: place a FRESH mission
+    // edge (no identity yet - it mints at the save), then hand off to
+    // the mission editor (the fresh-template branch, no mission_path).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .campaign_editor_event = .{ .editor_campaign_place_mission = .{
+            .start = hub_handle,
+            .destination = hub_handle,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    const campaign_now = history.current_state.campaign_editor orelse return error.TestUnexpectedResult;
+    const placed_handle = campaign_now.missions[0].handle;
+    try testing.expect(campaign_now.missions[0].uuid.len == 0);
+
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_mission_editor = .{
+            .mission = placed_handle,
+            .mission_path = null,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    if (history.session.pending_error) |error_message| {
+        std.debug.print("HAND-OFF OPEN ERROR: {s}\n", .{error_message});
+        return error.TestUnexpectedResult;
+    }
+
+    // The hand-off save: the mission dir lands under the OPENED campaign,
+    // and the table write must reference it in the SAME save.
+    const saved_dir = mission_io.saveEditorMission(&history);
+    try testing.expect(saved_dir != null);
+    try testing.expect(history.session.pending_error == null);
+    try testing.expect(std.mem.startsWith(u8, saved_dir.?, "campaigns/inplace_test/missions/"));
+
+    const mission_memo = campaign_editor_io.campaignSaveMemoFor(&history, placed_handle).?;
+    const mission_uuid = try arena.dupe(u8, mission_memo.uuid);
+    try testing.expect(std.mem.indexOf(u8, saved_dir.?, mission_uuid) != null);
+
+    const campaign_txt = history.file_source.readFile(arena, "campaigns/inplace_test/campaign.txt") catch
+        return error.CouldNotReadCampaign;
+    const mission_reference = try std.fmt.allocPrint(arena, "mission_uuid {s}", .{mission_uuid});
+    try std.testing.expect(std.mem.indexOf(u8, campaign_txt, mission_reference) != null);
+    // The hub stayed IN-PLACE (its seeded identity - no re-mint).
+    const hub_reference = try std.fmt.allocPrint(arena, "hub_uuid {s}", .{hub_uuid});
+    try std.testing.expect(std.mem.indexOf(u8, campaign_txt, hub_reference) != null);
+    // The campaign identity is the seeded one (no fork).
+    try std.testing.expect(std.mem.indexOf(u8, campaign_txt, campaign_uuid) != null);
 }

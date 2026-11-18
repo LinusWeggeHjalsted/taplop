@@ -724,24 +724,9 @@ pub fn saveCampaignEditor(
     }
 
     // 3. campaign.txt.
-    const campaign_txt = writers.writeCampaignFile(
-        editor,
-        .{
-            .campaign_uuid = campaign_memo.uuid,
-            .hub_uuids = hub_ids.items,
-            .mission_uuids = mission_ids.items,
-        },
-        allocator,
-    ) catch @panic("failed to write campaign file");
-    const campaign_txt_path = std.fmt.allocPrint(
-        allocator,
-        "{s}/campaign.txt",
-        .{campaign_memo.dir},
-    ) catch @panic("failed to format campaign.txt path");
-    history.file_source.writeFile(campaign_txt_path, campaign_txt) catch {
-        surfaceSaveError(history, "failed to write the campaign file");
+    if (!writeCampaignGraphFile(history, allocator, editor, campaign_memo, hub_ids.items, mission_ids.items)) {
         return null;
-    };
+    }
 
     // 4. The deletion reconciliation.
     for (history.session.campaign_deleted_dirs) |deleted_dir| {
@@ -809,6 +794,108 @@ pub fn saveCampaignEditor(
     // the fork; a rename's too) - the memo carries it; ALSO the browser
     // lists need a rescan next open (they rescan on open anyway).
     return saved_dir;
+}
+
+/// Write campaign.txt from the live authored graph (the table projection
+/// shared by the campaign save and the mission-context save - ONE writer,
+/// so the two paths can never drift). `hub_uuids` / `mission_uuids` are the
+/// CALLER's resolved identities (each save owns its resolution machinery);
+/// failures surface the standard save popup.
+fn writeCampaignGraphFile(
+    history: *GameStateHistory,
+    allocator: std.mem.Allocator,
+    editor: types.CampaignEditor,
+    campaign_memo: types.CampaignSaveMemo,
+    hub_uuids: []const []const u8,
+    mission_uuids: []const []const u8,
+) bool {
+    const campaign_txt = writers.writeCampaignFile(
+        editor,
+        .{
+            .campaign_uuid = campaign_memo.uuid,
+            .hub_uuids = hub_uuids,
+            .mission_uuids = mission_uuids,
+        },
+        allocator,
+    ) catch @panic("failed to write campaign file");
+    const campaign_txt_path = std.fmt.allocPrint(
+        allocator,
+        "{s}/campaign.txt",
+        .{campaign_memo.dir},
+    ) catch @panic("failed to format campaign.txt path");
+    history.file_source.writeFile(campaign_txt_path, campaign_txt) catch {
+        surfaceSaveError(history, "failed to write the campaign file");
+        return false;
+    };
+    return true;
+}
+
+/// The mission-context save's graph write: campaign.txt must never LAG a
+/// mission dir a save just persisted (the motivating authoring flow:
+/// delete an edge, place a new one, save the mission from the mission
+/// editor - the mission dir landed orphaned while the table kept
+/// referencing the DELETED edge; the campaign only became consistent at
+/// the next full save). Gated on the IN-PLACE rule: the save landed in
+/// the campaign's OPENED, listed dir. A minted fork stays invisible -
+/// no campaign.txt until the full save (the root-carry rule's
+/// complement - `campaignMissionSaveTarget` carries everything EXCEPT
+/// campaign.txt).
+///
+/// Identities resolve through the shared memo machinery: loaded content
+/// stays in place; fresh content MINTS + memos here, so the later full
+/// save reuses the same identity and skips the fresh-mission template
+/// write. A fresh hub or mission minted here has no content file yet -
+/// a load-side validation finding, never a save blocker (the
+/// finalized-campaign doctrine).
+pub fn saveCampaignGraphAtMissionSave(
+    history: *GameStateHistory,
+    campaign: types.CampaignEditor,
+) bool {
+    const allocator = history.current_arena.allocator();
+    const campaign_memo = resolveCampaignIdentity(history, allocator, campaign);
+    if (!std.mem.eql(u8, campaign_memo.dir, campaign.campaign_dir)) return true;
+
+    var mission_uuids: std.ArrayList([]const u8) = .empty;
+    const mission_origin = ContentOrigin{
+        .opened_campaign_dir = campaign.campaign_dir,
+        .save_target_dir = campaign_memo.dir,
+        .kind_dir = "missions",
+        .config_name = "mission.txt",
+    };
+    for (campaign.missions) |mission| {
+        const memo = resolveContentIdentity(
+            history,
+            allocator,
+            mission_origin,
+            mission.handle,
+            mission.uuid,
+            mission.dir,
+            mission.name,
+        );
+        mission_uuids.append(allocator, memo.uuid) catch
+            @panic("failed to collect mission uuid");
+    }
+    var hub_uuids: std.ArrayList([]const u8) = .empty;
+    const hub_origin = ContentOrigin{
+        .opened_campaign_dir = campaign.campaign_dir,
+        .save_target_dir = campaign_memo.dir,
+        .kind_dir = "hubs",
+        .config_name = "hub.txt",
+    };
+    for (campaign.hubs) |hub| {
+        const memo = resolveContentIdentity(
+            history,
+            allocator,
+            hub_origin,
+            hub.handle,
+            hub.uuid,
+            hub.dir,
+            hub.name,
+        );
+        hub_uuids.append(allocator, memo.uuid) catch
+            @panic("failed to collect hub uuid");
+    }
+    return writeCampaignGraphFile(history, allocator, campaign, campaign_memo, hub_uuids.items, mission_uuids.items);
 }
 
 /// Whether a memo for `handle` existed BEFORE this save's resolution
