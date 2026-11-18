@@ -516,6 +516,35 @@ Session log read/write/reconstruct + combat-log projection DONE (see AGENTS
 Native + web builds DONE (history in DONE.md; seam in DESIGN → Platform Seam).
 Open:
 
+- **NATIVE CRASH - media keys on `EV_ABS` input devices (bundled GLFW
+      joystick bug, found 2026-11-18).** Pressing a consumer-control key
+      (mute on the Genovation ControlPad CP24; the Wooting consumer-control
+      interface is the same class) crashes the native build with `index -143
+      out of bounds for type 'int[512]'` and a crash-dump bundle. ROOT CAUSE
+      (diagnosed, not yet fixed): raylib's bundled GLFW claims ANY
+      /dev/input device with `EV_ABS` as a joystick (`openJoystickDevice`
+      checks only EV_ABS - consumer-control interfaces expose ABS_VOLUME,
+      so keyboards/keypads with media keys qualify), then `handleKeyEvent`
+      indexes `js->linjs.keyMap[code - BTN_MISC]` with no bounds guard;
+      key codes below BTN_MISC (256), e.g. KEY_MUTE (113), go negative
+      (113 - 256 = -143). The bug is LIVE UPSTREAM (glfw master has the
+      identical unguarded index as of 2026-11-18; raylib 6.2 bundles it),
+      so a dependency bump will not fix it. The game never reads gamepad
+      state (input_poll.zig has no gamepad mapping), so a fix that merely
+      guards the index is behaviorally invisible. OPEN - delivery decision
+      (blocks the fix): (a) vendor a patched raylib C (in-tree path dep,
+      ~15 MB source) + the small raylib_zig bindings layer (~400 KB,
+      its zon repointed at the vendored raylib); (b) fork raysan5/raylib
+      with the guard + point raylib_zig (forked or vendored) at the fork
+      URL. An upstream GLFW bug report is worth filing either way - the
+      fix is a 3-line guard in `linux_joystick.c` (skip key codes outside
+      BTN_MISC..KEY_CNT in handleKeyEvent, or require a button in range
+      at open). REPRO CAUTION: a synthetic KEY_MUTE write into the
+      device's /dev/input/event<N> node reproduces the crash, but
+      injected events feed the LIVE desktop session too - pair every
+      synthetic press with a release (a stuck KEY_MUTE caused audio
+      stutter + session weirdness during diagnosis); the safe repro is
+      the user pressing the physical key while the game runs.
 - **Render-resolution live swap - runtime confirmation open** (browser +
   native; the platform-seam compiles-≠-runs rule). The setting itself is
   DONE (DONE.md; design: DESIGN → Platform Seam → Render target
