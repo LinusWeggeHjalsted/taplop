@@ -1532,6 +1532,35 @@ fn payloadAs(
     return @field(payload, @tagName(tag));
 }
 
+/// The mission hand-off open from the campaign map: resolve the mission's
+/// dir (memo-aware - a forked session opens the fork's files; a recorded
+/// handler must never read the memos, so the path rides the event payload,
+/// the open_editor browser-row precedent) and push the recorded open.
+/// Shared by the mission inspector's Open Mission Editor button and the
+/// map's double-click drill-in.
+fn pushOpenMissionEditorFromMap(
+    history: *GameStateHistory,
+    mission_handle: u32,
+) void {
+    const campaign = history.current_state.campaign_editor orelse return;
+    var target: ?types.CampaignMissionEdit = null;
+    for (campaign.missions) |entry| {
+        if (entry.handle == mission_handle) target = entry;
+    }
+    const entry = target orelse return;
+    const allocator = history.current_arena.allocator();
+    const mission_path = campaign_editor_io.campaignMissionEditorPath(
+        history,
+        campaign,
+        entry,
+        allocator,
+    );
+    pushPlayerActionAndDrain(history, .{ .open_mission_editor = .{
+        .mission = mission_handle,
+        .mission_path = mission_path,
+    } });
+}
+
 pub fn handleAnytimeInput(
     history: *GameStateHistory,
     anytime: input.AnytimeInput,
@@ -4082,22 +4111,7 @@ pub fn handleAnytimeInput(
             .open_mission_editor => {
                 if (history.current_state.screen != .campaign_editor) return;
                 const mission_handle = payloadAs(.editor_campaign_mission, clicked_payload) orelse return;
-                const campaign = history.current_state.campaign_editor orelse return;
-                var target: ?types.CampaignMissionEdit = null;
-                for (campaign.missions) |entry| {
-                    if (entry.handle == mission_handle) target = entry;
-                }
-                const entry = target orelse return;
-                const mission_path = campaign_editor_io.campaignMissionEditorPath(
-                    history,
-                    campaign,
-                    entry,
-                    allocator,
-                );
-                pushPlayerActionAndDrain(history, .{ .open_mission_editor = .{
-                    .mission = mission_handle,
-                    .mission_path = mission_path,
-                } });
+                pushOpenMissionEditorFromMap(history, mission_handle);
             },
             // The mission editor's world-map return button (campaign
             // context): back to the campaign map (the recorded close
@@ -4128,6 +4142,7 @@ pub fn handleAnytimeInput(
                 // attaches that end + clears the mode.
                 if (history.session.ui_state.campaign_reattach) |pick| {
                     history.session.ui_state.campaign_reattach = null;
+                    history.session.ui_state.last_campaign_click = null;
                     pushPlayerActionAndDrain(history, .{ .player_reattach_campaign_mission = .{
                         .mission = pick.mission,
                         .end = pick.end,
@@ -4139,8 +4154,11 @@ pub fn handleAnytimeInput(
                 switch (editor.active_tool) {
                     // The mission tool's arrow draw: the first hub click
                     // ARMS the start; the second places the mission + edge
-                    // in one gesture (the same hub = a self-loop).
+                    // in one gesture (the same hub = a self-loop). The draw
+                    // is not a select-path click - a pending double-click
+                    // never pairs with it.
                     .mission => {
+                        history.session.ui_state.last_campaign_click = null;
                         if (history.session.ui_state.campaign_mission_draw) |draw| {
                             history.session.ui_state.campaign_mission_draw = null;
                             pushPlayerActionAndDrain(history, .{ .player_place_campaign_mission = .{
@@ -4152,8 +4170,29 @@ pub fn handleAnytimeInput(
                         }
                     },
                     // The select + hub tools select (a hub-tool click on an
-                    // existing hub selects, never places).
+                    // existing hub selects, never places). A second click
+                    // on the same hub within the double-click window drills
+                    // into the hub editor (the inventory's last_item_click
+                    // pattern - the seed survives the no-op re-select, so a
+                    // click-click on an already-selected hub drills in).
                     .select, .hub => {
+                        const now = history.session.session_clock;
+                        if (history.session.ui_state.last_campaign_click) |last| {
+                            if (last.kind == .hub and last.handle == hub and
+                                now - last.time <= ui.double_click_threshold_us)
+                            {
+                                history.session.ui_state.last_campaign_click = null;
+                                pushPlayerActionAndDrain(history, .{ .open_hub_editor = .{
+                                    .hub = hub,
+                                } });
+                                return;
+                            }
+                        }
+                        history.session.ui_state.last_campaign_click = .{
+                            .kind = .hub,
+                            .handle = hub,
+                            .time = now,
+                        };
                         const selection = editor.selection;
                         if (selection != null and selection.? == .hub and selection.?.hub == hub) return;
                         pushPlayerActionAndDrain(history, .{ .player_select_campaign_hub = .{
@@ -4178,8 +4217,28 @@ pub fn handleAnytimeInput(
                     history.session.ui_state.campaign_mission_draw != null)
                 {
                     history.session.ui_state.campaign_mission_draw = null;
+                    history.session.ui_state.last_campaign_click = null;
                     return;
                 }
+                // A second click on the same mission within the
+                // double-click window drills into the mission editor (the
+                // inventory's last_item_click pattern - works under every
+                // tool, this arm being the any-tool select path).
+                const now = history.session.session_clock;
+                if (history.session.ui_state.last_campaign_click) |last| {
+                    if (last.kind == .mission and last.handle == mission and
+                        now - last.time <= ui.double_click_threshold_us)
+                    {
+                        history.session.ui_state.last_campaign_click = null;
+                        pushOpenMissionEditorFromMap(history, mission);
+                        return;
+                    }
+                }
+                history.session.ui_state.last_campaign_click = .{
+                    .kind = .mission,
+                    .handle = mission,
+                    .time = now,
+                };
                 const selection = editor.selection;
                 if (selection != null and selection.? == .mission and selection.?.mission == mission) return;
                 pushPlayerActionAndDrain(history, .{ .player_select_campaign_mission = .{
@@ -5001,6 +5060,9 @@ pub fn handleIdleInput(
     // tool (3d) has no map click yet.
     if (current.screen == .campaign_editor) {
         if (idle.map_clicked) |screen_position| {
+            // A canvas click is a different target - it never pairs into a
+            // double-click drill-in.
+            history.session.ui_state.last_campaign_click = null;
             // An empty-canvas click cancels any transient mode FIRST (the
             // armed mission draw, any tool; the re-attach pick): the click
             // is consumed by the cancel - it does not also deselect.

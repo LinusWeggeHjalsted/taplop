@@ -277,6 +277,15 @@ pub const UiState = struct {
     /// double. See `LastItemClick`.
     last_item_click: ?LastItemClick = null,
 
+    /// Most recent select-path click on a campaign-map target (hub or
+    /// mission), for the double-click drill-in - the inventory's
+    /// `last_item_click` pattern: only clicks that went down the select
+    /// path seed it (tool gestures, re-attach picks, and canvas clicks
+    /// clear it); a second click on the SAME target within
+    /// `ui.double_click_threshold_us` opens that target's editor. Off the
+    /// undo timeline - replay-safe (the drill-in EVENT is what records).
+    last_campaign_click: ?LastCampaignClick = null,
+
     /// In-progress shift-drag region selection in the inventory panel.
     /// `start_slot` / `end_slot` are inventory indices for opposite corners
     /// (order-independent); `end_slot` updates live as the pointer moves and
@@ -442,6 +451,14 @@ pub const CampaignHubDrag = struct {
 pub const LastItemClick = struct {
     slot_index: u32,
     button: ClickButton,
+    time: u64,
+};
+
+/// The select-path click a campaign-map double-click drill-in pairs with
+/// (see `UiState.last_campaign_click`).
+pub const LastCampaignClick = struct {
+    kind: enum { hub, mission },
+    handle: u32,
     time: u64,
 };
 

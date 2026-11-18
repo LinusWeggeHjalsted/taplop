@@ -805,7 +805,9 @@ test "campaign editor: a mission edge click selects under ANY tool; an armed dra
         history.current_state.campaign_editor.?.selection,
     );
 
-    // The no-op gate: re-selecting the selected mission records nothing.
+    // The no-op gate: re-selecting the selected mission records nothing
+    // (past the double-click window - a same-clock repeat would drill in).
+    history.session.session_clock = 1_000_000;
     const log_length = history.event_history.items.len;
     input_handlers_mod.handleAnytimeInput(
         &history,
@@ -852,6 +854,119 @@ test "campaign editor: a mission edge click selects under ANY tool; an armed dra
         @as(?types.CampaignEditorSelection, .{ .mission = 5 }),
         history.current_state.campaign_editor.?.selection,
     );
+}
+
+test "campaign editor: a double-click on a hub or mission drills into its editor" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    var history = harness.newHistory(campaignEditorEventFixtureState());
+    runToIdle(&history);
+    const input_handlers_mod = @import("input_handlers.zig");
+
+    // Click 1 (select tool): selects the hub + seeds the pending double.
+    history.current_state.campaign_editor.?.active_tool = .select;
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .select_editor_campaign_hub },
+        .{ .editor_campaign_hub = 0 },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    try testing.expectEqual(
+        @as(?types.CampaignEditorSelection, .{ .hub = 0 }),
+        history.current_state.campaign_editor.?.selection,
+    );
+    try testing.expect(history.session.ui_state.last_campaign_click != null);
+
+    // A SLOW second click (past the threshold window): the re-select
+    // no-ops, no drill-in - the click only re-seeds the pending.
+    history.session.session_clock = 1_000_000;
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .select_editor_campaign_hub },
+        .{ .editor_campaign_hub = 0 },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    try testing.expectEqual(state.Screen.campaign_editor, history.current_state.screen);
+
+    // A FAST second click (within the window): drills into the hub
+    // editor - the recorded orchestrator, the inspector button's own.
+    history.session.session_clock = 1_100_000;
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .select_editor_campaign_hub },
+        .{ .editor_campaign_hub = 0 },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    try testing.expectEqual(state.Screen.hub_editor, history.current_state.screen);
+    try testing.expectEqual(@as(u32, 0), history.current_state.hub_editor.?.hub);
+    try testing.expect(history.current_state.campaign_editor != null);
+    try testing.expect(history.session.ui_state.last_campaign_click == null);
+
+    // Undo returns to the map (the drill-in is a recorded action).
+    runToIdle(&history);
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(state.Screen.campaign_editor, history.current_state.screen);
+
+    // The mission twin: a click-click on a never-saved mission (the
+    // fresh-template hand-off branch) drills into the mission editor.
+    var fresh_history = harness.newHistory(.{
+        .screen = .campaign_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "Local",
+            .campaign_uuid = "cu",
+            .campaign_dir = "campaigns/local",
+            .start_hub = 0,
+            .hubs = &.{.{
+                .handle = 0,
+                .name = "Alpha",
+                .position = .{ .x = 0, .y = 0 },
+                .grid = .{
+                    .level_tiles = &.{.{ .x = 0, .y = 0 }},
+                    .player_start = .{ .x = 0, .y = 0 },
+                },
+            }},
+            .missions = &.{.{ .handle = 3, .dir = "New Mission", .name = "Renamed On Map", .start = 0, .destination = 0 }},
+            .next_handle = 4,
+        },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    runToIdle(&fresh_history);
+    input_handlers_mod.handleAnytimeInput(
+        &fresh_history,
+        .{ .options_action = .select_editor_campaign_mission },
+        .{ .editor_campaign_mission = 3 },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    try testing.expectEqual(
+        @as(?types.CampaignEditorSelection, .{ .mission = 3 }),
+        fresh_history.current_state.campaign_editor.?.selection,
+    );
+    fresh_history.session.session_clock = 100_000;
+    input_handlers_mod.handleAnytimeInput(
+        &fresh_history,
+        .{ .options_action = .select_editor_campaign_mission },
+        .{ .editor_campaign_mission = 3 },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    try testing.expectEqual(state.Screen.editor, fresh_history.current_state.screen);
+    try testing.expectEqual(@as(u32, 3), fresh_history.current_state.editor.?.campaign_mission.?);
+    try testing.expect(fresh_history.current_state.campaign_editor != null);
+    try testing.expect(fresh_history.session.ui_state.last_campaign_click == null);
 }
 
 test "saveCampaignEditor: the full round trip - save, reopen, compare; the deletion reconciliation" {
