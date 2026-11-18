@@ -530,6 +530,10 @@ pub fn build(b: *std.Build) !void {
 /// versa) until some real change re-triggers configure. Advisory only
 /// (the main-menu stamp + replay warning); when a stale stamp bothers
 /// you, any committed content change - including this file - re-stamps.
+/// Release builds sidestep the staleness entirely via
+/// `--cache-poison=poisoned` (configure never cached, so the stamp
+/// always reflects the tree right now) - `scripts/release.sh` wraps the
+/// gate + flag + artifact-stamp assert.
 fn computeGameVersion(b: *std.Build) []const u8 {
     const now_seconds: u64 = @intCast(std.Io.Clock.now(.real, b.graph.io).toSeconds());
     const epoch_seconds = std.time.epoch.EpochSeconds{ .secs = now_seconds };

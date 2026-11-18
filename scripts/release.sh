@@ -33,6 +33,10 @@
 # `scripts/release.sh native --release=fast` produces an optimized
 # artifact. No optimize flag means a debug build - the script prints a
 # reminder rather than silently shipping one.
+#
+# Cost note: --cache-poison=poisoned re-runs configure every time; on the
+# web target that re-triggers the emsdk fetch steps (a few seconds of
+# download/unpack chatter) - the price of a guaranteed-fresh stamp.
 
 set -u
 

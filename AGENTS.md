@@ -255,6 +255,15 @@ session + the ButtonPayload migration):
   emsdk-noise filtering (like `scripts/test.sh` does for tests) - prefer it
   over the raw commands. The old `wasm32-freestanding` + JS-renderer target
   was removed - do not reintroduce it.
+- Release builds: `scripts/release.sh [native|web|mac|all]` - gates on a
+  fully-clean tree, builds with `--cache-poison=poisoned` (configure
+  re-runs, so the `game_version` stamp reflects the tree's state at THIS
+  build instead of a cached snapshot - the `-dirty` staleness note on
+  `computeGameVersion` in build.zig), then asserts the version string in
+  the shipped artifact carries no `-dirty`/`-unofficial` suffix. Extra
+  args forward to the build (`--release=fast` for an optimized artifact;
+  none given prints a reminder). Mac installs to the same
+  zig-out/bin/ziglop path as native, so `all` builds mac LAST.
 - WEB COMPILES ≠ WEB RUNS: `scripts/web.sh` only compiles. Runtime breakage
   (GLSL shaders, allocator traps, init-order) is invisible until someone
   opens the page - the web build once sat broken for 136 commits this way
