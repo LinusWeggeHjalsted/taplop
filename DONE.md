@@ -390,6 +390,7 @@ working rules).
 - [Hub editor palette + viewport fixes: theme following, right-drag pan, cell art](#hub-editor-palette--viewport-fixes-theme-following-right-drag-pan-cell-art)
 - [Campaign map + hub editor UX pass: drill-in rows, double-click, any-tool edge clicks, the inferred inspector](#campaign-map--hub-editor-ux-pass-drill-in-rows-double-click-any-tool-edge-clicks-the-inferred-inspector)
 - [Validation runs: the player carry across levels + the campaign context through runs](#validation-runs-the-player-carry-across-levels--the-campaign-context-through-runs)
+- [Native crash on media keys - the evdev joystick-claim guard (interposed open)](#native-crash-on-media-keys---the-evdev-joystick-claim-guard-interposed-open)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -23363,3 +23364,63 @@ campaign: the drill-in mission editor (campaign context dumped), the
 Validate button into the run - "Main Campaign" alive on every level
 screen - three ctrl+Enter level skips through the run, and the return
 to the mission editor with the graph still alive, clean exit 0.
+
+## Native crash on media keys - the evdev joystick-claim guard (interposed open)
+
+The bundled-GLFW crash (found + diagnosed 2026-11-18; fix landed the same
+day, author-verified by physical repro). Pressing mute on the Genovation
+ControlPad CP24 (or any consumer-control interface - the Wooting's media
+keys are the same class) trapped the native build:
+`index -143 out of bounds for type 'int[512]'`.
+
+- **Root cause, live upstream:** GLFW's `openJoystickDevice` claims ANY
+  `/dev/input/event*` node with `EV_ABS` (consumer-control interfaces
+  qualify via `ABS_VOLUME`), then `handleKeyEvent` indexes
+  `keyMap[code - BTN_MISC]` unguarded - `KEY_MUTE` (113) reads
+  `keyMap[-143]`. Live in GLFW master + bundled by raylib 6.2, so a
+  dependency bump would not fix it. The release-build behavior is WORSE
+  than the debug trap: the garbage index flows into
+  `_glfwInputJoystickButton`, whose only guards are `assert()`s
+  (compiled out) - an out-of-bounds heap write.
+- **Why the delivery decision resolved as "neither" (no vendor, no
+  fork):** the crash cannot be caught in game code - the event never
+  reaches Zig. Raylib's `PollInputEvents` polls gamepads every frame
+  (`glfwGetGamepadState`), which drains the claimed device's evdev fd
+  inside GLFW's C; the OOB index happens between the `read()` syscall
+  and any callback. So the fix went to the one seam our code owns: the
+  claim path funnels through a single libc `open`, whose failure
+  openJoystickDevice treats as a silent skip. `src/raylib/evdev_guard.zig`
+  exports `open`/`open64` in our exe; the statically linked raylib
+  objects bind to them (verified in the disassembly - a direct call, no
+  PLT). Passthrough for everything else via raw `openat` (no libc call,
+  no recursion). Event nodes get the classification GLFW should have
+  applied: accept only if every set key code lies in a joystick button
+  range (0x120-0x13f, 0x2c0-0x2e7) - rejecting any non-joystick code
+  also kills the hybrid "gamepad + media keys" latent case.
+  `src/evdev_guard.zig` is the raylib-free classifier half
+  (headless-tested), the `src/diagnostics.zig` +
+  `src/raylib/diagnostics.zig` pattern.
+- **The fail-closed trap, caught by the A/B run:** the first version's
+  hand-rolled `EVIOCGBIT` constant was subtly wrong (read-direction
+  `nr = 0x20 + ev` with `EV_KEY` the event TYPE 0x01 - not the 0x21
+  keycode, not write-direction). A wrong constant makes the runtime
+  ioctl fail, and the fail-closed posture rejects EVERYTHING - which
+  "passes" a naive 0-evdev-fds check while silently breaking real
+  gamepads. The A/B run against the unguarded build (4 evdev fds held:
+  CP24, Wooting consumer, Wooting genuine gamepad, Blue-mic consumer)
+  exposed the over-rejection (guarded run showed 0 instead of the
+  expected 1), a C probe against the system kernel headers gave the
+  true constant, and the corrected build holds exactly the one genuine
+  gamepad node. The pinned-value test now locks the constant
+  (`0x80604521`); the kernel-macro truth came from a compiled probe,
+  not from memory.
+- **Verification:** A/B fd census (above), 1070 tests green, and the
+  physical repro - the author pressing mute on the CP24 with the game
+  running - clean, no crash. No synthetic evdev injection anywhere
+  (the prior session's injected-event repro had broken the author's
+  desktop session; read-only capability queries only this time).
+- **No upstream report filed** (author's call - LLM-assisted bug reports
+  are unwelcome these days). If GLFW/raylib ever ships the guard
+  upstream, the interposition is deletable dead code: remove
+  `src/raylib/evdev_guard.zig` + `src/evdev_guard.zig` +
+  the comptime import in `src/native.zig`, keep nothing.

@@ -516,26 +516,6 @@ Session log read/write/reconstruct + combat-log projection DONE (see AGENTS
 Native + web builds DONE (history in DONE.md; seam in DESIGN → Platform Seam).
 Open:
 
-- **NATIVE CRASH - media keys on `EV_ABS` input devices (bundled GLFW
-      joystick bug, found 2026-11-18) - FIX LANDED, physical repro
-      pending.** The crash: pressing a consumer-control key (mute on the
-      Genovation ControlPad CP24; the Wooting consumer-control interface
-      is the same class) hit the unguarded `keyMap[code - BTN_MISC]`
-      index in GLFW's evdev read path - live upstream, bundled by raylib
-      6.2 (a dependency bump will not fix it). The landed fix is NOT a
-      raylib patch: a link-time interposition of `open` in our exe (the
-      claim path's choke point) rejects non-joystick
-      `/dev/input/event*` nodes, so GLFW never claims the
-      consumer-control devices that armed the bug. Landed + A/B-verified
-      (unguarded build holds 4 evdev fds incl. the CP24 crash trigger;
-      guarded build holds exactly the one genuine gamepad node), 1070
-      tests green. Settled design: DESIGN → Platform Seam → Evdev
-      joystick-claim guard. REMAINING: (a) the physical repro - press
-      mute on the CP24 while the game runs (the safe method; NO
-      synthetic evdev injection - injected events feed the live desktop
-      session too, pair press with release); (b) worth filing upstream
-      to GLFW (the fix is a 3-line guard in `linux_joystick.c`) - when
-      upstream ships it, the interposition becomes deletable dead code.
 - **Render-resolution live swap - runtime confirmation open** (browser +
   native; the platform-seam compiles-≠-runs rule). The setting itself is
   DONE (DONE.md; design: DESIGN → Platform Seam → Render target
