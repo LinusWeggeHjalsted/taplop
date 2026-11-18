@@ -780,6 +780,80 @@ test "campaign editor: the mission tool's draw gesture - arm, place, cancel via 
     try testing.expectEqual(@as(usize, 2), history.current_state.campaign_editor.?.hubs.len);
 }
 
+test "campaign editor: a mission edge click selects under ANY tool; an armed draw cancels on it" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    var history = harness.newHistory(campaignEditorEventFixtureState());
+    runToIdle(&history);
+
+    const input_handlers_mod = @import("input_handlers.zig");
+
+    // A HUB-TOOL click on an edge selects it (the click-on-a-hub rule,
+    // extended to edges: placement never fires on an existing thing).
+    history.current_state.campaign_editor.?.active_tool = .hub;
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .select_editor_campaign_mission },
+        .{ .editor_campaign_mission = 2 },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    try testing.expectEqual(
+        @as(?types.CampaignEditorSelection, .{ .mission = 2 }),
+        history.current_state.campaign_editor.?.selection,
+    );
+
+    // The no-op gate: re-selecting the selected mission records nothing.
+    const log_length = history.event_history.items.len;
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .select_editor_campaign_mission },
+        .{ .editor_campaign_mission = 2 },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    try testing.expectEqual(log_length, history.event_history.items.len);
+
+    // The mission tool UNARMED: an edge click selects too (any tool).
+    history.current_state.campaign_editor.?.active_tool = .mission;
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .select_editor_campaign_mission },
+        .{ .editor_campaign_mission = 5 },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    try testing.expectEqual(
+        @as(?types.CampaignEditorSelection, .{ .mission = 5 }),
+        history.current_state.campaign_editor.?.selection,
+    );
+
+    // The ARMED draw is the one exception: the draw owns the map, and an
+    // edge click cancels it - never a select (the empty-canvas rule).
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .select_editor_campaign_hub },
+        .{ .editor_campaign_hub = 0 },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    try testing.expect(history.session.ui_state.campaign_mission_draw != null);
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .select_editor_campaign_mission },
+        .{ .editor_campaign_mission = 2 },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    try testing.expect(history.session.ui_state.campaign_mission_draw == null);
+    try testing.expectEqual(
+        @as(?types.CampaignEditorSelection, .{ .mission = 5 }),
+        history.current_state.campaign_editor.?.selection,
+    );
+}
+
 test "saveCampaignEditor: the full round trip - save, reopen, compare; the deletion reconciliation" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

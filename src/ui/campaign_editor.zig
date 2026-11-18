@@ -546,18 +546,21 @@ pub fn buildCampaignEditorView(
             .end = .{ .x = geometry.end.x + pan_offset.x, .y = geometry.end.y + pan_offset.y },
         };
 
-        // The select tool's click target over the DRAWN arrow (the world
-        // map's hit_arrow seam: the hit region IS the drawn stroke, so
-        // they cannot disagree). Emitted under the select tool (the
-        // mission tool's surface is the draw gesture; the hub tool's is
-        // placement), PLUS for the SELECTED mission under any tool: the
-        // selection rim is what shows the inspector's focus on the map,
-        // and placement selects (the last-placed-object rule) - a
-        // just-placed edge must highlight immediately, mid-mission-tool.
+        // The click target over the DRAWN arrow (the world map's
+        // hit_arrow seam: the hit region IS the drawn stroke, so they
+        // cannot disagree). Emitted under EVERY tool: clicking an
+        // existing mission selects it whatever the active tool (the hub
+        // tool's click-on-a-hub rule, extended to edges - a hub-tool
+        // click on a mission's stroke never places; the mission tool's
+        // ARMED draw is the one exception, cancelled by such a click at
+        // the consumption site). The SELECTED mission carries the
+        // highlight rim - the inspector's focus shown on the map, and
+        // placement selects (the last-placed-object rule): a
+        // just-placed edge highlights immediately, mid-mission-tool.
         const selected_mission = editor.selection != null and
             editor.selection.? == .mission and
             editor.selection.?.mission == mission.handle;
-        if (editor.active_tool == .select or selected_mission) {
+        {
             const hit_arrow = ui_element.Arrow{
                 .start = panned.start,
                 .control_start = panned.control_start,
@@ -1874,9 +1877,10 @@ test "buildCampaignEditorView: the mission inspector + edge buttons + the draw p
     try std.testing.expectEqual(editor.missions.len, edge_buttons);
     try std.testing.expectEqual(@as(usize, 1), highlighted_edges);
 
-    // The selection follows ACROSS tools: under the mission tool the
-    // unselected edges lose their buttons (the draw gesture owns the
-    // surface), but the SELECTED edge keeps its button + rim - a
+    // The selection follows ACROSS tools: under the mission tool every
+    // edge keeps its clickable button (a click on an existing mission
+    // selects with ANY tool - the hub tool's click-on-a-hub rule,
+    // extended to edges), and the SELECTED edge carries the rim - a
     // just-placed edge highlights immediately, mid-mission-tool (the
     // placement-selects rule).
     {
@@ -1894,15 +1898,19 @@ test "buildCampaignEditorView: the mission inspector + edge buttons + the draw p
             .{ .ui_state = &ui_state },
         );
         var mission_tool_edge_buttons: usize = 0;
+        var mission_tool_highlighted: usize = 0;
         for (mission_tool_elements.items) |element| switch (element) {
             .button => |button| if (button.action == .select_editor_campaign_mission) {
                 mission_tool_edge_buttons += 1;
-                try std.testing.expectEqual(@as(u32, 3), button.payload.?.editor_campaign_mission);
-                try std.testing.expect(button.highlighted);
+                if (button.highlighted) {
+                    mission_tool_highlighted += 1;
+                    try std.testing.expectEqual(@as(u32, 3), button.payload.?.editor_campaign_mission);
+                }
             },
             else => {},
         };
-        try std.testing.expectEqual(@as(usize, 1), mission_tool_edge_buttons);
+        try std.testing.expectEqual(editor.missions.len, mission_tool_edge_buttons);
+        try std.testing.expectEqual(@as(usize, 1), mission_tool_highlighted);
         editor.active_tool = .select;
     }
 
@@ -1929,11 +1937,11 @@ test "buildCampaignEditorView: the mission inspector + edge buttons + the draw p
         },
     );
     // Derived total for the preview build: the map (1 surface + 1
-    // background + 2/hub + 1 arrow/mission - NO edge buttons under the
-    // mission tool - + 1 preview arrow) + palette 6 + the inspector
-    // (toggle strip 3 + open panel 1 - nothing selected, empty) + the
-    // metadata (open, collapsed: strip 3 + panel 1 + section strip 3).
-    const expected_preview_total = 1 + 1 + 2 * editor.hubs.len + 1 * editor.missions.len + 1 +
+    // background + 2/hub + 1 arrow/mission + 1 edge button/mission -
+    // clickable under every tool - + 1 preview arrow) + palette 6 + the
+    // inspector (toggle strip 3 + open panel 1 - nothing selected, empty)
+    // + the metadata (open, collapsed: strip 3 + panel 1 + section strip 3).
+    const expected_preview_total = 1 + 1 + 2 * editor.hubs.len + 2 * editor.missions.len + 1 +
         6 + 4 + 7;
     try std.testing.expectEqual(expected_preview_total, preview_elements.items.len);
 }

@@ -4162,14 +4162,24 @@ pub fn handleAnytimeInput(
                     },
                 }
             },
-            // A mission edge click (under the select tool - the buttons
-            // only render there): select it, the mission inspector's
-            // target. No-op gate on re-selecting the selected mission.
+            // A mission edge click: select it, the mission inspector's
+            // target - under ANY tool (the hub tool's click-on-a-hub
+            // rule, extended to edges: clicking an existing thing
+            // selects, placement never fires on it). The mission tool's
+            // ARMED draw is the one exception - the draw owns the map,
+            // and such a click cancels it (the empty-canvas rule)
+            // rather than selecting. No-op gate on re-selecting the
+            // selected mission.
             .select_editor_campaign_mission => {
                 if (history.current_state.screen != .campaign_editor) return;
                 const editor = history.current_state.campaign_editor orelse return;
-                if (editor.active_tool != .select) return;
                 const mission = payloadAs(.editor_campaign_mission, clicked_payload) orelse return;
+                if (editor.active_tool == .mission and
+                    history.session.ui_state.campaign_mission_draw != null)
+                {
+                    history.session.ui_state.campaign_mission_draw = null;
+                    return;
+                }
                 const selection = editor.selection;
                 if (selection != null and selection.? == .mission and selection.?.mission == mission) return;
                 pushPlayerActionAndDrain(history, .{ .player_select_campaign_mission = .{
