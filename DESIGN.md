@@ -27,6 +27,7 @@ next session meets it as a surprise instead of a known.
   - [Allocator rule for emscripten (no page_allocator on web)](#allocator-rule-for-emscripten-no-pageallocator-on-web)
   - [Web audio onset latency (the ScriptProcessorNode queue watchdog)](#web-audio-onset-latency-the-scriptprocessornode-queue-watchdog)
   - [Diagnostics](#diagnostics)
+  - [Evdev joystick-claim guard (interposed open)](#evdev-joystick-claim-guard-interposed-open)
 - [Audio](#audio)
 - [Animation](#animation)
   - [The replay-purity invariant (why the clock is read in `frame()`, not handlers)](#the-replay-purity-invariant-why-the-clock-is-read-in-frame-not-handlers)
@@ -723,6 +724,61 @@ hunt; extend only when a real incident asks for more.
   pipeline-stage split: pixels present in the target = present-path
   failure, pixels absent = the draw/upload failed).
 - Web: out of scope for now (native-only, like today's system).
+
+### Evdev joystick-claim guard (interposed open)
+
+The native-Linux fix for the bundled-GLFW media-key crash (`index -143 out
+of bounds` when pressing mute on a consumer-control device; found
+2026-11-18). The bug is live upstream in GLFW and bundled by raylib 6.2:
+`openJoystickDevice` claims ANY `/dev/input/event*` node with `EV_ABS`
+(consumer-control interfaces qualify via `ABS_VOLUME`), then
+`handleKeyEvent` indexes `keyMap[code - BTN_MISC]` unguarded, so a
+`KEY_MUTE` (113) press reads `keyMap[-143]`. Debug builds trap under
+UBSan; release builds are WORSE - the garbage button index flows into
+`_glfwInputJoystickButton`, whose guards are `assert()`s compiled out,
+making it an out-of-bounds heap write.
+
+**Why the crash cannot be caught in game code:** the event never reaches
+Zig. Raylib's `PollInputEvents` polls gamepads every frame
+(`glfwGetGamepadState`), which drains the claimed device's evdev fd
+inside GLFW's C; the OOB index happens between the `read()` syscall and
+any callback or error return. No GLFW init hint disables joysticks.
+
+**The fix - link-time interposition, no patched dependency:** the whole
+claim path funnels through one libc call - `openJoystickDevice`'s
+`open(path, O_RDONLY|O_NONBLOCK|O_CLOEXEC)`, whose failure is a silent
+skip. `src/raylib/evdev_guard.zig` exports `open`/`open64` (C ABI) in
+OUR executable; the statically linked raylib objects resolve their
+`open` call sites against them (an exe-defined symbol preempts the
+shared libc's for the exe's own references - verified in the disassembly:
+`openJoystickDevice` calls our function directly, no PLT). Everything
+not under `/dev/input/event*` passes through via a raw `openat` syscall
+(no libc call, so no recursion; glibc-internal callers use hidden
+aliases and never reach us). Event nodes get the capability check GLFW
+should have applied: an `EVIOCGBIT(EV_KEY)` query (read-only - the guard
+never writes events into a node) and the classification in
+`src/evdev_guard.zig` (raylib-free, headless-tested) - accept only if
+every set key code lies in a joystick button range (`BTN_JOYSTICK`..
+`BTN_GAMEPAD` 0x120-0x13f, `BTN_TRIGGER_HAPPY` 0x2c0-0x2e7) and at
+least one is present; anything else returns `ENODEV`. Rejecting any
+non-joystick key code (not just claiming the wrong devices) also kills
+the latent hybrid case - a board with gamepad buttons AND media keys
+would otherwise still carry the negative-index path for its low codes.
+
+**Fail-closed posture:** a failed probe open or ioctl rejects the
+device. A wrong `EVIOCGBIT` constant is invisible at compile time and
+fails exactly this way - reject everything - which the empirical A/B
+run caught (the pinned-value test locks the constant to the kernel
+macro expansion; the initial hand-rolled `0x01+ev`/write-dir encoding
+was subtly wrong, and the first "guarded" build silently rejected
+real gamepads too).
+
+**Scope + deletion condition:** native Linux only (web is wasm, macOS
+has no evdev - the guard file self-gates so both build without it).
+The game never reads gamepad state, so the only behavior change is that
+GLFW's gamepad list is correct. When GLFW/raylib ships the upstream
+guard, this becomes dead code - delete the interposition and its
+wiring (`src/native.zig`'s comptime import), keep nothing.
 
 ## Audio
 

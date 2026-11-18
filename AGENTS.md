@@ -774,7 +774,11 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   build.zig computeRepoUrl) +
   `src/raylib/diagnostics.zig` (the GL-gathering probe sites for the
   diagnostics log - see Dev Tools; the type is raylib-free
-  `src/diagnostics.zig`) + `src/raylib/draw.zig` (the world +
+  `src/diagnostics.zig`) + `src/raylib/evdev_guard.zig` (the interposed
+  `open`/`open64` - the evdev joystick-claim guard, the bundled-GLFW
+  media-key crash fix; classifier half is the raylib-free
+  `src/evdev_guard.zig`; DESIGN → Platform Seam → Evdev joystick-claim
+  guard) + `src/raylib/draw.zig` (the world +
   UI element drawing passes). The ONLY directory whose files import raylib;
   the test-root scan skips it wholesale (see DESIGN → Platform Seam)
 - `src/state.zig` - GameState, GameStateHistory (+ SessionState, undo/redo/

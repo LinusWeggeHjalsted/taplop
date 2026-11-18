@@ -25,6 +25,14 @@ const FileSource = @import("file_source.zig").FileSource;
 const crash_dump = @import("crash_dump.zig");
 const console = @import("console.zig");
 
+// Forces analysis of the interposed `open` (the evdev joystick-claim
+// guard - src/raylib/evdev_guard.zig) so its exported symbols join the
+// link. The file self-gates to Linux, so this is a no-op on the macOS
+// cross build.
+comptime {
+    _ = @import("raylib/evdev_guard.zig");
+}
+
 /// Panic handler: dumps the live session log before trapping. See
 /// crash_dump.zig.
 pub const panic = crash_dump.panic;
