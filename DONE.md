@@ -391,6 +391,7 @@ working rules).
 - [Campaign map + hub editor UX pass: drill-in rows, double-click, any-tool edge clicks, the inferred inspector](#campaign-map--hub-editor-ux-pass-drill-in-rows-double-click-any-tool-edge-clicks-the-inferred-inspector)
 - [Validation runs: the player carry across levels + the campaign context through runs](#validation-runs-the-player-carry-across-levels--the-campaign-context-through-runs)
 - [Native crash on media keys - the evdev joystick-claim guard (interposed open)](#native-crash-on-media-keys---the-evdev-joystick-claim-guard-interposed-open)
+- [Undo crash across the editor drill-in returns: non-player events at idle points](#undo-crash-across-the-editor-drill-in-returns-non-player-events-at-idle-points)
 - [Session-log round trip: single string-bearing struct fields (completed_mission)](#session-log-round-trip-single-string-bearing-struct-fields-completedmission)
 <!-- doc index: end -->
 
@@ -23425,6 +23426,45 @@ keys are the same class) trapped the native build:
   upstream, the interposition is deletable dead code: remove
   `src/raylib/evdev_guard.zig` + `src/evdev_guard.zig` +
   the comptime import in `src/native.zig`, keep nothing.
+
+## Undo crash across the editor drill-in returns: non-player events at idle points
+
+The author's live crash (crashes/crash_20261118_162514, 1461 events):
+undoing back from the campaign editor's mission hand-off panicked
+`replay: non-player event meta_event.close_hub_editor seeded at idle
+point`. Root cause: `close_hub_editor` / `close_mission_editor` were
+pushed DIRECTLY from the input consumption sites
+(`pushEventAndDrain` - the helper's own doc called the direct push
+"the event is its own whole story, no orchestrator needed"). That
+violated the one-orchestrator-event-per-player-action convention the
+replay machinery is built on: at a stack-empty idle point the recorded
+stream's next top-level event must be a `player_input_event`
+(`isPlayerAction`), so any replay crossing the boundary - undo's
+`restoreTo` slow path, session-log reconstruction - rejected and
+panicked. Live play recorded the direct push happily; only replay
+ever tripped, which is why 824+ tests never saw it.
+
+- The fix: two new PlayerInputEvent orchestrators
+  (`player_close_mission_editor`, `player_close_hub_editor`) -
+  events.zig payload docs carry the convention; the player_input
+  handler arms push the meta closes; the two consumption sites route
+  through `pushPlayerActionAndDrain` (gates unchanged);
+  `validatePlayerAction` adds them to the no-payload arm (the
+  open_* family's shape). `pushEventAndDrain` deleted - it was the
+  only direct-push seam, and leaving it invites the next violation.
+- Reproduction was the interesting part: the crash bundle itself
+  wouldn't load (see the companion entry below), so the console
+  channel drove the live flow instead: campaign editor -> mission
+  inspector -> hand-off -> world-map return -> undo back across it.
+  Verified live + via `--replay` of the dumped bundle (reconstruction
+  passes both boundaries, undo steps back clean).
+- Verification drives also surfaced the console-at-boot race (TODO
+  NEXT UP): a console action consumed at frame 0 lands on top of the
+  unprocessed `open_main_menu` boot seed; LIFO runs the action first
+  and the seed is discarded unrecorded, so console-driven session
+  logs can start without the seed and fail `--replay` at event 0.
+  Console-only (a human can't type into frame 0) - flagged, not
+  fixed in this pass.
 
 ## Session-log round trip: single string-bearing struct fields (completed_mission)
 

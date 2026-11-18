@@ -167,21 +167,6 @@ fn pushPlayerActionAndDrain(
     }
 }
 
-/// Push one raw event + drain to idle - `pushPlayerActionAndDrain`'s
-/// shape for the rare button that fires a META event directly (the
-/// event is its own whole story, no orchestrator needed - e.g. the hub
-/// editor's return button -> close_hub_editor).
-fn pushEventAndDrain(history: *GameStateHistory, event: events.Event) void {
-    const current = &history.current_state;
-    const allocator = history.current_arena.allocator();
-    const baseline = current.event_stack.len;
-    event_push.pushEvents(current, &.{event}, allocator);
-    while (current.event_stack.len > baseline) {
-        if (history.load_error) break;
-        event_handlers.processEvent(history);
-    }
-}
-
 /// Resolve a focused text field's keyboard outcome (Enter commits,
 /// Escape discards - see DESIGN → UI Framework → Text input widget).
 /// Called ONCE per frame from main (after translateInput, before the
@@ -4089,14 +4074,14 @@ pub fn handleAnytimeInput(
                 if (history.current_state.screen != .editor) return;
                 if (history.current_state.editor == null or
                     history.current_state.editor.?.campaign_mission == null) return;
-                pushEventAndDrain(history, .{ .meta_event = .{ .close_mission_editor = {} } });
+                pushPlayerActionAndDrain(history, .{ .player_close_mission_editor = {} });
             },
             // The hub editor's world-map return button: back to the
             // campaign map (the recorded close drops the drill-in state
             // via the scope rule; the campaign graph survives).
             .close_hub_editor => {
                 if (history.current_state.screen != .hub_editor) return;
-                pushEventAndDrain(history, .{ .meta_event = .{ .close_hub_editor = {} } });
+                pushPlayerActionAndDrain(history, .{ .player_close_hub_editor = {} });
             },
             // A hub icon click: select it (the select + hub tools share the
             // target - a hub-tool click on an existing hub selects, never

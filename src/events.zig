@@ -1165,6 +1165,20 @@ pub const PlayerInputEvent = union(enum) {
         mission: u32,
         mission_path: ?[]const u8,
     },
+    // Return from the mission-editor hand-off to the campaign map (the
+    // mission editor's world-map return button, or the options menu's
+    // world-map entry while a campaign mission is open). The handler
+    // pushes the meta close_mission_editor; the orchestrator wrapper
+    // keeps the one-orchestrator-event-per-player-action convention (a
+    // directly-pushed meta event at an idle point breaks replay's
+    // player-action seeding - see DESIGN → Determinism & Tiebreaking →
+    // Replay PLAYER-ACTION LEGALITY).
+    player_close_mission_editor: void,
+    // Return from the hub editor drill-in to the campaign map (the hub
+    // editor's world-map return button, or the options menu's world-map
+    // entry). Same orchestrator convention as
+    // player_close_mission_editor.
+    player_close_hub_editor: void,
     // Orchestrates a save: syncs PlayerData from the working entity (in a
     // hub/level) via build_data_from_player, then writes via write_save.
     save_game: struct {

@@ -441,6 +441,20 @@ pub fn handlePlayerInputEvent(
             current.transitionScreen(.editor);
         },
 
+        // --- Meta: return to the campaign map from the drill-ins ---
+        .player_close_mission_editor => {
+            // The mission editor hand-off's world-map return: back to the
+            // campaign map (the recorded close drops the editor payload
+            // via the scope rule; the campaign graph survives).
+            pushEvents(current, &.{.{ .meta_event = .{ .close_mission_editor = {} } }}, allocator);
+        },
+        .player_close_hub_editor => {
+            // The hub editor drill-in's world-map return: back to the
+            // campaign map (the recorded close drops the drill-in state
+            // via the scope rule; the campaign graph survives).
+            pushEvents(current, &.{.{ .meta_event = .{ .close_hub_editor = {} } }}, allocator);
+        },
+
         // --- Meta: open editor ---
         .open_editor => |start| {
             var balance_warnings: std.ArrayList([]const u8) = .empty;
