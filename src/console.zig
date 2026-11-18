@@ -665,14 +665,29 @@ pub fn applyFrameCommand(
         &history.current_state,
         &history.session,
     );
-    const command = queue.takeFrameCommand(commands_may_flow) orelse {
-        // No command this frame (a wait's idle frames, or an empty queue):
-        // the scripted pointer position applies ONLY while the CONSOLE
-        // itself holds a mouse button - its gesture's in-between frames
-        // (a hardware pointer bleeding into a held console gesture would
-        // phantom-promote a drag - the press stays at the scripted
-        // position, the hold reads the hardware's, the threshold trips -
-        // observed live as the console hub-click swallow). A HARDWARE
+    // The boot gate: until the first processEvent records something, the
+    // initial state still holds the unprocessed boot seed on its stack. A
+    // command applied NOW lands on top of the seed - LIFO runs the
+    // command's events FIRST and the seed is discarded unrecorded (a
+    // session log that starts without its seed fails replay at event 0).
+    // Hold every command until the game is ready; the queue keeps them.
+    // Inert for anything but the pre-boot frames: history grows from the
+    // first processed event onward, and the stack drains long before a
+    // human could ever type.
+    const boot_pending = history.event_history.items.len == 0 and
+        history.current_state.event_stack.len > 0;
+    const command: ?ConsoleCommand = if (boot_pending)
+        null
+    else
+        queue.takeFrameCommand(commands_may_flow);
+    if (command == null) {
+        // No command this frame (a wait's idle frames, an empty queue, or
+        // the boot gate's hold): the scripted pointer position applies ONLY
+        // while the CONSOLE itself holds a mouse button - its gesture's
+        // in-between frames (a hardware pointer bleeding into a held console
+        // gesture would phantom-promote a drag - the press stays at the
+        // scripted position, the hold reads the hardware's, the threshold
+        // trips - observed live as the console hub-click swallow). A HARDWARE
         // press must never trigger this merge: with commands held (a
         // `wait idle` that never releases), the stale scripted position
         // would hijack the human's every click.
@@ -682,8 +697,8 @@ pub fn applyFrameCommand(
             }
         }
         return backend_input;
-    };
-    const merged: PlatformInput = switch (command) {
+    }
+    const merged: PlatformInput = switch (command.?) {
         .quit => blk: {
             history.session.quit_requested = true;
             break :blk backend_input;
@@ -712,7 +727,7 @@ pub fn applyFrameCommand(
         .move => |position| blk: {
             queue.pointer_position = position;
             history.session.force_render_next = true;
-            break :blk mergeIntoPlatformInput(command, backend_input, arena);
+            break :blk mergeIntoPlatformInput(command.?, backend_input, arena);
         },
         // Press/release/scroll/type/action: re-apply the remembered pointer
         // position ahead of the command's own events (a mouse_move event
@@ -723,7 +738,7 @@ pub fn applyFrameCommand(
         // also maintain the console's own held-button set (the gesture
         // tracking the no-command branch gates on).
         else => blk: {
-            switch (command) {
+            switch (command.?) {
                 .press => |command_id| {
                     if (command_id == .mouse) {
                         queue.mouse_buttons_held_by_console |= consoleMouseButtonBit(command_id.mouse);
@@ -741,13 +756,13 @@ pub fn applyFrameCommand(
                 merged_input = mergeIntoPlatformInput(.{ .move = position }, merged_input, arena);
             }
             history.session.force_render_next = true;
-            break :blk mergeIntoPlatformInput(command, merged_input, arena);
+            break :blk mergeIntoPlatformInput(command.?, merged_input, arena);
         },
     };
     // The console-ready prompt, AFTER the command's effect (a `dump`'s
     // output lands above the prompt, same thread, no interleaving). See
     // `promptDue`.
-    if (promptDue(queue, command)) printPrompt(queue);
+    if (promptDue(queue, command.?)) printPrompt(queue);
     return merged;
 }
 
@@ -1810,6 +1825,36 @@ test "foldInjectedActions: applies the merged action at the button seam" {
     try std_testing.expect(player_input.anytime.escape);
 }
 
+test "applyFrameCommand: the boot gate holds commands until the seed has processed" {
+    const test_harness = @import("test_harness.zig");
+    var backing = std.heap.ArenaAllocator.init(std_testing.allocator);
+    defer backing.deinit();
+    var harness = test_harness.Harness.init(backing.allocator());
+    // The pre-boot state: the default starting state still holds the
+    // unprocessed open_main_menu seed and nothing has been recorded yet.
+    var history = harness.newHistory(null);
+    try std_testing.expect(history.event_history.items.len == 0);
+    try std_testing.expect(history.current_state.event_stack.len == 1);
+
+    var queue: ConsoleQueue = .{};
+    const backend_input = PlatformInput{ .events = &.{}, .viewport = .{ .width = 1280, .height = 1080 } };
+    queue.push(parseCommandLine("quit").command);
+
+    // Held: the command is NOT taken while the seed is queued - a frame-0
+    // application would land on top of the seed (LIFO runs it first, the
+    // seed is discarded unrecorded - the recorded log then fails replay
+    // at event 0).
+    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_dump_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+    try std_testing.expect(!history.session.quit_requested);
+
+    // The queue KEPT the command (not dropped): once the seed has
+    // processed (history recorded, stack drained), it flows.
+    test_harness.runToIdle(&history);
+    try std_testing.expect(history.event_history.items.len > 0);
+    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_dump_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+    try std_testing.expect(history.session.quit_requested);
+}
+
 test "applyFrameCommand: quit requests the session quit; empty queue passes through" {
     const test_harness = @import("test_harness.zig");
     var backing = std.heap.ArenaAllocator.init(std_testing.allocator);
@@ -2043,14 +2088,19 @@ test "applyFrameCommand: wait idle holds while events are pending, releases when
     queue.push(parseCommandLine("quit").command);
 
     const backend_input = PlatformInput{ .events = &.{}, .viewport = .{ .width = 1280, .height = 1080 } };
-    // While the stack is pending, the quit behind the hold never fires.
+    // While the stack is pending - including the pre-boot frames the boot
+    // gate holds - the quit behind the hold never fires.
     _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_dump_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
     _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_dump_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
     try std_testing.expect(!history.session.quit_requested);
 
-    // Drain to idle; the next frame releases the quit on the first idle
-    // frame.
+    // Drain to idle: the boot gate releases, and the wait ARMS (taken,
+    // returning nothing) - the quit behind it stays held one more frame.
     test_harness.runToIdle(&history);
+    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_dump_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+    try std_testing.expect(!history.session.quit_requested);
+
+    // Idle: the wait releases and the quit flows.
     _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_dump_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
     try std_testing.expect(history.session.quit_requested);
 }

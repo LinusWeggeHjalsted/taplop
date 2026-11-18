@@ -71,19 +71,6 @@ Test by running `zig build run` and clicking through.
   land where the console moved). Fix: narrow the re-application to those
   (key commands + actions act at the hardware position); drives then work
   with arrow nudges too. See AGENTS → Running the Game for the workaround.
-- **Console actions consumed at frame 0 race the boot seed** (found
-      while reproducing the undo crash - see DONE.md, "Undo crash
-      across the editor drill-in returns"): a console command applied
-      in the game's first frame pushes its orchestrator event on top
-      of the unprocessed `open_main_menu` seed; LIFO runs the action
-      first and the seed is discarded UNRECORDED (the log then starts
-      without the seed and fails `--replay` at event 0), and the
-      first action can double-fire (two orchestrator events for one
-      command). Console-only - a human can't type into frame 0 - but
-      it corrupts console-driven session logs. Fix shape: the frame-0
-      drain defers console commands until the seed has processed (or
-      the console channel arms a frame later). Workaround when driving:
-      start every script with `wait idle`.
 - **The dump walker renders struct values inside slices as opaque type
   names** (`entities[1]: <types.Entity>`): driving gameplay state means
   field-by-field addressing (entities[1].position, entities[1].team, ...)

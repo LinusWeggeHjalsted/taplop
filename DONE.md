@@ -394,6 +394,7 @@ working rules).
 - [Undo crash across the editor drill-in returns: non-player events at idle points](#undo-crash-across-the-editor-drill-in-returns-non-player-events-at-idle-points)
 - [Session-log round trip: single string-bearing struct fields (completed_mission)](#session-log-round-trip-single-string-bearing-struct-fields-completedmission)
 - [Campaign save: the root dir follows the campaign name (the cosmetic tidy the DESIGN already promised)](#campaign-save-the-root-dir-follows-the-campaign-name-the-cosmetic-tidy-the-design-already-promised)
+- [Console boot gate: commands flow only once the game is ready](#console-boot-gate-commands-flow-only-once-the-game-is-ready)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -23532,3 +23533,30 @@ the new `name` into campaign.txt forever while the dir lagged.
   (a sibling owning the target keeps the old dir). Live drive: the
   author's exact state (campaign.txt "Polpat", dir `..._ReproCopy`) -
   one save renamed the dir to `..._Polpat`.
+
+## Console boot gate: commands flow only once the game is ready
+
+The console-at-boot race (found reproducing the undo crash): a command
+applied in the game's first frame lands on top of the unprocessed
+`open_main_menu` boot seed - LIFO runs the command's events FIRST and
+the seed is discarded UNRECORDED (a session log without its seed fails
+replay at event 0), and the first action could double-fire. Console-only
+(a human can't type into frame 0), but it corrupted every
+console-driven session log.
+
+The fix is the clean shape the author suggested: the console channel
+holds commands until the game is ready. `applyFrameCommand` computes
+`boot_pending = event_history empty AND the stack still holds something`
+- true only in the pre-boot frames (history grows from the first
+processed event onward and never empties again), inert for every other
+frame shape (tests with empty stacks, mid-game drains, `--replay`
+sessions whose reconstruction ran pre-loop). Held commands stay queued
+(no drops, no phantom waits arming early); the first post-seed frame
+takes one as usual.
+
+Verified against both observed symptoms: `action dump_event_log` as
+the first command now writes ONE bundle carrying the seed; `action
+new_editor_campaign` records the seed + exactly one orchestrator; the
+dumped bundle replays through `--replay` where the old shape failed at
+event 0. The drive-authoring workaround (start scripts with
+`wait idle`) is no longer needed.
