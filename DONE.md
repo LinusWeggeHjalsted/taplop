@@ -396,6 +396,7 @@ working rules).
 - [Campaign save: the root dir follows the campaign name (the cosmetic tidy the DESIGN already promised)](#campaign-save-the-root-dir-follows-the-campaign-name-the-cosmetic-tidy-the-design-already-promised)
 - [Console boot gate: commands flow only once the game is ready](#console-boot-gate-commands-flow-only-once-the-game-is-ready)
 - [Hand-off save: the campaign table never lags the persisted mission dir](#hand-off-save-the-campaign-table-never-lags-the-persisted-mission-dir)
+- [Revalidate crash: artifacts ride renames (recorded-path rebase) + checking-mode read failures reject](#revalidate-crash-artifacts-ride-renames-recorded-path-rebase--checking-mode-read-failures-reject)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -23601,3 +23602,49 @@ campaign saves went stale the moment a mission save landed in between.
   live console drive of the author's exact flow (delete edge + new
   edge + mission-editor save -> the old edge gone, the new uuid in the
   table AND the dir written, one save).
+
+## Revalidate crash: artifacts ride renames (recorded-path rebase) + checking-mode read failures reject
+
+The author's revalidate click crashed: "failed to read reconstruction
+file during cross-session replay". Root cause: the validation replay
+artifacts embed the mission_path as it was at RECORDING time, and the
+campaign root had renamed (`..._Main Campaign` -> `..._Polpat`, the
+cosmetic dir tidy's first live run) - every recorded path was dead, and
+the checking replay's lazy-disk read panicked inside
+`readReconstructionFile` before the recoverable wrapper at the call
+site could do its job. The panic's own comment called the failure
+"genuinely unrecoverable" - it isn't: it's a renamed artifact.
+
+- **The rebase** (`validation_replay.rebaseRecordedMissionPaths`): at
+  load time, derive the recorded dir from the slice's first
+  mission_path and rebase every recorded mission_path onto the dir the
+  artifact was actually loaded from - a comptime walk over every
+  event payload field NAMED mission_path (machine-derived: a future
+  event variant carrying the field joins automatically). The rebased
+  copy drives both the replay seed and the verification expectation;
+  on-disk artifacts stay as recorded (old + renamed both load, no
+  format change, no back-compat break).
+- **The recoverable read** (`readReconstructionFile` + `shared.
+  failReconstructionRead`): the lazy-disk miss now RETURNS its error,
+  and the checking mode converts it through `rejectReplay` (now pub -
+  its doc already said "every converted validation site calls this")
+  so the revalidate surfaces "revalidation failed: the recorded run no
+  longer matches this mission's content" instead of a crash. The plain
+  in-session replay panic stays (a cache miss there is an integrity
+  violation).
+- Tests: the renamed-dir replay (fixture moved, artifact as recorded
+  -> "Revalidation passed") and the missing-levels rejection (levels
+  gone -> the failure popup, the old behavior was the crash). Live
+  verification against the author's REAL artifact: a scratch copy of
+  the Polpat campaign (its artifacts record the dead
+  `..._Main Campaign` paths), revalidate from the mission editor ->
+  "Revalidation passed - the stored replay again certifies the current
+  mission content."
+- The companion "missions changed since validation" report was
+  TRUTHFUL: the crash bundle's embedded copies prove Deep Forest's
+  bytes were already their current form at the prior session, and the
+  mission files changed between each artifact's validation run
+  (14:16) and that session (16:25) - edits after validating. The
+  revalidate now re-binds those missions (benign edits pass), so the
+  campaign Validate should go quiet after a revalidate pass over each
+  stale mission.

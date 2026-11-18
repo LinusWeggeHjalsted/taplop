@@ -32,6 +32,16 @@ const pushEvents = event_push.pushEvents;
 /// and cross-session bundle replay serves the embedded copies).
 /// See DESIGN → Error Handling → three contexts.
 pub fn failReconstructionRead(history: *GameStateHistory, message: []const u8) void {
+    // Checking replay (the revalidate path): the same failure is a
+    // benign rejection - the run no longer matches the content (a
+    // referenced file is gone), reported to the caller, never a crash
+    // over the user's artifact. Recorded BEFORE the plain-replay panic
+    // branch: checking mode sets `replaying` too, and its caller wants
+    // the report, not the integrity violation.
+    if (history.replay_checking) {
+        history.rejectReplay("replay: reconstruction read failed - a file the recorded run references is missing or unreadable");
+        return;
+    }
     if (history.replaying) @panic("replay: reconstruction read failed (content changed?)");
     history.session.setPendingError(history.history_arena.allocator(), message);
     history.load_error = true;

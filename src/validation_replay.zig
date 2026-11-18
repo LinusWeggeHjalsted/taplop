@@ -144,6 +144,104 @@ pub fn checkMissionValidationArtifact(
     return .validated;
 }
 
+/// The first mission_path any event carries - the artifact's recorded
+/// mission dir (the slice starts at the seedable player_start_validation
+/// orchestrator, which always carries it; null for a hand-crafted slice
+/// with none, which then skips the rebase and replays as recorded).
+fn recordedMissionDir(events: []const Event) ?[]const u8 {
+    // The event unions have outgrown the default 1000-branch comptime
+    // budget - the inline category/variant/payload-field walks evaluate
+    // per Payload type.
+    @setEvalBranchQuota(10000);
+    for (events) |event| {
+        switch (event) {
+            inline else => |category_payload| {
+                switch (category_payload) {
+                    inline else => |variant_payload| {
+                        const Payload = @TypeOf(variant_payload);
+                        if (Payload == void) return null;
+                        inline for (
+                            @typeInfo(Payload).@"struct".field_names,
+                            @typeInfo(Payload).@"struct".field_types,
+                        ) |field_name, field_type| {
+                            if (comptime isMissionPathField(field_name, field_type)) {
+                                if (missionPathFieldValue(variant_payload, field_name)) |value| {
+                                    return value;
+                                }
+                            }
+                        }
+                    },
+                }
+            },
+        }
+    }
+    return null;
+}
+
+/// Is this payload field a `mission_path` (a plain or optional string)?
+/// The comptime test keeps the walk machine-derived: a future event
+/// variant carrying the field joins automatically, nothing to update.
+fn isMissionPathField(comptime field_name: []const u8, comptime field_type: type) bool {
+    if (!std.mem.eql(u8, field_name, "mission_path")) return false;
+    return field_type == []const u8 or
+        (@typeInfo(field_type) == .optional and @typeInfo(field_type).optional.child == []const u8);
+}
+
+/// Read one mission_path field's value (null-safe for the optional form).
+fn missionPathFieldValue(payload: anytype, comptime field_name: []const u8) ?[]const u8 {
+    const value = @field(payload, field_name);
+    const Value = @TypeOf(value);
+    if (Value == []const u8) return value;
+    if (@typeInfo(Value) == .optional) return value;
+    return null;
+}
+
+/// Rebase a copy of the events: every mission_path field equal to
+/// `recorded_dir` becomes `actual_dir` (duped into `allocator` - the
+/// rebased slice outlives the replay call frame by the scratch arena's
+/// lifetime, which covers the whole replay). All other values pass
+/// through untouched.
+fn rebaseRecordedMissionPaths(
+    events: []const Event,
+    recorded_dir: []const u8,
+    actual_dir: []const u8,
+    allocator: std.mem.Allocator,
+) ![]Event {
+    @setEvalBranchQuota(10000);
+    const rebased = try allocator.alloc(Event, events.len);
+    for (events, 0..) |event, index| {
+        rebased[index] = event;
+        switch (rebased[index]) {
+            inline else => |*category_payload| {
+                switch (category_payload.*) {
+                    inline else => |*variant_payload| {
+                        const Payload = @TypeOf(variant_payload.*);
+                        if (Payload == void) continue;
+                        inline for (
+                            @typeInfo(Payload).@"struct".field_names,
+                            @typeInfo(Payload).@"struct".field_types,
+                        ) |field_name, field_type| {
+                            if (comptime isMissionPathField(field_name, field_type)) {
+                                const actual = try allocator.dupe(u8, actual_dir);
+                                if (field_type == []const u8) {
+                                    if (std.mem.eql(u8, @field(variant_payload.*, field_name), recorded_dir)) {
+                                        @field(variant_payload.*, field_name) = actual;
+                                    }
+                                } else if (@field(variant_payload.*, field_name)) |path| {
+                                    if (std.mem.eql(u8, path, recorded_dir)) {
+                                        @field(variant_payload.*, field_name) = actual;
+                                    }
+                                }
+                            }
+                        }
+                    },
+                }
+            },
+        }
+    }
+    return rebased;
+}
+
 /// The author time: count the player's `turn_start` events (entity_index 0)
 /// in the slice. Mirrors the `turn_start` handler's `mission.turns_spent`
 /// increment exactly (any mode, while a mission is active) - the two must
@@ -255,6 +353,23 @@ pub fn revalidateMission(
     // player_start_validation orchestrator (the cross-session shape; see
     // the validation crown test), so the boot open_main_menu is
     // deliberately NOT seeded.
+    // The recorded paths ride the artifact's creation-time dirs - the
+    // campaign root (or the mission dir itself) may have RENAMED since
+    // (the cosmetic dir tidy made renames routine, and the artifact's
+    // paths die with the old name). Rebase every recorded mission_path
+    // onto the mission's ACTUAL dir - the dir the artifact was loaded
+    // from, the caller's `mission_dir`: the artifact is self-contained
+    // modulo its own location, and the rebased copy drives BOTH the
+    // replay seed and the verification expectation (consistent by
+    // construction). On-disk artifacts stay as recorded - old and new
+    // both load, no format change.
+    const recorded_dir = recordedMissionDir(replay.events);
+    const replay_events = if (recorded_dir != null and !std.mem.eql(u8, recorded_dir.?, mission_dir))
+        rebaseRecordedMissionPaths(replay.events, recorded_dir.?, mission_dir, scratch) catch
+            return invalid(result_allocator, "revalidation failed: out of memory", .{})
+    else
+        replay.events;
+
     const starting_state = state_mod.GameState{
         .screen = .main_menu,
         .event_stack = &.{},
@@ -279,8 +394,8 @@ pub fn revalidateMission(
         history.io,
     );
     const rejection = scratch_history.reconstructFromEventLogChecking(
-        replay.events,
-        @intCast(replay.events.len),
+        replay_events,
+        @intCast(replay_events.len),
         apply_event,
     );
     if (rejection) |rejection_value| {

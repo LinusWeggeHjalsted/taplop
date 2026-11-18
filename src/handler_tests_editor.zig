@@ -8946,3 +8946,91 @@ test "Tab chords: the mission editor cycles the fixed tools + the expanded group
     try testing.expect(history.undo(event_handlers.processEvent));
     try testing.expectEqual(types.EditorToolId{ .entity_type = 1 }, history.current_state.editor.?.active_tool);
 }
+
+test "revalidate: a renamed mission dir still replays (recorded paths rebase)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    try writeValidationFixtureMission(&harness);
+
+    const levels = [_]types.EditorLevel{ .{}, .{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
+    }));
+    runToIdle(&history);
+    try playFixtureRunToCompletion(&history, false);
+
+    // The campaign dir (or the mission dir) renamed AFTER the artifact
+    // was written - the motivating crash: the artifact's events record
+    // mission_path under the OLD dir, which no longer exists, and the
+    // unrebased replay died reading it. Simulate: the whole mission
+    // moves to a new dir (same bytes), the recorded artifact rides
+    // along unchanged.
+    const renamed_path = "missions/renamed_fixture";
+    for ([_][]const u8{ "mission.txt", "level_1.txt", "level_2.txt", "player.txt", "validation_replay.txt" }) |file_name| {
+        const source = try std.fmt.allocPrint(arena, "{s}/{s}", .{ validation_fixture_path, file_name });
+        const destination = try std.fmt.allocPrint(arena, "{s}/{s}", .{ renamed_path, file_name });
+        const bytes = try harness.file_source.readFile(arena, source);
+        harness.file_source.writeFile(destination, bytes) catch @panic("fixture copy failed");
+    }
+
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_revalidate_mission = .{
+            .mission_path = renamed_path,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // The rebase pointed every recorded mission_path at the artifact's
+    // ACTUAL dir, so the run replays against the moved files and passes.
+    try testing.expect(history.session.pending_error != null);
+    try testing.expect(std.mem.indexOf(u8, history.session.pending_error.?, "Revalidation passed") != null);
+    const moved = try harness.file_source.readFile(arena, renamed_path ++ "/validation_replay.txt");
+    try testing.expect(std.mem.indexOf(u8, moved, "Revalidation passed") == null); // the artifact is a session log, not the popup
+}
+
+test "revalidate: a referenced file gone missing rejects, never crashes" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    try writeValidationFixtureMission(&harness);
+
+    const levels = [_]types.EditorLevel{ .{}, .{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
+    }));
+    runToIdle(&history);
+    try playFixtureRunToCompletion(&history, false);
+
+    // The artifact exists but the mission's levels are GONE (hand-deleted
+    // files under a renamed dir, say): the checking replay's read failure
+    // must surface as a revalidation rejection popup - the old behavior
+    // was the readReconstructionFile panic (a game crash over the
+    // user's artifact).
+    const broken_path = "missions/broken_fixture";
+    for ([_][]const u8{ "mission.txt", "player.txt", "validation_replay.txt" }) |file_name| {
+        const source = try std.fmt.allocPrint(arena, "{s}/{s}", .{ validation_fixture_path, file_name });
+        const destination = try std.fmt.allocPrint(arena, "{s}/{s}", .{ broken_path, file_name });
+        const bytes = try harness.file_source.readFile(arena, source);
+        harness.file_source.writeFile(destination, bytes) catch @panic("fixture copy failed");
+    }
+
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_revalidate_mission = .{
+            .mission_path = broken_path,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    try testing.expect(history.session.pending_error != null);
+    try testing.expect(std.mem.indexOf(u8, history.session.pending_error.?, "revalidation failed") != null);
+    try testing.expect(std.mem.indexOf(u8, history.session.pending_error.?, "no longer matches") != null);
+}

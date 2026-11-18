@@ -1291,8 +1291,15 @@ pub const GameStateHistory = struct {
             }
             const arena = self.history_arena.allocator();
             const durable_path = arena.dupe(u8, path) catch @panic("failed to dupe reconstruction cache path");
+            // A read failure here (the referenced file no longer exists)
+            // is the caller's call: the live handler surfaces the
+            // recoverable popup (failReconstructionRead), the checking
+            // replay (revalidate) converts it to a rejection - never a
+            // crash over a mission the user renamed out from under the
+            // artifact (the recorded paths ride the artifact's
+            // creation-time dirs - see rebaseRecordedMissionPaths).
             const bytes = self.file_source.readFile(arena, path) catch
-                @panic("failed to read reconstruction file during cross-session replay");
+                return error.ReconstructionFileUnreadable;
             self.reconstruction_cache.append(arena, .{
                 .event_index = event_index,
                 .path = durable_path,
@@ -1668,8 +1675,10 @@ pub const GameStateHistory = struct {
     /// revalidate path): record the FIRST failure on `replay_rejection`
     /// and return, so the replay loop aborts without crashing; the same
     /// failure is a benign "run no longer matches the content" report.
-    /// Every converted validation site calls this instead of @panic.
-    fn rejectReplay(self: *GameStateHistory, message: []const u8) void {
+    /// Every converted validation site calls this instead of @panic -
+    /// including the handler-side reconstruction-read failure
+    /// (`shared.failReconstructionRead`), which is why this is pub.
+    pub fn rejectReplay(self: *GameStateHistory, message: []const u8) void {
         if (!self.replay_checking) @panic(message);
         if (self.replay_rejection == null) {
             const owned = self.backing_allocator.dupe(u8, message) catch

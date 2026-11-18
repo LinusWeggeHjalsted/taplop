@@ -3078,6 +3078,26 @@ for the run-side design.
   validation wants: the same error-returning path, no fail-fast
   wrapper. The orchestrator is entirely live-only (`!replaying`) - the
   check reads current files, not recorded state.
+- **The recorded paths rebase onto the artifact's own dir.** The
+  events embed the mission_path as it was at RECORDING time - and the
+  campaign root (or the mission dir itself) can rename afterwards (the
+  cosmetic dir tidy made renames routine; the first rename after that
+  fix killed every artifact's recorded paths - the revalidate crash of
+  crashes/crash_20261118_175712). At load time `revalidateMission`
+  derives the recorded dir from the slice's first mission_path and
+  rebases every recorded mission_path onto the dir the artifact was
+  ACTUALLY loaded from: the artifact is self-contained modulo its own
+  location, on-disk files stay as recorded, and old + renamed artifacts
+  both load. The same rebase serves any future replayer (the
+  server-side check) - the artifact never trusts a cosmetic dir name.
+- **A reconstruction read failure in checking mode is a rejection, not
+  a crash.** `readReconstructionFile`'s lazy-disk miss returns its error
+  to the caller, and `failReconstructionRead` converts it through
+  `rejectReplay` when `replay_checking` - the revalidate surfaces
+  "revalidation failed: the recorded run no longer matches this
+  mission's content" instead of the readReconstructionFile panic. (The
+  plain in-session replay panic stays: a cache miss there is an
+  integrity violation, not a user artifact.)
 - **Personal-best overwrite guard** (the clone auto-save pattern -
   auto-write on strictly-better, else offer manual overwrite): at
   `end_validation` success, build the new replay bytes + derive the new
