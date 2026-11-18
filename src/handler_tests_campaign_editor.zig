@@ -3259,6 +3259,127 @@ test "mission editor hand-off: the on-disk open adopts the graph name + context;
     try testing.expect(history.current_state.campaign_editor != null);
 }
 
+test "the drill-in mission editor's validation run keeps the campaign context" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // The run's fixture: a saved single-level mission (start_validation
+    // is file-based - mission.txt + level_1.txt + player.txt).
+    try harness.file_source.writeFile("missions/runfixture/mission.txt",
+        \\Metadata
+        \\file_format_version 3
+        \\mission_uuid 44444444-4444-4444-4444-444444444444
+        \\name Run Fixture
+        \\
+    );
+    try harness.file_source.writeFile("missions/runfixture/level_1.txt",
+        \\Metadata
+        \\file_format_version 1
+        \\name Run Fixture Level
+        \\
+        \\Layout
+        \\!=
+        \\
+    );
+    try harness.file_source.writeFile("missions/runfixture/player.txt",
+        \\Metadata
+        \\file_format_version 2
+        \\
+        \\MainHandWeapon
+        \\
+        \\OffHandWeapon
+        \\
+        \\Amulet
+        \\
+        \\Coat
+        \\
+        \\Gloves
+        \\
+        \\Pants
+        \\
+        \\Boots
+        \\
+        \\UtilitySkills
+        \\
+    );
+
+    // A local campaign whose single mission is never-saved (the
+    // fresh-template hand-off - no uuid, so the OPEN reads no files).
+    var history = harness.newHistory(.{
+        .screen = .campaign_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "Local",
+            .campaign_uuid = "cu",
+            .campaign_dir = "campaigns/local",
+            .start_hub = 0,
+            .hubs = &.{.{ .handle = 0, .name = "Alpha", .position = .{ .x = 0, .y = 0 } }},
+            .missions = &.{.{ .handle = 3, .dir = "New Mission", .name = "Draft", .start = 0, .destination = 0 }},
+            .next_handle = 4,
+        },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    runToIdle(&history);
+
+    // The hand-off: the fresh-template branch (mission_path null), the
+    // campaign context live on the editor payload.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_mission_editor = .{
+            .mission = 3,
+            .mission_path = null,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.screen == .editor);
+    try testing.expect(history.current_state.editor.?.campaign_mission != null);
+    try testing.expect(history.current_state.campaign_editor != null);
+
+    // The validation run: start_validation reads the fixture files and
+    // transitions to the level screen - the authored campaign graph
+    // SURVIVES the run's level scope (the .level scope carries
+    // campaign_editor, the same reasoning as its editor carry).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .{ .start_validation = .{
+            .mission_path = "missions/runfixture",
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.screen == .level);
+    try testing.expect(history.current_state.campaign_editor != null);
+
+    // End the begun turn + complete the (single) level: the run ends -
+    // back on the mission editor with the campaign context intact (the
+    // 5b save belt + the world-map return work again).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .{ .end_level = .{} } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.screen == .editor);
+    try testing.expect(history.current_state.editor.?.mode == .edit);
+    try testing.expect(history.current_state.editor.?.campaign_mission != null);
+    try testing.expect(history.current_state.campaign_editor != null);
+}
+
 test "mission editor hand-off: a never-saved mission opens the fresh template at the campaign anchor" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

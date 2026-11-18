@@ -81,7 +81,16 @@ pub const Screen = enum {
         return switch (self) {
             .main_menu => .{},
             .hub => .{ .campaign = true, .hub = true },
-            .level => .{ .campaign = true, .mission = true, .level = true, .editor = true },
+            // editor: playtest/validation runs (the only .level
+            // transitions with an editor session live) return to the
+            // editor with its payload intact. campaign_editor: the same
+            // reasoning for runs launched from the campaign drill-in's
+            // mission editor - the authored graph survives the run's
+            // level screens, so the hand-off's save target + world-map
+            // return work after the run. Every other route into .level
+            // comes from screens whose scope already dropped the
+            // campaign, so nothing leaks.
+            .level => .{ .campaign = true, .mission = true, .level = true, .editor = true, .campaign_editor = true },
             .editor => .{ .editor = true, .campaign_editor = true },
             .campaign_editor => .{ .campaign_editor = true },
             // The hub editor drill-in: the campaign graph stays alive

@@ -3818,12 +3818,18 @@ Why the parallel shape wins:
 Consequences:
 
 - **Screens + scopes**: the `campaign_editor` screen's scope is
-  `{ campaign_editor }` (no `.level` interplay - the campaign editor
-  has no playtest); the `editor` screen's scope GAINS
+  `{ campaign_editor }` (no playtest of its own - the campaign editor
+  runs no levels); the `editor` screen's scope GAINS
   `campaign_editor` so the scope-drop rule (the transition-time
   auto-null) keeps the campaign alive across the mission hand-off
   transition, and dropping back to the campaign screen nulls the
-  mission Editor the same way.
+  mission Editor the same way. The `.level` screen's scope carries
+  `editor` (playtest/validation runs return to the editor with its
+  payload intact) AND `campaign_editor` - runs launched from the
+  drill-in's mission editor keep the authored graph alive across the
+  run's level screens (the campaign editor itself never enters
+  `.level`, but its drill-in's runs do; every other route into
+  `.level` already dropped the campaign).
 - **CampaignEditor edits an AUTHORED, editable graph** (the
   EditorLevel-vs-runtime-Level precedent): hub list with positions,
   exits, background stem - not the load-derived Campaign type. Save
