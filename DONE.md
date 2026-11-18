@@ -388,6 +388,7 @@ working rules).
 - [campaign-editor slice 5c: campaign export + import (the STORE-zip pattern over the campaign dir)](#campaign-editor-slice-5c-campaign-export--import-the-store-zip-pattern-over-the-campaign-dir)
 - [campaign editor: the inspector rides the shared windowed renderer (slice-5c rider)](#campaign-editor-the-inspector-rides-the-shared-windowed-renderer-slice-5c-rider)
 - [Hub editor palette + viewport fixes: theme following, right-drag pan, cell art](#hub-editor-palette--viewport-fixes-theme-following-right-drag-pan-cell-art)
+- [Campaign map + hub editor UX pass: drill-in rows, double-click, any-tool edge clicks, the inferred inspector](#campaign-map--hub-editor-ux-pass-drill-in-rows-double-click-any-tool-edge-clicks-the-inferred-inspector)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -23254,3 +23255,62 @@ theme picker), and the NPC / Missions / Decorations groups all
 rendered their new cells across frames with clean exits. Web build
 compiled + loaded in Firefox (main menu, live ~60fps loop, healthy GL
 context) for the draw.zig seam change.
+
+## Campaign map + hub editor UX pass: drill-in rows, double-click, any-tool edge clicks, the inferred inspector
+
+The author's second UX report while building the new main campaign - five
+issues, the navigation theme being "clicking an existing thing should act
+on it, whatever your tool".
+
+- **The mission inspector's Drill-in row moved ABOVE Import** - the
+  more-used action reads first. Side effect the windowing test pins: the
+  hand-off is IN the 11-row window at scroll 0 (Import takes the
+  below-the-fold slot).
+- **Double-clicking a hub or mission drills into its editor** - the
+  inventory's `LastItemClick` pattern, shared threshold
+  (`ui.double_click_threshold_us`, 400ms) and pause-independent session
+  clock: a select-path click seeds a pending on UiState; a second click
+  on the same target within the window pushes the inspector buttons' own
+  recorded opens (`open_hub_editor` / `open_mission_editor` via the
+  extracted `pushOpenMissionEditorFromMap`). Works under any tool (the
+  hub tool's click-on-a-hub rule + the any-tool edge clicks ARE the
+  select path); the mission tool's hub clicks stay the draw gesture
+  (the exception, clearing the pending), and canvas clicks, re-attach
+  picks, and armed-draw edge clicks never pair.
+- **A mission edge click selects under ANY tool** - the edge hit-buttons
+  only rendered under the select tool, so a hub-tool click on a mission
+  fell through to the canvas and placed a hub on the spot. Edges now
+  render + select under every tool; the armed mission draw is the one
+  exception (such a click cancels it, the empty-canvas rule).
+- **The hub editor's inspector infers its target from a unique
+  selection** - the mission editor's `editorInspectorTarget` rule,
+  hub-flavored: the active placement tool wins; under the
+  select/tile/mission tools the selection infers (decoration placements
+  contribute their type, NPC placements their kind, an exit marker its
+  read-only summary; tiles and the spawn contribute nothing; exactly one
+  distinct reference wins, ambiguity falls to the empty panel). The
+  input layer shares the projection (`hubEditorDecorationTarget` through
+  the ui facade) so field commits target the inferred type - the local
+  tool-only `hubDecorationToolTypeId` and five raw active-tool switches
+  are gone. The NPC placeholder also fires for the active NPC tool.
+- **The hub decoration delete buttons use the shared close-button
+  visual** - the mission editor's `emitEditorToolDeleteButton` emission
+  extracted into the pub `emitToolDeleteButton` (action + payload +
+  tooltip parameters); the hub cell's hand-rolled ui/panel + "X" label
+  trio is gone.
+
+Tests: 1060 green - the windowed-order swap, the any-tool edge-button
+rendering (per-tool counts + the armed-draw preview total), the
+consumption arms (edge click under the hub tool, the armed-draw cancel,
+double-click hub/mission with the slow-click and undo contracts), the
+inferred inspector (identity contract vs the tool-driven panel,
+same-type multis, cross-kind ambiguity, tool-wins-over-selection,
+unique-exit/npc with tile mixing), and the inferred-target commit
+(unique placement flips its type; ambiguous no-ops).
+
+Runtime-verified over the console channel on the real binary: the
+official campaign opened, a double-click on its hub landed in the hub
+editor (screen dump), the return to the map, a HUB-TOOL click on a
+self-loop edge selected the mission (selection dump, no hub placed),
+and the fast second click drilled into the mission editor with the
+campaign context intact - clean exit 0.
