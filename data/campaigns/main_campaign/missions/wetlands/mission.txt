@@ -1,4 +1,0 @@
-Metadata
-file_format_version 3
-mission_uuid 6c19598d-157c-4390-90d8-dceaf626b52f
-name Wetlands

@@ -1,4 +1,0 @@
-Metadata
-file_format_version 3
-mission_uuid f2c9beaf-486c-42bd-a584-b45f0e4f877b
-name Forest

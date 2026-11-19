@@ -304,19 +304,26 @@ test "escape: mission fail exits the mission" {
     ));
     // The entering hub (the mission-exit path reads current_hub - the hub
     // the player was in when the mission started), as a hub uuid. The
-    // loaded campaign resolves uuid -> dir for the start_hub read.
+    // fixture is SELF-CONTAINED: a synthetic campaign + hub written into
+    // the harness scratch (the mission-exit chain reads hub.txt through
+    // the file source - authored shipped content must not be pinned
+    // here, the campaign is built in place).
+    harness.file_source.writeFile(
+        "campaigns/escape_fixture/hubs/escape_hub/hub.txt",
+        "Metadata\nfile_format_version 5\nname Escape Hub\nhub_uuid escape-hub-uuid\n\nLayout 2\n.!\n..\n",
+    ) catch @panic("write escape hub");
     const campaign = types.Campaign{
-        .uuid = "8ecb3f44-9a3d-497c-95a9-a000b8517b7d",
-        .dir = "main_campaign",
+        .uuid = "escape-campaign-uuid",
+        .dir = "escape_fixture",
         .hubs = &.{
-            .{ .uuid = "03aeefda-c68b-4853-b65a-d46edb9790f1", .dir = "camp_at_the_crossroads", .position = .{ .x = 0, .y = 0 } },
+            .{ .uuid = "escape-hub-uuid", .dir = "escape_hub", .position = .{ .x = 0, .y = 0 } },
         },
     };
     history.current_state.campaign = campaign;
-    history.current_state.player_data.current_hub = "03aeefda-c68b-4853-b65a-d46edb9790f1";
+    history.current_state.player_data.current_hub = "escape-hub-uuid";
     history.current_state.mission = .{
-        .name = "beginnings",
-        .path = "campaigns/main_campaign/missions/beginnings",
+        .name = "escape mission",
+        .path = "campaigns/escape_fixture/missions/escape_mission",
         .level_count = 1,
         .current_level_index = 1,
     };

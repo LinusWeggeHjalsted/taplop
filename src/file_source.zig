@@ -57,7 +57,7 @@ fn isInvalidRelativePath(path: []const u8) bool {
 }
 
 /// The shipped campaign mission-directory paths, content-root-relative
-/// (e.g. "campaigns/main_campaign/missions/beginnings") - the mission
+/// (e.g. "campaigns/<campaign>/missions/<mission>") - the mission
 /// browser's Official tab, and the shape every campaign-content path uses
 /// (the official campaign's bytes resolve through readFile's embedded
 /// `data/`-prefix bridge; see DESIGN → Campaigns & the Campaign Editor →
@@ -116,7 +116,11 @@ fn isOfficialMissionDirKey(key: []const u8) bool {
 fn officialMissionLevelCount(dir_path: []const u8) u32 {
     var count: u32 = 0;
     while (true) {
-        var probe_buf: [128]u8 = undefined;
+        // 256: the uuid-prefixed campaign mission dirs run long (the
+        // 128-byte probe silently truncated to count 0 once the Polpat
+        // dir names landed - a bufPrint overflow hits the `catch break`
+        // and reads as "no levels").
+        var probe_buf: [256]u8 = undefined;
         const probe_path = std.fmt.bufPrint(
             &probe_buf,
             "data/{s}/level_{d}.txt",
@@ -139,6 +143,37 @@ pub fn embeddedMapKeys(allocator: std.mem.Allocator) []const []const u8 {
         keys.append(allocator, key) catch @panic("failed to append embedded key");
     }
     return keys.toOwnedSlice(allocator) catch @panic("failed to own embedded keys");
+}
+
+/// The embedded campaign ROOT dirs (content-root-relative,
+/// "campaigns/<name>" - campaign roots only, no deeper keys), the
+/// campaign-level analog of `officialMissionDirPathsForCampaign`.
+/// Runtime slicing of static map keys (the comptime-array gotcha - AGENTS
+/// → Zig Gotchas), duped into `allocator` (caller-owned). Derived, never
+/// hand-maintained: tests + consumers walk the SHIPPED campaigns without
+/// pinning their authored names (AGENTS → machine-walked truth).
+pub fn officialCampaignDirs(allocator: std.mem.Allocator) []const []const u8 {
+    var dirs: std.ArrayList([]const u8) = .empty;
+    const keys = embeddedMapKeys(allocator);
+    defer allocator.free(keys);
+    for (keys) |key| {
+        if (!std.mem.startsWith(u8, key, "data/campaigns/")) continue;
+        if (!std.mem.endsWith(u8, key, "/campaign.txt")) continue;
+        const campaign_dir = key["data/".len .. key.len - "/campaign.txt".len];
+        // Campaign roots only: content-root-relative with no slash after
+        // the campaigns/ prefix.
+        if (!std.mem.startsWith(u8, campaign_dir, "campaigns/")) continue;
+        if (std.mem.indexOfScalar(u8, campaign_dir["campaigns/".len..], '/') != null) continue;
+        dirs.append(allocator, allocator.dupe(u8, campaign_dir) catch
+            @panic("failed to dupe embedded campaign dir")) catch
+            @panic("failed to append embedded campaign dir");
+    }
+    std.mem.sort([]const u8, dirs.items, {}, struct {
+        fn before(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.before);
+    return dirs.toOwnedSlice(allocator) catch @panic("failed to own embedded campaign dirs");
 }
 
 /// The embedded campaign's mission dirs under one campaign
@@ -1863,22 +1898,37 @@ test "missionOrder: mtime descending, name ascending tiebreak" {
     try testing.expectEqualStrings("Older", entries[2].name);
 }
 
-test "officialMissionDirPaths: the four shipped dirs, content-shaped + sorted" {
+test "officialMissionDirPaths: content-shaped, sorted, unique, each readable" {
     const allocator = testing.allocator;
     const dirs = officialMissionDirPaths(allocator);
     defer {
         for (dirs) |dir| allocator.free(dir);
         allocator.free(dirs);
     }
-    const expected = [_][]const u8{
-        "campaigns/main_campaign/missions/beginnings",
-        "campaigns/main_campaign/missions/forest",
-        "campaigns/main_campaign/missions/seatown",
-        "campaigns/main_campaign/missions/wetlands",
-    };
-    try testing.expectEqual(expected.len, dirs.len);
-    for (dirs, expected) |actual, want| {
-        try testing.expectEqualStrings(want, actual);
+    // The shipped missions are authored content (the campaign is built
+    // in place) - assert the SHAPE, never the names/counts: every dir is
+    // content-root-relative under a campaign's missions/, no data/ prefix,
+    // sorted ascending, unique, and each dir's mission.txt is readable
+    // through the embedded tier (the scan's own addressing contract).
+    try testing.expect(dirs.len > 0);
+    for (dirs, 0..) |dir, index| {
+        try testing.expect(std.mem.startsWith(u8, dir, "campaigns/"));
+        try testing.expect(std.mem.indexOf(u8, dir, "/missions/") != null);
+        try testing.expect(!std.mem.startsWith(u8, dir, "data/"));
+        if (index > 0) {
+            try testing.expect(std.mem.lessThan(u8, dirs[index - 1], dir));
+        }
+        for (dirs[0..index]) |earlier| {
+            try testing.expect(!std.mem.eql(u8, earlier, dir));
+        }
+        var threaded_io = std.Io.Threaded.init(allocator, .{});
+        defer threaded_io.deinit();
+        const file_source = FileSource.init(threaded_io.io(), undefined);
+        const mission_txt_path = try std.fmt.allocPrint(allocator, "{s}/mission.txt", .{dir});
+        defer allocator.free(mission_txt_path);
+        const mission_txt = try file_source.readEmbeddedFile(allocator, mission_txt_path);
+        defer allocator.free(mission_txt);
+        try testing.expect(mission_txt.len > 0);
     }
 }
 
@@ -1887,26 +1937,51 @@ test "listOfficialMissions: the shipped campaign missions with paths + metadata"
     var threaded_io = std.Io.Threaded.init(allocator, .{});
     defer threaded_io.deinit();
     const io = threaded_io.io();
-    const file_source = FileSource.init(io, undefined);
+    // Scratch-backed persistent tier: the test derives custom-art
+    // presence via listDirFiles (the two-tier union), which touches the
+    // persistent dir - it must be a real (empty) dir, not undefined.
+    const scratch = "zig-cache/test-official-missions-list";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = FileSource.init(io, dir);
 
     const list = try file_source.listOfficialMissions(allocator);
     defer freeMissions(allocator, list);
 
-    // The four shipped main-campaign missions (fixed shipped content - a
-    // missing entry means a broken build, so exact stems are asserted).
-    try testing.expectEqual(@as(usize, 4), list.len);
-    const expected = [_][]const u8{ "beginnings", "forest", "seatown", "wetlands" };
-    for (list, expected) |entry, stem| {
-        try testing.expectEqualStrings(stem, entry.id);
-        try testing.expect(std.mem.startsWith(
-            u8,
-            entry.path,
-            "campaigns/main_campaign/missions/",
-        ));
-        try testing.expect(std.mem.endsWith(u8, entry.path, stem));
+    // The shipped missions are authored content (asserted by shape, not
+    // by name - see the officialMissionDirPaths test): one entry per
+    // embedded mission dir, each entry's path IS that dir, ids unique,
+    // name + level count resolved from the content itself, and custom
+    // art presence DERIVED from the dir's PNGs (never assumed).
+    const official_dirs = officialMissionDirPaths(allocator);
+    defer {
+        for (official_dirs) |owned_dir| allocator.free(owned_dir);
+        allocator.free(official_dirs);
+    }
+    try testing.expectEqual(official_dirs.len, list.len);
+    for (list) |entry| {
+        var matched = false;
+        for (official_dirs) |official_dir| {
+            if (std.mem.eql(u8, official_dir, entry.path)) matched = true;
+        }
+        try testing.expect(matched);
+        try testing.expectEqualStrings(std.fs.path.basename(entry.path), entry.id);
         try testing.expect(entry.name.len > 0);
         try testing.expect(entry.level_count > 0);
-        try testing.expectEqual(false, entry.has_custom_assets);
+        const dir_files = try file_source.listDirFiles(allocator, entry.path);
+        defer freeDirFiles(allocator, dir_files);
+        var png_count: usize = 0;
+        for (dir_files) |name| {
+            if (std.mem.endsWith(u8, name, ".png")) png_count += 1;
+        }
+        try testing.expectEqual(png_count > 0, entry.has_custom_assets);
+    }
+    for (list, 0..) |entry, index| {
+        for (list[0..index]) |earlier| {
+            try testing.expect(!std.mem.eql(u8, earlier.id, entry.id));
+        }
     }
 }
 
@@ -2045,7 +2120,38 @@ test "listCampaigns: empty when campaigns/ absent" {
     try testing.expectEqual(@as(usize, 0), list.len);
 }
 
-test "listOfficialCampaigns: the shipped campaign with uuid + metadata" {
+test "officialCampaignDirs: content-shaped, sorted, unique, each readable" {
+    const allocator = testing.allocator;
+    const dirs = officialCampaignDirs(allocator);
+    defer {
+        for (dirs) |dir| allocator.free(dir);
+        allocator.free(dirs);
+    }
+    // Same shape contract as the mission-dir scan: campaign ROOTS only
+    // (content-root-relative, no deeper keys), no data/ prefix, sorted,
+    // unique, each dir's campaign.txt readable through the embedded tier.
+    try testing.expect(dirs.len > 0);
+    for (dirs, 0..) |dir, index| {
+        try testing.expect(std.mem.startsWith(u8, dir, "campaigns/"));
+        try testing.expect(std.mem.indexOfScalar(u8, dir["campaigns/".len..], '/') == null);
+        if (index > 0) {
+            try testing.expect(std.mem.lessThan(u8, dirs[index - 1], dir));
+        }
+        for (dirs[0..index]) |earlier| {
+            try testing.expect(!std.mem.eql(u8, earlier, dir));
+        }
+        var threaded_io = std.Io.Threaded.init(allocator, .{});
+        defer threaded_io.deinit();
+        const file_source = FileSource.init(threaded_io.io(), undefined);
+        const campaign_txt_path = try std.fmt.allocPrint(allocator, "{s}/campaign.txt", .{dir});
+        defer allocator.free(campaign_txt_path);
+        const campaign_txt = try file_source.readEmbeddedFile(allocator, campaign_txt_path);
+        defer allocator.free(campaign_txt);
+        try testing.expect(campaign_txt.len > 0);
+    }
+}
+
+test "listOfficialCampaigns: the shipped campaigns, metadata cross-checked" {
     const allocator = testing.allocator;
     var threaded_io = std.Io.Threaded.init(allocator, .{});
     defer threaded_io.deinit();
@@ -2055,13 +2161,31 @@ test "listOfficialCampaigns: the shipped campaign with uuid + metadata" {
     const list = try file_source.listOfficialCampaigns(allocator);
     defer freeCampaigns(allocator, list);
 
-    // The one shipped campaign (fixed shipped content - a missing entry
-    // means a broken build). The uuid is asserted against the shipped
-    // campaign.txt exactly (the discovered-group scoping depends on it).
-    try testing.expectEqual(@as(usize, 1), list.len);
-    try testing.expectEqualStrings("campaigns/main_campaign", list[0].dir);
-    try testing.expectEqualStrings("Main Campaign", list[0].name);
-    try testing.expectEqualStrings("8ecb3f44-9a3d-497c-95a9-a000b8517b7d", list[0].uuid);
+    // The shipped campaigns are authored content - never pinned by name or
+    // count. The contract: at least one campaign, each entry's dir is a
+    // content-root-relative campaign root, and its name + uuid match the
+    // campaign.txt the scan read them from (the discovered-group scoping
+    // check - parse the same bytes independently and compare).
+    try testing.expect(list.len >= 1);
+    for (list) |entry| {
+        try testing.expect(std.mem.startsWith(u8, entry.dir, "campaigns/"));
+        try testing.expect(std.mem.indexOfScalar(
+            u8,
+            entry.dir["campaigns/".len..],
+            '/',
+        ) == null);
+        const campaign_txt_path = try std.fmt.allocPrint(allocator, "{s}/campaign.txt", .{entry.dir});
+        defer allocator.free(campaign_txt_path);
+        const bytes = try file_source.readEmbeddedFile(allocator, campaign_txt_path);
+        defer allocator.free(bytes);
+        const sections = try parser.parseConfigFile(bytes, allocator, &parser.campaign_sections);
+        defer parser.freeParsedSections(sections, allocator);
+        const metadata = parser.findSection(sections, "Metadata").?;
+        const name = parser.findValue(metadata.entry_groups[0].pairs, "name").?;
+        const uuid = parser.findValue(metadata.entry_groups[0].pairs, "campaign_uuid").?;
+        try testing.expectEqualStrings(name, entry.name);
+        try testing.expectEqualStrings(uuid, entry.uuid);
+    }
 }
 
 test "resolveUuidDir: a persistent copy shadows its embedded namesake; same-tier duplicates flag" {
@@ -2232,20 +2356,52 @@ test "listDirFiles: both tiers unioned, deduped, direct files only, sorted" {
     defer freeDirFiles(allocator, absent);
     try testing.expectEqual(@as(usize, 0), absent.len);
 
-    // The official campaign dir is embedded: campaign.txt + map.png at
-    // the root, hubs/ + missions/ subdirs (never listed). Scratch
-    // shadows join the union (sorted in); a same-name shadow of an
+    // The official campaign dir is embedded: its ROOT files derived from
+    // the embedded map (authored content - never pinned), with the scratch
+    // shadows joining the union (sorted in); a same-name shadow of an
     // embedded file dedupes to one entry.
-    file_source.writeFile("campaigns/main_campaign/campaign.txt", "shadow campaign") catch @panic("write campaign shadow");
-    file_source.writeFile("campaigns/main_campaign/zz_shadow.png", "shadow png") catch @panic("write png shadow");
-    const files = try file_source.listDirFiles(allocator, "campaigns/main_campaign");
+    const campaign_dirs = officialCampaignDirs(allocator);
+    defer {
+        for (campaign_dirs) |owned_dir| allocator.free(owned_dir);
+        allocator.free(campaign_dirs);
+    }
+    const campaign_dir = campaign_dirs[0];
+    var expected_files: std.ArrayList([]const u8) = .empty;
+    defer expected_files.deinit(allocator);
+    const data_prefix = try std.fmt.allocPrint(allocator, "data/{s}/", .{campaign_dir});
+    defer allocator.free(data_prefix);
+    const keys = embeddedMapKeys(allocator);
+    defer allocator.free(keys);
+    for (keys) |key| {
+        if (!std.mem.startsWith(u8, key, data_prefix)) continue;
+        // Root files only (subdir entries never list).
+        if (std.mem.indexOfScalar(u8, key[data_prefix.len..], '/') != null) continue;
+        try expected_files.append(allocator, key[data_prefix.len..]);
+    }
+    try testing.expect(expected_files.items.len > 0);
+    for (expected_files.items) |name| {
+        const shadow_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ campaign_dir, name });
+        defer allocator.free(shadow_path);
+        file_source.writeFile(shadow_path, "shadow") catch @panic("write embedded shadow");
+    }
+    {
+        const zz_path = try std.fmt.allocPrint(allocator, "{s}/zz_shadow.png", .{campaign_dir});
+        defer allocator.free(zz_path);
+        file_source.writeFile(zz_path, "shadow png") catch @panic("write png shadow");
+    }
+    try expected_files.append(allocator, "zz_shadow.png");
+
+    const files = try file_source.listDirFiles(allocator, campaign_dir);
     defer freeDirFiles(allocator, files);
-    try testing.expectEqual(@as(usize, 3), files.len);
-    try testing.expectEqualStrings("campaign.txt", files[0]);
-    try testing.expectEqualStrings("map.png", files[1]);
-    try testing.expectEqualStrings("zz_shadow.png", files[2]);
-    for (files) |name| {
-        try testing.expect(std.mem.indexOfScalar(u8, name, '/') == null);
+    std.mem.sort([]const u8, expected_files.items, {}, struct {
+        fn before(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.before);
+    try testing.expectEqual(expected_files.items.len, files.len);
+    for (files, expected_files.items) |actual, want| {
+        try testing.expectEqualStrings(want, actual);
+        try testing.expect(std.mem.indexOfScalar(u8, actual, '/') == null);
     }
 }
 
@@ -2357,17 +2513,51 @@ test "readFile: campaign-bundled content resolves through the embedded data/ tie
     // cwd), so the embedded data/-prefixed tier must serve the bytes.
     const file_source = FileSource.init(io, std.Io.Dir.cwd());
 
-    const bytes = try file_source.readFile(allocator, "campaigns/main_campaign/campaign.txt");
+    // The shipped campaign + a hub config, both DERIVED (authored content
+    // - never pinned): the campaign.txt bytes carry the campaign's own
+    // name, and the hub dir comes from the embedded map keys.
+    const campaign_dirs = officialCampaignDirs(allocator);
+    defer {
+        for (campaign_dirs) |dir| allocator.free(dir);
+        allocator.free(campaign_dirs);
+    }
+    const campaign_txt_path = try std.fmt.allocPrint(
+        allocator,
+        "{s}/campaign.txt",
+        .{campaign_dirs[0]},
+    );
+    defer allocator.free(campaign_txt_path);
+    const bytes = try file_source.readFile(allocator, campaign_txt_path);
     defer allocator.free(bytes);
     try testing.expect(bytes.len > 0);
-    try testing.expect(std.mem.indexOf(u8, bytes, "Main Campaign") != null);
+    {
+        const sections = try parser.parseConfigFile(bytes, allocator, &parser.campaign_sections);
+        defer parser.freeParsedSections(sections, allocator);
+        const metadata = parser.findSection(sections, "Metadata").?;
+        const name = parser.findValue(metadata.entry_groups[0].pairs, "name").?;
+        try testing.expect(name.len > 0);
+        try testing.expect(std.mem.indexOf(u8, bytes, name) != null);
+    }
 
-    // And the customAssetTail shape addresses the same file: tail + .png
-    // is the read path for art; here we prove the tail + extension form
-    // resolves against the same tiers with a non-png extension.
-    const config_via_tail = try file_source.readFile(allocator, "campaigns/main_campaign/hubs/camp_at_the_crossroads/hub.txt");
+    // And the customAssetTail shape addresses the same tier: derive one
+    // hub.txt under the campaign from the map keys (the tail + extension
+    // form is the read path for art; here we prove it resolves configs).
+    const hub_prefix = try std.fmt.allocPrint(allocator, "data/{s}/hubs/", .{campaign_dirs[0]});
+    defer allocator.free(hub_prefix);
+    const keys = embeddedMapKeys(allocator);
+    defer allocator.free(keys);
+    var hub_txt_key: ?[]const u8 = null;
+    for (keys) |key| {
+        if (std.mem.startsWith(u8, key, hub_prefix) and std.mem.endsWith(u8, key, "/hub.txt")) {
+            hub_txt_key = key;
+            break;
+        }
+    }
+    try testing.expect(hub_txt_key != null);
+    const hub_txt_tail = hub_txt_key.?[@min(hub_txt_key.?.len, "data/".len)..];
+    const config_via_tail = try file_source.readFile(allocator, hub_txt_tail);
     defer allocator.free(config_via_tail);
-    try testing.expect(std.mem.indexOf(u8, config_via_tail, "Camp at the Crossroads") != null);
+    try testing.expect(config_via_tail.len > 0);
 
     // A path no tier has still misses cleanly.
     try testing.expectError(error.FileNotFound, file_source.readFile(allocator, "campaigns/nowhere/x.txt"));

@@ -3406,8 +3406,8 @@ Loading resolves uuids to directories by SCANNING, never by convention:
   way (uuid read from each hub.txt / mission.txt).
 - **Any dir name loads** - the `<uuid>_<name>` convention is a
   save-side naming scheme for human browsability, never a load
-  requirement. The official campaign's `main_campaign` dir (and any
-  hand-named dir) loads by its uuid.
+  requirement. The official campaign's own dir (whatever it is named
+  - including any hand-named dir) loads by its uuid.
 - **Duplicate uuids across dirs** (manual file copying, hand edits):
   resolve **latest-updated wins** - the MAX mtime across the
   folder's files (the mission browser's recency convention,
@@ -6503,12 +6503,12 @@ to be confirmed when the editor viewport is wired).
 `close_editor` / `start_playtest` / `end_playtest` / `start_validation` /
 `end_validation`) + `editor_set_active_level` with full handlers, exit guard in
 `end_level`/`end_mission`, `open_editor` action + main-menu "Editor" button
-(dev entry, hardcoded to `beginnings`), `parseEntityDefinition` (extracted,
+(dev entry), `parseEntityDefinition` (extracted,
 shared by enemy + player loading), `loadPlayerLoadout` + `player.txt` format
 (`PlayerLoadout` section), `buildEditorMission` (dedup-on-load),
 `instantiateEditorLevel`, round-trip test (open → playtest → end → close,
-asserts palette + player_def + instantiated entities). `beginnings` ships a
-`player.txt`. The tile-paint slice is landed (see Active-tool model above):
+asserts palette + player_def + instantiated entities). Every shipped
+mission ships a `player.txt`. The tile-paint slice is landed (see Active-tool model above):
 `player_paint_editor_tile` (orchestrator + replay-validation arm + idle-input
 consumption), the `editor_set_tile` / `editor_delete_decoration_placement`
 handlers, the tile-tool cursor resolution + overlay, and the editor screen

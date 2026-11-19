@@ -8981,17 +8981,22 @@ test "editor save: an official mission forks - a fresh identity, the original un
 
     // The OFFICIAL mission's identity, read from the embedded content
     // (the harness's persistent dir has no copy - that is what makes it
-    // official-origin).
+    // official-origin). The mission is DERIVED from the embedded map
+    // (authored content - never pinned).
+    const official_mission_dir = test_harness.officialMissionDir(arena);
     const official_mission_txt = try harness.file_source.readFile(
         arena,
-        "campaigns/main_campaign/missions/beginnings/mission.txt",
+        try std.fmt.allocPrint(arena, "{s}/mission.txt", .{official_mission_dir}),
     );
     var official_uuid: []const u8 = "";
+    var official_name: []const u8 = "";
     {
         const sections = try parser.parseConfigFile(official_mission_txt, arena, &parser.mission_sections);
         const metadata = parser.findSection(sections, "Metadata").?;
         official_uuid = parser.findValue(metadata.entry_groups[0].pairs, "mission_uuid") orelse "";
+        official_name = parser.findValue(metadata.entry_groups[0].pairs, "name") orelse "";
         try testing.expect(official_uuid.len > 0);
+        try testing.expect(official_name.len > 0);
     }
 
     // An editor session opened on the official mission (the official
@@ -9006,9 +9011,9 @@ test "editor save: an official mission forks - a fresh identity, the original un
     var history = harness.newHistory(editorStateWith(.{
         .levels = &levels,
         .mission = .{
-            .name = "Beginnings",
+            .name = official_name,
             .uuid = official_uuid,
-            .path = "campaigns/main_campaign/missions/beginnings",
+            .path = official_mission_dir,
             .level_count = 1,
         },
         .player_def = .{ .id = "Player", .template = .{ .name = "New Player", .sprite = "player", .team = 0 } },
@@ -9035,27 +9040,30 @@ test "editor save: an official mission forks - a fresh identity, the original un
     );
     try testing.expect(std.mem.indexOf(u8, fork_mission_txt, saved.uuid) != null);
 
-    // No shadow: the official campaign's own dir stays embedded-only.
+    // No shadow: the official mission's own dir stays embedded-only.
     try testing.expect(!file_source_mod.persistentFileExists(
         &harness.file_source,
-        "campaigns/main_campaign/missions/beginnings/mission.txt",
+        try std.fmt.allocPrint(arena, "{s}/mission.txt", .{official_mission_dir}),
     ));
 
-    // The official campaign's mission table still resolves Beginnings to
-    // the EMBEDDED original - the fork is invisible to it (a different
-    // uuid in a different namespace).
+    // The official campaign's mission table still resolves the mission
+    // to the EMBEDDED original - the fork is invisible to it (a different
+    // uuid in a different namespace). The table + expectations derive
+    // from the shipped scan (never a pinned dir or count).
     {
-        const official_campaign = types.Campaign{ .dir = "main_campaign" };
+        const official_campaign_dir = test_harness.officialCampaignDir(arena);
+        const official_campaign = types.Campaign{ .dir = std.fs.path.basename(official_campaign_dir) };
         const entries = loaders.resolveCampaignMissions(official_campaign, &harness.file_source, arena, null);
-        try testing.expectEqual(@as(usize, 4), entries.len);
-        var found_beginnings = false;
+        const official_mission_dirs = test_harness.officialMissionDirs(arena);
+        try testing.expectEqual(official_mission_dirs.len, entries.len);
+        var found_official = false;
         for (entries) |entry| {
             if (std.mem.eql(u8, entry.uuid, official_uuid)) {
-                found_beginnings = true;
-                try testing.expectEqualStrings("campaigns/main_campaign/missions/beginnings", entry.dir);
+                found_official = true;
+                try testing.expectEqualStrings(official_mission_dir, entry.dir);
             }
         }
-        try testing.expect(found_beginnings);
+        try testing.expect(found_official);
     }
 
     // A second save reuses the fork (the memo - no identity churn).

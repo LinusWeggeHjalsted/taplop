@@ -1,0 +1,85 @@
+Metadata
+file_format_version 5
+name Camp in the Thicket
+hub_uuid 203172be-9081-4f84-82e4-579756341082
+
+Layout 8
+    0
+   D.
+  AE.
+C ...FA
+ ........
+ !.  D
+
+  B
+
+Decorations
+character_code A
+sprite tent
+color_index 0
+footprint 0 1
+
+character_code B
+sprite tree_1
+color_index 4
+footprint 1 2
+layer
+sprite tree_1_canopy
+color_index 2
+layer
+sprite tree_1_moss
+color_index 2
+layer
+sprite tree_1_grass
+color_index 2
+layer
+sprite tree_1_grass_back
+color_index 2
+behind true
+
+character_code C
+sprite tree_3
+color_index 4
+footprint 1 2
+layer
+sprite tree_3_canopy
+color_index 2
+layer
+sprite tree_3_moss
+color_index 2
+layer
+sprite tree_3_grass
+color_index 2
+layer
+sprite tree_3_grass_back
+color_index 2
+behind true
+
+character_code D
+sprite tree_4
+color_index 4
+footprint 1 2
+layer
+sprite tree_4_canopy
+color_index 2
+layer
+sprite tree_4_moss
+color_index 2
+layer
+sprite tree_4_grass
+color_index 2
+layer
+sprite tree_4_grass_back
+color_index 2
+behind true
+
+NPCs
+character_code E
+npc_type gear_upgrader
+
+character_code F
+npc_type dream_guide
+
+Exits
+character_code 0
+mission_uuid f85e784e-8a3f-4fb1-ae9e-a26549a0caba

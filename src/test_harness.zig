@@ -32,6 +32,50 @@ const Settings = types.Settings;
 const WeaponTypeDefinition = types.WeaponTypeDefinition;
 const ColorThemeDefinitions = types.ColorThemeDefinitions;
 
+/// The FIRST shipped official campaign's content-root-relative dir
+/// ("campaigns/<name>"), derived from the embedded map at runtime. The
+/// shipped campaigns are AUTHORED CONTENT that changes as the campaign
+/// is built - tests must never pin their names/uuids/counts (the
+/// derived-expectations convention - AGENTS → Testing discipline + the
+/// utility-skill census lesson). Caller-owned (arena-wrapped tests just
+/// leak into the arena).
+pub fn officialCampaignDir(arena: std.mem.Allocator) []const u8 {
+    const dirs = file_source_mod.officialCampaignDirs(arena);
+    if (dirs.len == 0) @panic("no official campaign shipped - broken build");
+    return dirs[0];
+}
+
+/// The FIRST shipped official campaign's mission dirs
+/// (content-root-relative, "campaigns/<c>/missions/<m>"), derived at
+/// runtime like `officialCampaignDir`. Caller-owned.
+pub fn officialMissionDirs(arena: std.mem.Allocator) []const []const u8 {
+    const missions_dir = std.fmt.allocPrint(arena, "{s}/missions", .{officialCampaignDir(arena)}) catch
+        @panic("failed to build official missions dir path");
+    return file_source_mod.officialMissionDirPathsForCampaign(missions_dir, arena);
+}
+
+/// The FIRST shipped official campaign's FIRST mission dir (a concrete
+/// on-disk mission for editor/open tests), derived at runtime. Caller-owned.
+pub fn officialMissionDir(arena: std.mem.Allocator) []const u8 {
+    const dirs = officialMissionDirs(arena);
+    if (dirs.len == 0) @panic("no official campaign missions shipped - broken build");
+    return dirs[0];
+}
+
+/// A minimal PNG header (signature + IHDR with the given dims, 24 bytes)
+/// for fixtures that need a readable PNG whose dims the custom-asset
+/// machinery resolves - the shipped art is authored content, so PNG-dependent
+/// tests carry their own synthetic bytes (dims derived from what the test
+/// wrote, never from shipped art).
+pub fn pngHeaderBytes(width: u32, height: u32) [24]u8 {
+    var bytes = [_]u8{
+        0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n',
+    } ++ @as([8]u8, @splat(0)) ++ [_]u8{ 0, 0, 0, 0, 0, 0, 0, 0 };
+    std.mem.writeInt(u32, bytes[16..20], width, .big);
+    std.mem.writeInt(u32, bytes[20..24], height, .big);
+    return bytes;
+}
+
 /// The shared session bootstrap. Owns the loaded config arrays in the test's
 /// backing arena; histories are initialized with pointers into those arrays.
 pub const Harness = struct {

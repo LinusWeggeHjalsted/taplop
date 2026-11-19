@@ -1,0 +1,4 @@
+Metadata
+file_format_version 3
+mission_uuid 4014083b-e18a-4909-89a0-bfd9ea38fc26
+name Forest Outskirts

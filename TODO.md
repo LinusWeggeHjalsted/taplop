@@ -70,9 +70,10 @@ Test by running `zig build run` and clicking through.
 - **Campaign editor remainder** - the editor + the in-game world map
   are BUILT (slices 1-5 + the 2c/2d world-map mirror + travel; the
   slice history in DONE.md; the design: DESIGN → Campaigns & the
-  Campaign Editor). What remains: the official campaign's validation
-  replays, the in-game load DROP, the new-game campaign picker +
-  speedrun seed, and the campaign-editor UI file split - see Level
+  Campaign Editor). What remains: the in-game load DROP (the official
+  campaign's validation replays now ship - one per mission), the
+  new-game campaign picker + speedrun seed, and the campaign-editor UI
+  file split - see Level
   Editor → campaign editor below.
 - **Combat-log UI** - render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
@@ -399,9 +400,9 @@ work:
   picker + speedrun seed (all-hubs-discovered start option,
   runtime-derived - see DESIGN → Campaign switching).
   Artist dependency: the official campaign's real world-map background -
-  a procedural PLACEHOLDER ships at
-  data/campaigns/main_campaign/map.png (the ui/panel.png precedent;
-  replace freely, the format is a bare stem + any size, center-anchored).
+  the campaign-in-progress currently ships NONE (no map.png in its
+  dir); drop a real or placeholder PNG at the campaign dir's root (the
+  ui/panel.png precedent; bare stem + any size, center-anchored).
   Slices (rough, re-cut at implementation):
   - [ ] 2. Runtime, the remainder (the identity model, viewing model,
         and the world-map mirror + travel landed - DONE.md, slices
@@ -412,15 +413,9 @@ work:
         hubs on the campaign map (single-select in v1); drag-the-tip
         re-angling of self-loop/dangling stubs (the inspector direction
         field is the v1 path).
-  - [ ] The official campaign's validation replays (the 3f
-        dependency): author real validation playthroughs for
-        main_campaign's four missions (the mission editor's Validate
-        flow) + commit the artifacts - the campaign-level standard
-        requires every mission to carry one, so the shipped campaign
-        itself must comply before the load-drop can land. Honest runs
-        (the author-medal turn targets derive from the replay - a
-        skip-level fast-forward would mint unachievably-fast medals).
-  - [ ] The campaign load DROP (gated on the replays above): any
+  - [ ] The campaign load DROP (the official campaign's validation
+        replays now SHIP - the Polpat swap carries one per mission - so
+        the prerequisite is content-complete): any
         validation finding refuses the IN-GAME campaign load (the
         findings popup + stay on the current screen) - the same
         standard the Validate button certifies (DESIGN → The campaign
@@ -512,7 +507,7 @@ Session log read/write/reconstruct + combat-log projection DONE (see AGENTS
   only covers what a human thought to add. The exhaustive variant walk
   catches the whole class for free.
 - Combat reconstruction test: extend the runToIdle harness to enter
-  beginnings' level and script a few combat actions with ADAPTIVE
+  a shipped mission's level (derived, never pinned) and script a few combat actions with ADAPTIVE
   targeting (read enemy position from live state), then serialize → load →
   reconstruct → expectEqualDeep. Self-referential (no golden values). Guards
   handler PURITY (state,event)→state, not AI determinism. NOTE: runToIdle

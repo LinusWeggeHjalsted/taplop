@@ -15,6 +15,7 @@ const event_push = @import("event_push.zig");
 const state_mod = @import("state.zig");
 const test_harness = @import("test_harness.zig");
 const writers = @import("writers.zig");
+const parser = @import("parser.zig");
 
 const Harness = test_harness.Harness;
 const runToIdle = test_harness.runToIdle;
@@ -38,8 +39,28 @@ test "player_continue: populated PlayerData resumes at current_hub" {
     const start = test_harness.defaultStartingState();
     var history = harness.newHistory(start);
     // Populate PlayerData as if returning from a mid-session exit-to-menu.
-    history.current_state.player_data.current_campaign_uuid = "8ecb3f44-9a3d-497c-95a9-a000b8517b7d";
-    history.current_state.player_data.current_hub = "03aeefda-c68b-4853-b65a-d46edb9790f1";
+    // The campaign + hub are DERIVED from the shipped new_player.txt (the
+    // fixture the real start_new_game reads) - authored content, never
+    // pinned (a campaign swap would otherwise rot this test).
+    var current_campaign_uuid: []const u8 = "";
+    var current_hub: []const u8 = "";
+    {
+        const arena = backing.allocator();
+        const bytes = harness.file_source.readFile(
+            arena,
+            "data/new_player.txt",
+        ) catch @panic("failed to read new_player.txt");
+        const sections = parser.parseConfigFile(
+            bytes,
+            arena,
+            &parser.player_save_sections,
+        ) catch @panic("failed to parse new_player.txt");
+        const info = parser.findSection(sections, "Info").?;
+        current_campaign_uuid = parser.findValue(info.entry_groups[0].pairs, "current_campaign_uuid").?;
+        current_hub = parser.findValue(info.entry_groups[0].pairs, "current_hub").?;
+    }
+    history.current_state.player_data.current_campaign_uuid = current_campaign_uuid;
+    history.current_state.player_data.current_hub = current_hub;
     runToIdle(&history);
 
     event_push.pushPlayerAction(

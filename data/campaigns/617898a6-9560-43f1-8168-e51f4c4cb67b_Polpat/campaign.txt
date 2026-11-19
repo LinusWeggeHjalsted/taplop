@@ -1,0 +1,42 @@
+Metadata
+file_format_version 5
+name Polpat
+campaign_uuid 617898a6-9560-43f1-8168-e51f4c4cb67b
+start_hub b75df84a-745c-45d8-8ddb-09cfd819a253
+
+Hubs
+hub_uuid b75df84a-745c-45d8-8ddb-09cfd819a253
+position 0 0
+
+hub_uuid 714e763e-5478-4b4c-8b87-e1aeecf99b15
+position 118 -210
+
+hub_uuid b03d0fc6-0883-465e-9411-aac4b60cd44f
+position 116 -466
+
+hub_uuid 203172be-9081-4f84-82e4-579756341082
+position 330 -354
+
+hub_uuid be9593a2-bb28-4c94-bfd8-5a5c6453f9ea
+position 328 -620
+
+Missions
+mission_uuid 4014083b-e18a-4909-89a0-bfd9ea38fc26
+start_hub b75df84a-745c-45d8-8ddb-09cfd819a253
+destination_hub 714e763e-5478-4b4c-8b87-e1aeecf99b15
+
+mission_uuid 9ca98902-d4d4-479d-bef3-b1dde5006338
+start_hub 714e763e-5478-4b4c-8b87-e1aeecf99b15
+destination_hub b03d0fc6-0883-465e-9411-aac4b60cd44f
+
+mission_uuid 4490b2d6-60d5-4f92-8503-dc3607651636
+start_hub 714e763e-5478-4b4c-8b87-e1aeecf99b15
+destination_hub 203172be-9081-4f84-82e4-579756341082
+
+mission_uuid f85e784e-8a3f-4fb1-ae9e-a26549a0caba
+start_hub 203172be-9081-4f84-82e4-579756341082
+destination_hub be9593a2-bb28-4c94-bfd8-5a5c6453f9ea
+
+mission_uuid 47b63ab8-cc3b-4175-8a72-27c3806d56a7
+start_hub b03d0fc6-0883-465e-9411-aac4b60cd44f
+destination_hub be9593a2-bb28-4c94-bfd8-5a5c6453f9ea

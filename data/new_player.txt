@@ -3,8 +3,8 @@ file_format_version 3
 
 Info
 player_name New Player
-current_campaign_uuid 8ecb3f44-9a3d-497c-95a9-a000b8517b7d
-current_hub 03aeefda-c68b-4853-b65a-d46edb9790f1
+current_campaign_uuid 617898a6-9560-43f1-8168-e51f4c4cb67b
+current_hub b75df84a-745c-45d8-8ddb-09cfd819a253
 turns 0
 deaths 0
 defeated_enemies 0

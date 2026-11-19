@@ -1,0 +1,82 @@
+Metadata
+file_format_version 2
+color_wheel_index 1
+
+Layout 7
+      3
+   4...=
+  ..11..5
+ 6......
+ ......2
+!.....7
+  ..
+
+Entities
+character_code 1
+name Snake
+sprite snake
+color_index 0
+displays_weapons false
+max_health 20
+defense 0
+speed 1
+aggro_range 3
+main_hand_weapon_name Snake Dagger
+main_hand_weapon_type dagger
+main_hand_weapon_damage 5
+off_hand_weapon_name Snake Dagger
+off_hand_weapon_type dagger
+off_hand_weapon_damage 5
+coat_name Snake Coat
+coat_defense_bonus 1
+coat_health_bonus 3
+slot_4 that_which_rushes
+
+character_code 2
+name Skeleton Soldier
+sprite skeleton_3
+team 2
+color_index 4
+displays_weapons true
+max_health 20
+defense 0
+speed 1
+aggro_range 3
+main_hand_weapon_name Skeleton Sword
+main_hand_weapon_type sword
+main_hand_weapon_damage 5
+off_hand_weapon_name Skeleton Shield
+off_hand_weapon_type shield
+off_hand_weapon_damage 5
+coat_name Skeleton Coat
+coat_defense_bonus 1
+coat_health_bonus 3
+pants_name Skeleton Pants
+pants_pickup_radius_bonus 2
+pants_health_bonus 3
+
+Decorations
+character_code 3
+sprite stone_3
+color_index 5
+footprint 0 0
+
+character_code 4
+sprite stone_1
+color_index 5
+footprint 0 0
+
+character_code 5
+sprite stone_2
+color_index 5
+footprint 0 0
+
+character_code 6
+sprite stone_4
+color_index 5
+footprint 0 0
+
+character_code 7
+sprite stone_5
+color_index 5
+footprint 0 0

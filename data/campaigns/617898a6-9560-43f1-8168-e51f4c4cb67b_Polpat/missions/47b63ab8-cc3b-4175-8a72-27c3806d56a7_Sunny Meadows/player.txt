@@ -1,0 +1,48 @@
+Metadata
+file_format_version 2
+
+MainHandWeapon
+item_name Skeleton Spear
+weapon_type spear
+damage 3
+
+OffHandWeapon
+item_name Frog Sword
+weapon_type sword
+damage 4
+
+Amulet
+item_name Frog Amulet
+spell_damage 4
+
+Coat
+item_name Starter Coat
+armor 0
+health 1
+
+Gloves
+item_name Frog Gloves
+health 2
+damage 1
+
+Pants
+item_name Skeleton Pants
+health 1
+pickup_radius 1
+
+Boots
+item_name Comfortable Boots
+health 1
+speed 1
+
+Inventory
+item_type weapon
+item_name Starter Shield
+weapon_type shield
+damage 3
+slot 95
+
+UtilitySkills
+slot_4 blink
+slot_7 that_which_explodes
+slot_8 replenish

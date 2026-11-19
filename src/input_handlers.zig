@@ -7158,31 +7158,42 @@ test "hub exit click resolves the destination through the campaign edge table (d
     // Two markers for the same mission (both start it - the destination
     // is the campaign EDGE's, resolved through the loaded campaign's
     // edge table by mission uuid; the marker itself carries no edge
-    // data). Static strings are fine: the handler only reads the table.
+    // data). The mission DIR is a real shipped mission, DERIVED from the
+    // embedded map (start_mission loads its files - authored content,
+    // never pinned). Static uuid/name strings are fine: the handler only
+    // reads the table + the mission dir's files.
+    const arena = backing.allocator();
+    const official_mission_dir = @import("test_harness.zig").officialMissionDir(arena);
     const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } };
     const exits = [_]types.MissionExit{
         .{ .mission_uuid = "beginnings-uuid", .position = .{ .x = 1, .y = 0 } },
         .{ .mission_uuid = "beginnings-uuid", .position = .{ .x = 2, .y = 0 } },
     };
     const campaign_missions = [_]types.CampaignMissionEntry{
-        .{ .uuid = "beginnings-uuid", .dir = "campaigns/main_campaign/missions/beginnings", .name = "Beginnings" },
+        .{ .uuid = "beginnings-uuid", .dir = official_mission_dir, .name = "Beginnings" },
     };
+    // campaign.dir is the campaign's dir NAME (the exit-click path builds
+    // "campaigns/{campaign.dir}/missions/{basename}"), so it must carry the
+    // shipped campaign's derived name.
+    const official_campaign_name = std.fs.path.basename(
+        @import("test_harness.zig").officialCampaignDir(arena),
+    );
     const campaign_with_destination = types.Campaign{
         .uuid = "campaign-uuid",
-        .dir = "main_campaign",
+        .dir = official_campaign_name,
         .missions = &campaign_missions,
         .edges = &.{
-            .{ .from = "camp_at_the_crossroads", .destination = "far_camp", .mission_uuid = "beginnings-uuid", .mission_dir = "campaigns/main_campaign/missions/beginnings", .mission_name = "Beginnings", .direction_degrees = 0, .exit_index = 0 },
+            .{ .from = "camp_at_the_crossroads", .destination = "far_camp", .mission_uuid = "beginnings-uuid", .mission_dir = official_mission_dir, .mission_name = "Beginnings", .direction_degrees = 0, .exit_index = 0 },
         },
     };
     // The dangling shape: the edge exists (started) but names no
     // destination - a forward reference, legal by design.
     const campaign_dangling = types.Campaign{
         .uuid = "campaign-uuid",
-        .dir = "main_campaign",
+        .dir = official_campaign_name,
         .missions = &campaign_missions,
         .edges = &.{
-            .{ .from = "camp_at_the_crossroads", .destination = "", .mission_uuid = "beginnings-uuid", .mission_dir = "campaigns/main_campaign/missions/beginnings", .mission_name = "Beginnings", .direction_degrees = 0, .exit_index = 0 },
+            .{ .from = "camp_at_the_crossroads", .destination = "", .mission_uuid = "beginnings-uuid", .mission_dir = official_mission_dir, .mission_name = "Beginnings", .direction_degrees = 0, .exit_index = 0 },
         },
     };
 

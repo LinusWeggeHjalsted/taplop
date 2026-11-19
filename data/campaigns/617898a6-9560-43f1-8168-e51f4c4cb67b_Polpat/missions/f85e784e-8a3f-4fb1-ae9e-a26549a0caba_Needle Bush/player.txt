@@ -1,0 +1,54 @@
+Metadata
+file_format_version 2
+
+MainHandWeapon
+item_name Mushroom Dagger
+weapon_type dagger
+damage 4
+
+OffHandWeapon
+item_name Bear Shield
+weapon_type shield
+damage 4
+
+Amulet
+item_name Mushroom Amulet
+spell_damage 4
+
+Coat
+item_name Bear Coat
+armor 1
+health 2
+
+Gloves
+item_name Bear Gloves
+health 2
+damage 1
+
+Pants
+item_name Skeleton Pants
+health 1
+pickup_radius 1
+
+Boots
+item_name Comfortable Boots
+health 1
+speed 1
+
+Inventory
+item_type weapon
+item_name Starter Sword
+weapon_type sword
+damage 3
+slot 94
+
+item_type weapon
+item_name Skeleton Spear
+weapon_type spear
+damage 3
+slot 95
+
+UtilitySkills
+slot_4 blink
+slot_5 that_which_reaches
+slot_8 replenish

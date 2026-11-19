@@ -407,6 +407,7 @@ working rules).
 - [The load-error revert prunes through the shared timeline trim (extracted + tested)](#the-load-error-revert-prunes-through-the-shared-timeline-trim-extracted--tested)
 - [The record-time legality trap (dev builds)](#the-record-time-legality-trap-dev-builds)
 - [The editor_browser legality gap (campaign-editor ctrl+O trap)](#the-editorbrowser-legality-gap-campaign-editor-ctrlo-trap)
+- [The Polpat swap: the official campaign becomes authored, content-agnostic tests](#the-polpat-swap-the-official-campaign-becomes-authored-content-agnostic-tests)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -23956,3 +23957,80 @@ and level-screen rejections). Reproduced via console drive on the old
 binary (fresh campaign + ctrl+O -> SIGILL with the same message), then
 the same drive on the fixed binary: browser opens (`report ui` shows
 `open_overlays: editor_browser`), clean exit.
+
+## The Polpat swap: the official campaign becomes authored, content-agnostic tests
+
+The shipped official campaign was replaced: `data/campaigns/main_campaign`
+(the Unity-port placeholder content, one hub, four self-loop missions,
+map.png background) is gone; the author's in-progress campaign **Polpat**
+(five hubs, five fully-wired missions, validation replays per mission, no
+background yet) now ships at
+`data/campaigns/617898a6-9560-43f1-8168-e51f4c4cb67b_Polpat` - the exact dir
+name of the author's persistent working copy, by decision:
+
+- **The author loop needs no remint**: the official-origin fork rule
+  (save official content -> fresh identity) keys on "campaign.txt exists
+  ONLY embedded". The persistent working copy makes the campaign
+  persistent-tier too, so the editor saves IN PLACE - same uuids, same dir.
+  The same uuid in both tiers is the designed SILENT SHADOW (persistent
+  wins; no duplicate warnings). Verified by console drive: browser ->
+  campaign row -> editor opens with the original identity, ctrl+S rewrites
+  campaign.txt + hub.txt in place, campaign_save_memos empty, no fork dir.
+- **Replay paths stay honest for free**: keeping the repo dir name
+  IDENTICAL to the working-copy dir means reads recorded against the
+  persistent dir resolve for players through the `data/`-prefix bridge -
+  no path rewriting in future carry cycles. This cycle's carry did rewrite
+  the validation replays' stale `..._Main Campaign` mission_paths (both
+  copies) - they were minted before a campaign rename and resolved nowhere.
+- The one behavioral caveat: while the working copy exists it shadows the
+  embedded one on the author's machine - shipped-repo content is only
+  exercised with the working copy renamed aside (same class as WEB
+  COMPILES != RUNS; an occasional shadow-less smoke run is the habit).
+- Spaces in the mission dir names (`..._Forest Outskirts`) are the code's
+  own convention - `sanitizeMissionNameForPath` replaces only
+  path-breaking characters - kept.
+
+`data/new_player.txt` / `data/autosave.txt` / `data/max_player.txt` repoint
+at Polpat's campaign + start hub. TODO's "official campaign's validation
+replays" slice is content-complete (Polpat ships one per mission) - the
+load DROP's prerequisite is done.
+
+**The test suite went content-agnostic** (the request that motivated the
+work): the campaign is now actively-authored content, and every test that
+pinned it (27 broke on the swap) now derives expectations from the same
+machine truth the game reads - the utility-skill census lesson applied to
+campaign content. New seams:
+
+- `file_source.officialCampaignDirs` (pub) - the campaign-root analog of
+  `officialMissionDirPathsForCampaign`, runtime scan of the embedded map.
+- `test_harness.officialCampaignDir` / `officialMissionDirs` /
+  `officialMissionDir` + `pngHeaderBytes` (the synthetic PNG-header
+  fixture) - the derived handles every real-content test uses.
+
+The rewrite classes: official-list tests assert SHAPE + cross-check
+metadata against the campaign.txt bytes they parse (never names/uuids/
+counts); the projection test asserts the inverse-projection CONTRACT
+(handle mint = hubs+missions, spawn normalization, placement validity,
+dedup) instead of the old campaign's specific graph; the fork tests
+derive the official dir + assert the whole-dir carry as the derived file
+set and reference the hub's own exit placements (not all missions); the
+background tests write synthetic PNGs with known dims (the old ones pinned
+map.png's 1988x1996; Polpat ships no PNGs at all - the persistent/embedded
+same-name dedup coverage moved to listDirFiles' own test); main.zig's
+round-trip derives the exit uuid + edge destination + level count from the
+live state and level files; escape/ui-surface fixtures became self-contained
+scratch campaigns (no shipped-content dependency); autosave derives the
+campaign+hub from new_player.txt itself. Synthetic fixtures that merely
+borrowed old campaign strings as fiction were left as-is.
+
+**Production bug the swap surfaced**: `officialMissionLevelCount`'s
+level-probe buffer was 128 bytes - Polpat's uuid-prefixed mission dirs run
+longer, so `bufPrint` overflowed into the `catch break` and the official
+mission browser silently reported level_count 0. Buffer now 256 with a
+comment naming the failure mode.
+
+Console-drive verification: new game boots into Central Ruins (Polpat's
+start hub), the exit click starts Forest Outskirts (derived 2 levels), the
+editor browser + campaign editor open on the persistent copy, and the
+in-place save leaves exactly one campaign dir with the original uuid.
+All 1088 tests pass; web compiles.

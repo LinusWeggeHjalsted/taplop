@@ -1,4 +1,0 @@
-Metadata
-file_format_version 3
-mission_uuid e30e91c5-7abc-4208-b3b2-3130208a788b
-name Seatown

@@ -1,0 +1,41 @@
+Metadata
+file_format_version 2
+
+MainHandWeapon
+item_name Starter Sword
+weapon_type sword
+damage 3
+
+OffHandWeapon
+item_name Starter Shield
+weapon_type shield
+damage 3
+
+Amulet
+item_name Starter Amulet
+spell_damage 3
+
+Coat
+item_name Starter Coat
+armor 0
+health 1
+
+Gloves
+item_name Starter Gloves
+health 1
+damage 0
+
+Pants
+item_name Starter Pants
+health 1
+pickup_radius 0
+
+Boots
+item_name Starter Boots
+health 1
+speed 0
+
+Inventory
+
+UtilitySkills
+slot_4 replenish

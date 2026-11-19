@@ -22,14 +22,19 @@ test "open_campaign_editor: the official campaign projects into the authored gra
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
 
     var history = harness.newHistory(null);
     runToIdle(&history);
 
+    // The official campaign dir, DERIVED from the embedded map (the
+    // campaign is authored content built in place - the projection test
+    // asserts the INVERSE-PROJECTION CONTRACT, never the content).
+    const official_campaign_dir = test_harness.officialCampaignDir(arena);
     event_push.pushPlayerAction(
         &history.current_state,
         .{ .open_campaign_editor = .{
-            .campaign_dir = "campaigns/main_campaign",
+            .campaign_dir = official_campaign_dir,
         } },
         history.current_arena.allocator(),
     );
@@ -40,66 +45,74 @@ test "open_campaign_editor: the official campaign projects into the authored gra
         return error.TestUnexpectedResult;
     };
 
-    // The framing: the screen transitioned, the campaign installed.
+    // The framing: the screen transitioned, the campaign installed, its
+    // identity + dir carried from the content.
     try testing.expectEqual(state.Screen.campaign_editor, history.current_state.screen);
-    try testing.expectEqualStrings("Main Campaign", editor.campaign_name);
-    try testing.expectEqualStrings("campaigns/main_campaign", editor.campaign_dir);
+    try testing.expect(editor.campaign_name.len > 0);
+    try testing.expectEqualStrings(official_campaign_dir, editor.campaign_dir);
     try testing.expect(editor.campaign_uuid.len > 0);
 
-    // The official campaign: ONE placed hub at the origin, the start hub.
-    try testing.expectEqual(@as(usize, 1), editor.hubs.len);
-    const hub = editor.hubs[0];
-    try testing.expectEqualStrings("Camp at the Crossroads", hub.name);
-    try testing.expectEqual(@as(i32, 0), hub.position.x);
-    try testing.expectEqual(@as(i32, 0), hub.position.y);
-    try testing.expectEqual(@as(?u32, 0), editor.start_hub);
-    try testing.expectEqual(@as(u32, 0), hub.handle);
-    // The grid carried over from hub.txt. The spawn is (0,0) by
-    // construction: loadHub normalizes to spawn-relative coordinates
-    // ('!' -> the origin - the bbox-growth-invariant replay invariant;
-    // EditorLevel's levels load the same way, so the hub grid matches the
-    // editor's own convention).
-    try testing.expect(hub.grid.level_tiles.len > 0);
-    try testing.expectEqual(@as(i32, 0), hub.grid.player_start.x);
-    try testing.expectEqual(@as(i32, 0), hub.grid.player_start.y);
-
-    // Four missions - the four self-loops (destination == the start hub),
-    // authored directions 0/90/180/270, each with an exit placement in
-    // the hub (positions from the layout's digit codes).
-    try testing.expectEqual(@as(usize, 4), editor.missions.len);
-    var seen_directions: [4]bool = .{ false, false, false, false };
-    for (editor.missions) |mission| {
-        try testing.expectEqual(@as(?u32, 0), mission.start);
-        try testing.expectEqual(@as(?u32, 0), mission.destination);
-        try testing.expect(mission.uuid.len > 0);
-        try testing.expect(mission.name.len > 0);
-        try testing.expect(mission.dir.len > 0);
-        // Authored direction = 0/90/180/270 (the auto-spread default would
-        // be 360 * index / 4 = 0/90/180/270 too - the official content
-        // AUTHORS them, so the value is present either way; assert the
-        // class shape, one of the four).
-        const direction = mission.direction orelse return error.TestUnexpectedResult;
-        try testing.expect(direction % 90 == 0 and direction < 360);
-        seen_directions[@intCast(direction / 90)] = true;
+    // The projection contract: at least one placed hub with a resolved
+    // start hub; every hub has a uuid, a grid, and a spawn normalized to
+    // the origin ('!' -> the origin - loadHub's convention, the
+    // bbox-growth-invariant replay invariant; EditorLevel's levels load
+    // the same way).
+    try testing.expect(editor.hubs.len > 0);
+    // The start hub names a placed hub when set (an authored campaign
+    // mid-build may legitimately lack one - a validation finding, not a
+    // load failure).
+    if (editor.start_hub) |start_hub| {
+        var start_hub_resolves = false;
+        for (editor.hubs) |hub| {
+            if (hub.handle == start_hub) start_hub_resolves = true;
+        }
+        try testing.expect(start_hub_resolves);
     }
-    try testing.expect(seen_directions[0] and seen_directions[1] and seen_directions[2] and seen_directions[3]);
-    try testing.expectEqual(@as(usize, 4), hub.grid.exit_placements.len);
-    // Each placement addresses a distinct mission (one marker per mission).
-    for (hub.grid.exit_placements, 0..) |placement, index| {
-        for (hub.grid.exit_placements[index + 1 ..]) |other| {
-            try testing.expect(placement.mission != other.mission);
+
+    for (editor.hubs) |hub| {
+        try testing.expect(hub.uuid.len > 0);
+        try testing.expect(hub.grid.level_tiles.len > 0);
+        try testing.expectEqual(@as(i32, 0), hub.grid.player_start.x);
+        try testing.expectEqual(@as(i32, 0), hub.grid.player_start.y);
+        // Exit placements address distinct missions (one marker per
+        // mission) + valid mission handles (mission handles sit in the
+        // [hubs.len, hubs.len + missions.len) range - the mint order).
+        for (hub.grid.exit_placements, 0..) |placement, index| {
+            try testing.expect(placement.mission >= editor.hubs.len);
+            try testing.expect(
+                placement.mission < editor.hubs.len + editor.missions.len,
+            );
+            for (hub.grid.exit_placements[index + 1 ..]) |other| {
+                try testing.expect(placement.mission != other.mission);
+            }
+        }
+        // The dedup contract: at most one decoration type per distinct
+        // definition, every placement references a minted type.
+        for (hub.grid.decoration_placements) |placement| {
+            try testing.expect(placement.type_id < editor.decoration_types.len);
         }
     }
 
-    // The campaign-shared decoration palette: the official hub's nine
-    // distinct definitions (A-I in the shipped layout) dedup in; the
-    // shipped 'A' (ruin_10) is PLACED TWICE, so ten placements address
-    // nine types.
-    try testing.expectEqual(@as(usize, 9), editor.decoration_types.len);
-    try testing.expectEqual(@as(usize, 10), hub.grid.decoration_placements.len);
+    // Every mission has full identity (uuid + name + dir); wiring is
+    // authored state (a mid-build campaign may carry stubs/orphans -
+    // validation findings, never load failures), so the contract is only
+    // that a set end, when present, names a placed hub.
+    try testing.expect(editor.missions.len > 0);
+    for (editor.missions) |mission| {
+        try testing.expect(mission.uuid.len > 0);
+        try testing.expect(mission.name.len > 0);
+        try testing.expect(mission.dir.len > 0);
+        if (mission.start) |start| try testing.expect(start < editor.hubs.len);
+        if (mission.destination) |destination| try testing.expect(destination < editor.hubs.len);
+        if (mission.direction) |direction| try testing.expect(direction < 360);
+    }
 
-    // Handle mint: 1 hub + 4 missions consumed handles 0-4.
-    try testing.expectEqual(@as(u32, 5), editor.next_handle);
+    // Handle mint: every hub + mission consumed a distinct handle
+    // (next_handle is exactly past them).
+    try testing.expectEqual(
+        @as(u32, @intCast(editor.hubs.len + editor.missions.len)),
+        editor.next_handle,
+    );
 }
 
 test "open_campaign_editor: null dir opens the fresh default campaign" {
@@ -407,11 +420,17 @@ test "campaign editor events: start-hub radio + campaign name + background dims"
     runToIdle(&history);
     try testing.expectEqualStrings("Renamed", history.current_state.campaign_editor.?.campaign_name);
 
-    // The background pick: stem stored + dims resolved against the REAL
-    // embedded content (the official campaign's map.png - the current art
-    // is 1988x1996, the 2x Lanczos upscale for the 4k reference space).
+    // The background pick: stem stored + dims resolved against a PNG the
+    // TEST wrote (the shipped art is authored content - a campaign
+    // mid-build may carry no background at all, so the dims resolution is
+    // exercised against a synthetic PNG with KNOWN dims, never the
+    // shipped map).
     var history_two = harness.newHistory(campaignEditorEventFixtureState());
-    history_two.current_state.campaign_editor.?.campaign_dir = "campaigns/main_campaign";
+    harness.file_source.writeFile(
+        "campaigns/bg_dims_fixture/map.png",
+        &test_harness.pngHeaderBytes(640, 480),
+    ) catch @panic("write fixture map.png");
+    history_two.current_state.campaign_editor.?.campaign_dir = "campaigns/bg_dims_fixture";
     event_push.pushEvents(
         &history_two.current_state,
         &.{.{ .campaign_editor_event = .{ .editor_campaign_set_background = .{
@@ -422,7 +441,7 @@ test "campaign editor events: start-hub radio + campaign name + background dims"
     runToIdle(&history_two);
     const with_background = history_two.current_state.campaign_editor.?;
     try testing.expectEqualStrings("map", with_background.background_stem);
-    try testing.expectEqual(types.Vector2{ .x = 1988, .y = 1996 }, with_background.background_dims.?);
+    try testing.expectEqual(types.Vector2{ .x = 640, .y = 480 }, with_background.background_dims.?);
 }
 
 test "campaign editor background picker: open, pick (stem + dims + close in one undo step), undo restores" {
@@ -432,8 +451,14 @@ test "campaign editor background picker: open, pick (stem + dims + close in one 
 
     var history = harness.newHistory(campaignEditorEventFixtureState());
     runToIdle(&history);
-    // The official campaign's content dir so the real map.png resolves.
-    history.current_state.campaign_editor.?.campaign_dir = "campaigns/main_campaign";
+    // A fixture campaign dir with a synthetic PNG (known dims - the
+    // shipped art is authored content, never pinned; a mid-build
+    // campaign may carry no background at all).
+    harness.file_source.writeFile(
+        "campaigns/bg_pick_fixture/map.png",
+        &test_harness.pngHeaderBytes(640, 480),
+    ) catch @panic("write fixture map.png");
+    history.current_state.campaign_editor.?.campaign_dir = "campaigns/bg_pick_fixture";
 
     event_push.pushEvents(
         &history.current_state,
@@ -455,7 +480,7 @@ test "campaign editor background picker: open, pick (stem + dims + close in one 
     runToIdle(&history);
     const editor = history.current_state.campaign_editor.?;
     try testing.expectEqualStrings("map", editor.background_stem);
-    try testing.expectEqual(types.Vector2{ .x = 1988, .y = 1996 }, editor.background_dims.?);
+    try testing.expectEqual(types.Vector2{ .x = 640, .y = 480 }, editor.background_dims.?);
     // The pick + close are ONE undo step: undo restores the open picker
     // AND the pre-pick background.
     try testing.expect(history.undo(event_handlers.processEvent));
@@ -1486,13 +1511,15 @@ test "saveCampaignEditor: an official-origin campaign forks - fresh identity, wh
 
     // Open the REAL official campaign (embedded content - its files do
     // not exist in the harness's persistent dir, which is what makes it
-    // official-origin).
+    // official-origin). The dir is DERIVED from the embedded map (authored
+    // content - never pinned).
+    const official_campaign_dir = test_harness.officialCampaignDir(arena);
     var history = harness.newHistory(null);
     runToIdle(&history);
     event_push.pushPlayerAction(
         &history.current_state,
         .{ .open_campaign_editor = .{
-            .campaign_dir = "campaigns/main_campaign",
+            .campaign_dir = official_campaign_dir,
         } },
         history.current_arena.allocator(),
     );
@@ -1508,18 +1535,27 @@ test "saveCampaignEditor: an official-origin campaign forks - fresh identity, wh
     const campaign_memo = campaign_editor_io.campaignSaveMemoFor(&history, types.campaign_save_memo_handle).?;
     const fork_dir = try arena.dupe(u8, campaign_memo.dir);
     const fork_uuid = try arena.dupe(u8, campaign_memo.uuid);
-    try testing.expect(!std.mem.eql(u8, fork_dir, "campaigns/main_campaign"));
+    try testing.expect(!std.mem.eql(u8, fork_dir, official_campaign_dir));
     try testing.expect(!std.mem.eql(u8, fork_uuid, official_campaign_uuid));
 
     // No shadow: the official campaign's own dir stays embedded-only.
-    try testing.expect(!file_source_mod.persistentFileExists(&harness.file_source, "campaigns/main_campaign/campaign.txt"));
-
-    // The campaign-root carry: the background PNG re-created under the
-    // fork (a real PNG - the reopen below resolves its dims).
-    try testing.expect(file_source_mod.persistentFileExists(
+    try testing.expect(!file_source_mod.persistentFileExists(
         &harness.file_source,
-        try std.fmt.allocPrint(arena, "{s}/map.png", .{fork_dir}),
+        try std.fmt.allocPrint(arena, "{s}/campaign.txt", .{official_campaign_dir}),
     ));
+
+    // The campaign-root carry, DERIVED: every ROOT FILE of the opened dir
+    // (the embedded map's file set - campaign.txt, background PNGs when
+    // the campaign ships them) is re-created under the fork.
+    const opened_root_files = try harness.file_source.listDirFiles(arena, official_campaign_dir);
+    defer file_source_mod.freeDirFiles(arena, opened_root_files);
+    try testing.expect(opened_root_files.len > 0);
+    for (opened_root_files) |file_name| {
+        try testing.expect(file_source_mod.persistentFileExists(
+            &harness.file_source,
+            try std.fmt.allocPrint(arena, "{s}/{s}", .{ fork_dir, file_name }),
+        ));
+    }
 
     // The hub forked: a fresh uuid + canonical dir, hub.txt under it
     // carrying the minted identity.
@@ -1545,8 +1581,10 @@ test "saveCampaignEditor: an official-origin campaign forks - fresh identity, wh
     // Every mission forked with its files carried: fresh uuids (none of
     // the official mission uuids), levels + player.txt re-created under
     // the minted dirs, and the hub's Exits reference the MINTED uuids.
-    for (opened.missions, 1..) |official_mission, mission_handle| {
-        const mission_memo = campaign_editor_io.campaignSaveMemoFor(&history, @intCast(mission_handle)).?;
+    // Memo lookups ride the mission's own HANDLE (the mint order is
+    // hubs-then-missions - never a hand-counted index).
+    for (opened.missions) |official_mission| {
+        const mission_memo = campaign_editor_io.campaignSaveMemoFor(&history, official_mission.handle).?;
         try testing.expect(!std.mem.eql(u8, mission_memo.uuid, official_mission.uuid));
         const mission_dir_path = try std.fmt.allocPrint(
             arena,
@@ -1566,19 +1604,28 @@ test "saveCampaignEditor: an official-origin campaign forks - fresh identity, wh
             try std.fmt.allocPrint(arena, "{s}/mission.txt", .{mission_dir_path}),
         );
         try testing.expect(std.mem.indexOf(u8, mission_txt, mission_memo.uuid) != null);
+    }
+    // The forked hub.txt references the MINTED uuids of exactly the
+    // missions whose exit markers live in that hub (derived from the
+    // hub's own grid - only its own exits can appear in its file).
+    for (opened.hubs[0].grid.exit_placements) |placement| {
+        const mission_memo = campaign_editor_io.campaignSaveMemoFor(&history, placement.mission).?;
         try testing.expect(std.mem.indexOf(u8, fork_hub_txt, mission_memo.uuid) != null);
     }
 
-    // The fork lists as a LOCAL campaign (the official one does not).
+    // The fork lists as a LOCAL campaign (the official one does not),
+    // carrying the opened campaign's name (derived - the rename-free
+    // fork keeps the authored name).
     const local_campaigns = try harness.file_source.listCampaigns(arena);
     try testing.expectEqual(@as(usize, 1), local_campaigns.len);
     try testing.expectEqualStrings(fork_dir, local_campaigns[0].dir);
-    try testing.expectEqualStrings("Main Campaign", local_campaigns[0].name);
+    try testing.expectEqualStrings(opened.campaign_name, local_campaigns[0].name);
     file_source_mod.freeCampaigns(arena, local_campaigns);
 
-    // The background scan reads the EFFECTIVE dir (the fork): with the
-    // current stem cleared, the carried map.png is the only source that
-    // can offer "map".
+    // The background scan reads the EFFECTIVE dir (the fork): a PNG
+    // written into the fork (the hand-installed / carried-art shape) is
+    // offered with the current stem cleared (the None-independence
+    // property - the old scan hid non-stem PNGs).
     event_push.pushPlayerAction(
         &history.current_state,
         .{ .player_set_campaign_background = .{
@@ -1587,26 +1634,24 @@ test "saveCampaignEditor: an official-origin campaign forks - fresh identity, wh
         history.current_arena.allocator(),
     );
     runToIdle(&history);
+    harness.file_source.writeFile(
+        try std.fmt.allocPrint(arena, "{s}/probe.png", .{fork_dir}),
+        &test_harness.pngHeaderBytes(128, 128),
+    ) catch @panic("write fork probe.png");
     campaign_editor_handlers.rescanCampaignBackgroundStems(&history);
-    try testing.expectEqual(@as(usize, 1), history.session.campaign_background_stems.len);
-    try testing.expectEqualStrings("map", history.session.campaign_background_stems[0]);
-    // Restore the background (the None above was only the scan probe) -
-    // the reopen asserts its dims resolve against the carried PNG.
-    event_push.pushPlayerAction(
-        &history.current_state,
-        .{ .player_set_campaign_background = .{
-            .stem = "map",
-        } },
-        history.current_arena.allocator(),
-    );
-    runToIdle(&history);
+    var probe_offered = false;
+    for (history.session.campaign_background_stems) |stem| {
+        if (std.mem.eql(u8, stem, "probe")) probe_offered = true;
+    }
+    try testing.expect(probe_offered);
 
     // A second save in the session is stable (the memo - no re-fork).
     _ = campaign_editor_io.saveCampaignEditor(&history);
     try testing.expectEqualStrings(fork_dir, campaign_editor_io.campaignSaveMemoFor(&history, types.campaign_save_memo_handle).?.dir);
 
     // The reopen through the ordinary open path: the fork loads with its
-    // minted identity, the full graph, and the carried background's dims.
+    // minted identity + the full graph (hub/mission counts derived from
+    // the opened campaign).
     event_push.pushPlayerAction(
         &history.current_state,
         .{ .open_campaign_editor = .{
@@ -1618,9 +1663,8 @@ test "saveCampaignEditor: an official-origin campaign forks - fresh identity, wh
     const fork_editor = history.current_state.campaign_editor orelse return error.TestUnexpectedResult;
     try testing.expectEqualStrings(fork_uuid, fork_editor.campaign_uuid);
     try testing.expectEqualStrings(fork_dir, fork_editor.campaign_dir);
-    try testing.expectEqual(@as(usize, 1), fork_editor.hubs.len);
-    try testing.expectEqual(@as(usize, 4), fork_editor.missions.len);
-    try testing.expect(fork_editor.background_dims != null);
+    try testing.expectEqual(opened.hubs.len, fork_editor.hubs.len);
+    try testing.expectEqual(opened.missions.len, fork_editor.missions.len);
     try testing.expectEqualStrings(hub_memo_uuid, fork_editor.hubs[0].uuid);
 }
 
@@ -1639,7 +1683,7 @@ test "campaignImportDir: an official-origin campaign imports into the minted for
     event_push.pushPlayerAction(
         &history.current_state,
         .{ .open_campaign_editor = .{
-            .campaign_dir = "campaigns/main_campaign",
+            .campaign_dir = test_harness.officialCampaignDir(arena),
         } },
         history.current_arena.allocator(),
     );
@@ -1648,7 +1692,7 @@ test "campaignImportDir: an official-origin campaign imports into the minted for
         const editor = history.current_state.campaign_editor orelse return error.TestUnexpectedResult;
         const import_dir_one = campaign_editor_io.campaignImportDir(&history, arena, editor);
         const import_dir_two = campaign_editor_io.campaignImportDir(&history, arena, editor);
-        try testing.expect(!std.mem.eql(u8, import_dir_one, "campaigns/main_campaign"));
+        try testing.expect(!std.mem.eql(u8, import_dir_one, editor.campaign_dir));
         try testing.expectEqualStrings(import_dir_one, import_dir_two);
         try testing.expectEqualStrings(import_dir_one, campaign_editor_io.effectiveCampaignDir(&history, editor));
     }
@@ -1682,9 +1726,9 @@ test "campaign editor pickers: an open picker switches to the requested kind; sa
 
     var history = harness.newHistory(campaignEditorEventFixtureState());
     runToIdle(&history);
-    // The official campaign's dir so the background rescan has a dir; the
+    // A real campaign dir (derived) so the background rescan has a dir; the
     // local-mission rescan reads the harness's empty persistent missions/.
-    history.current_state.campaign_editor.?.campaign_dir = "campaigns/main_campaign";
+    history.current_state.campaign_editor.?.campaign_dir = test_harness.officialCampaignDir(backing.allocator());
 
     const input_handlers_mod = @import("input_handlers.zig");
 
@@ -1738,7 +1782,7 @@ test "campaign editor pickers: an open picker switches to the requested kind; sa
     try testing.expect(history.current_state.campaign_editor.?.picker == .background);
 }
 
-test "campaign editor background scan: the embedded campaign dir's PNGs are offered whatever the current stem" {
+test "campaign editor background scan: the campaign dir's PNGs are offered whatever the current stem" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
@@ -1746,25 +1790,38 @@ test "campaign editor background scan: the embedded campaign dir's PNGs are offe
 
     var history = harness.newHistory(campaignEditorEventFixtureState());
     runToIdle(&history);
-    // The official campaign - embedded-only, background set to None (the
-    // fixture's empty stem): the shipped map.png must still be offered
-    // (the old scan offered it only through the current-stem append, so
-    // choosing None hid it).
-    history.current_state.campaign_editor.?.campaign_dir = "campaigns/main_campaign";
-
-    campaign_editor_handlers.rescanCampaignBackgroundStems(&history);
-    try testing.expectEqual(@as(usize, 1), history.session.campaign_background_stems.len);
-    try testing.expectEqualStrings("map", history.session.campaign_background_stems[0]);
-
-    // A persistent PNG in the same dir (the fork/hand-installed shape)
-    // dedupes against the embedded namesake - one row, not two.
+    // A fixture campaign dir with PNGs (the scan's subject): background
+    // set to None (the fixture's empty stem), so the PNGs must still be
+    // offered (the old scan offered them only through the current-stem
+    // append, so choosing None hid them). The shipped art is authored
+    // content - the scan mechanics run against synthetic PNGs with known
+    // stems, never the shipped map.
+    history.current_state.campaign_editor.?.campaign_dir = "campaigns/bg_scan_fixture";
     harness.file_source.writeFile(
-        "campaigns/main_campaign/map.png",
-        "fake png bytes",
-    ) catch @panic("write persistent map.png");
+        "campaigns/bg_scan_fixture/map.png",
+        &test_harness.pngHeaderBytes(640, 480),
+    ) catch @panic("write fixture map.png");
+    harness.file_source.writeFile(
+        "campaigns/bg_scan_fixture/banner.png",
+        &test_harness.pngHeaderBytes(256, 256),
+    ) catch @panic("write fixture banner.png");
+
     campaign_editor_handlers.rescanCampaignBackgroundStems(&history);
-    try testing.expectEqual(@as(usize, 1), history.session.campaign_background_stems.len);
-    try testing.expectEqualStrings("map", history.session.campaign_background_stems[0]);
+    try testing.expectEqual(@as(usize, 2), history.session.campaign_background_stems.len);
+    for (history.session.campaign_background_stems) |stem| {
+        try testing.expect(
+            std.mem.eql(u8, stem, "map") or std.mem.eql(u8, stem, "banner"),
+        );
+    }
+
+    // A later PNG in the same dir appears on rescan (the fork/hand-
+    // installed shape - one row per distinct stem).
+    harness.file_source.writeFile(
+        "campaigns/bg_scan_fixture/extra.png",
+        &test_harness.pngHeaderBytes(128, 128),
+    ) catch @panic("write fixture extra.png");
+    campaign_editor_handlers.rescanCampaignBackgroundStems(&history);
+    try testing.expectEqual(@as(usize, 3), history.session.campaign_background_stems.len);
 }
 
 test "campaign editor: the tool keybind path - the bridged click switches the active tool, undo restores" {
@@ -3093,13 +3150,15 @@ test "saveHubEditor: an official-origin hub save forks (the root carry) and the 
 
     // Open the REAL official campaign (embedded content - its files do
     // not exist in the harness's persistent dir, which is what makes it
-    // official-origin) and drill into its single hub.
+    // official-origin) and drill into its first hub. The dir is DERIVED
+    // (authored content - never pinned).
+    const official_campaign_dir = test_harness.officialCampaignDir(arena);
     var history = harness.newHistory(null);
     runToIdle(&history);
     event_push.pushPlayerAction(
         &history.current_state,
         .{ .open_campaign_editor = .{
-            .campaign_dir = "campaigns/main_campaign",
+            .campaign_dir = official_campaign_dir,
         } },
         history.current_arena.allocator(),
     );
@@ -3122,12 +3181,21 @@ test "saveHubEditor: an official-origin hub save forks (the root carry) and the 
     try testing.expect(history.session.pending_error == null);
     const campaign_memo = campaign_editor_io.campaignSaveMemoFor(&history, types.campaign_save_memo_handle).?;
     const fork_dir = try arena.dupe(u8, campaign_memo.dir);
-    try testing.expect(!std.mem.eql(u8, fork_dir, "campaigns/main_campaign"));
-    // The root carry: the background PNG re-created under the fork.
-    try testing.expect(file_source_mod.persistentFileExists(
-        &harness.file_source,
-        try std.fmt.allocPrint(arena, "{s}/map.png", .{fork_dir}),
-    ));
+    try testing.expect(!std.mem.eql(u8, fork_dir, official_campaign_dir));
+    // The root carry, DERIVED: every root file of the opened dir exists
+    // under the fork (background PNGs included when the campaign ships
+    // them - the map-specific assertion became the derived file set).
+    const opened_root_files = try harness.file_source.listDirFiles(arena, official_campaign_dir);
+    defer file_source_mod.freeDirFiles(arena, opened_root_files);
+    for (opened_root_files) |file_name| {
+        // The hub-save's root carry is MINUS campaign.txt (a carried one
+        // would make the half-born fork list - asserted unlisted below).
+        if (std.mem.eql(u8, file_name, "campaign.txt")) continue;
+        try testing.expect(file_source_mod.persistentFileExists(
+            &harness.file_source,
+            try std.fmt.allocPrint(arena, "{s}/{s}", .{ fork_dir, file_name }),
+        ));
+    }
     const hub_memo = campaign_editor_io.campaignSaveMemoFor(&history, opened.hubs[0].handle).?;
     const hub_uuid = try arena.dupe(u8, hub_memo.uuid);
     const hub_dir = try arena.dupe(u8, hub_memo.dir);
@@ -3136,7 +3204,10 @@ test "saveHubEditor: an official-origin hub save forks (the root carry) and the 
         &harness.file_source,
         try std.fmt.allocPrint(arena, "{s}/hubs/{s}/hub.txt", .{ fork_dir, hub_dir }),
     ));
-    try testing.expect(!file_source_mod.persistentFileExists(&harness.file_source, "campaigns/main_campaign/campaign.txt"));
+    try testing.expect(!file_source_mod.persistentFileExists(
+        &harness.file_source,
+        try std.fmt.allocPrint(arena, "{s}/campaign.txt", .{official_campaign_dir}),
+    ));
     // The fork is unlisted until its first full save (no campaign.txt).
     try testing.expectEqual(@as(usize, 0), (try harness.file_source.listCampaigns(arena)).len);
 
@@ -3160,6 +3231,12 @@ test "saveHubEditor: an official-origin hub save forks (the root carry) and the 
     for (opened.missions) |official_mission| {
         const mission_memo = campaign_editor_io.campaignSaveMemoFor(&history, official_mission.handle).?;
         try testing.expect(!std.mem.eql(u8, mission_memo.uuid, official_mission.uuid));
+    }
+    // The rewritten hub.txt references the MINTED uuids of exactly the
+    // missions whose exit markers live in the drilled hub (derived from
+    // the hub's own grid - only its own exits can appear in its file).
+    for (opened.hubs[0].grid.exit_placements) |placement| {
+        const mission_memo = campaign_editor_io.campaignSaveMemoFor(&history, placement.mission).?;
         try testing.expect(std.mem.indexOf(u8, healed_hub_txt, mission_memo.uuid) != null);
     }
 }
@@ -3172,13 +3249,15 @@ test "mission editor hand-off: the on-disk open adopts the graph name + context;
     const campaign_editor_io = @import("campaign_editor/io.zig");
 
     // The REAL official campaign: its missions are on-disk content the
-    // hand-off loads through the reconstruction cache.
+    // hand-off loads through the reconstruction cache. The dir is DERIVED
+    // (authored content - never pinned).
+    const official_campaign_dir = test_harness.officialCampaignDir(arena);
     var history = harness.newHistory(null);
     runToIdle(&history);
     event_push.pushPlayerAction(
         &history.current_state,
         .{ .open_campaign_editor = .{
-            .campaign_dir = "campaigns/main_campaign",
+            .campaign_dir = official_campaign_dir,
         } },
         history.current_arena.allocator(),
     );
@@ -3196,7 +3275,7 @@ test "mission editor hand-off: the on-disk open adopts the graph name + context;
         arena,
     ) orelse return error.TestUnexpectedResult;
     try testing.expectEqualStrings(
-        "campaigns/main_campaign/missions/beginnings",
+        try std.fmt.allocPrint(arena, "{s}/missions/{s}", .{ official_campaign_dir, mission.dir }),
         mission_path,
     );
 
@@ -3627,13 +3706,15 @@ test "mission editor hand-off save: an official-origin campaign forks at the han
     const mission_io = @import("editor/mission_io.zig");
     const file_source_mod = @import("file_source.zig");
 
-    // Open the REAL official campaign, hand off its first mission.
+    // Open the REAL official campaign (dir derived - authored content,
+    // never pinned), hand off its first mission.
+    const official_campaign_dir = test_harness.officialCampaignDir(arena);
     var history = harness.newHistory(null);
     runToIdle(&history);
     event_push.pushPlayerAction(
         &history.current_state,
         .{ .open_campaign_editor = .{
-            .campaign_dir = "campaigns/main_campaign",
+            .campaign_dir = official_campaign_dir,
         } },
         history.current_arena.allocator(),
     );
@@ -3659,20 +3740,28 @@ test "mission editor hand-off save: an official-origin campaign forks at the han
     runToIdle(&history);
 
     // The hand-off save FORKS: a fresh campaign identity (the official
-    // dir is embedded + read-only), the root carry lands the map under
-    // the fork, and the mission re-homes with a FRESH uuid (the
+    // dir is embedded + read-only), the root carry lands the opened
+    // dir's files under the fork (derived set - background PNGs when
+    // shipped), and the mission re-homes with a FRESH uuid (the
     // official identity never shadows - the campaign-editor fork rule).
     const saved_dir = mission_io.saveEditorMission(&history);
     try testing.expect(saved_dir != null);
     try testing.expect(history.session.pending_error == null);
     const campaign_memo = campaign_editor_io.campaignSaveMemoFor(&history, types.campaign_save_memo_handle).?;
     const fork_dir = try arena.dupe(u8, campaign_memo.dir);
-    try testing.expect(!std.mem.eql(u8, fork_dir, "campaigns/main_campaign"));
+    try testing.expect(!std.mem.eql(u8, fork_dir, official_campaign_dir));
     try testing.expect(std.mem.startsWith(u8, saved_dir.?, fork_dir));
-    try testing.expect(file_source_mod.persistentFileExists(
-        &harness.file_source,
-        try std.fmt.allocPrint(arena, "{s}/map.png", .{fork_dir}),
-    ));
+    const carried_root_files = try harness.file_source.listDirFiles(arena, official_campaign_dir);
+    defer file_source_mod.freeDirFiles(arena, carried_root_files);
+    for (carried_root_files) |file_name| {
+        // The hand-off's root carry is MINUS campaign.txt (a carried one
+        // would make the half-born fork list - asserted invisible below).
+        if (std.mem.eql(u8, file_name, "campaign.txt")) continue;
+        try testing.expect(file_source_mod.persistentFileExists(
+            &harness.file_source,
+            try std.fmt.allocPrint(arena, "{s}/{s}", .{ fork_dir, file_name }),
+        ));
+    }
     const mission_memo = campaign_editor_io.campaignSaveMemoFor(&history, official_mission.handle).?;
     try testing.expect(!std.mem.eql(u8, mission_memo.uuid, official_uuid));
     try testing.expect(std.mem.startsWith(u8, saved_dir.?, try std.fmt.allocPrint(
@@ -3682,7 +3771,10 @@ test "mission editor hand-off save: an official-origin campaign forks at the han
     )));
 
     // The official campaign's own files stay embedded-only.
-    try testing.expect(!file_source_mod.persistentFileExists(&harness.file_source, "campaigns/main_campaign/campaign.txt"));
+    try testing.expect(!file_source_mod.persistentFileExists(
+        &harness.file_source,
+        try std.fmt.allocPrint(arena, "{s}/campaign.txt", .{official_campaign_dir}),
+    ));
 
     // The fork stays INVISIBLE after the hand-off save: no campaign.txt
     // until the full save (the in-place gate on the graph write - a dir

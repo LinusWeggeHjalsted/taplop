@@ -1475,32 +1475,64 @@ test "reconstruction with wait events: undo/redo reversible, no stale waiting" {
     runToIdle(&history1);
     try std.testing.expectEqual(state.Screen.hub, history1.current_state.screen);
 
-    // Find the beginnings mission exit tile in the hub and move the player
-    // onto it (move_player is a player action; landing on the exit pushes
-    // start_mission + end_hub as handler children).
+    // Find a mission exit in the hub whose campaign edge is fully wired
+    // (a destination hub), and move the player onto it (move_player is a
+    // player action; landing on the exit pushes start_mission + end_hub
+    // as handler children). The exit is DERIVED from the loaded state -
+    // the campaign's authored uuids are never pinned (content-agnostic:
+    // the campaign is built in place).
     const hub = &history1.current_state.hub.?;
-    var beginnings_exit: ?types.Vector2 = null;
+    const campaign_graph = history1.current_state.campaign.?;
+    var chosen_exit: ?types.MissionExit = null;
     for (hub.mission_exits) |exit| {
-        if (std.mem.eql(u8, exit.mission_uuid, "436ab363-3588-42ce-950a-0bc813069c3d")) {
-            beginnings_exit = exit.position;
-            break;
+        for (campaign_graph.edges) |edge| {
+            if (std.mem.eql(u8, edge.mission_uuid, exit.mission_uuid) and
+                edge.destination.len > 0)
+            {
+                chosen_exit = exit;
+                break;
+            }
         }
+        if (chosen_exit != null) break;
     }
-    try std.testing.expect(beginnings_exit != null);
+    try std.testing.expect(chosen_exit != null);
     event_push.pushPlayerAction(&history1.current_state, .{ .move_player = .{
-        .destination = beginnings_exit.?,
+        .destination = chosen_exit.?.position,
     } }, history1.current_arena.allocator());
     runToIdle(&history1);
     try std.testing.expectEqual(state.Screen.level, history1.current_state.screen);
     // The exit-click rider + the derived level count: the exit's
     // destination_hub rode start_mission (the campaign edge's to-end), and
-    // the count derived from the mission dir's level files (beginnings has
-    // 3). Reconstruction re-derives both identically (deep-equal below).
+    // the count derived from the mission dir's level files. Both expected
+    // values are DERIVED - the edge destination from the loaded campaign's
+    // edge table, the level count by probing the mission dir's consecutive
+    // level files (the same rule every consumer derives). Reconstruction
+    // re-derives both identically (deep-equal below).
+    var expected_end_hub: []const u8 = "";
+    for (campaign_graph.edges) |edge| {
+        if (std.mem.eql(u8, edge.mission_uuid, chosen_exit.?.mission_uuid)) {
+            expected_end_hub = edge.destination;
+            break;
+        }
+    }
+    try std.testing.expect(expected_end_hub.len > 0);
     try std.testing.expectEqualStrings(
-        "03aeefda-c68b-4853-b65a-d46edb9790f1",
+        expected_end_hub,
         history1.current_state.mission.?.end_hub.?,
     );
-    try std.testing.expectEqual(@as(u32, 3), history1.current_state.mission.?.level_count);
+    var expected_level_count: u32 = 0;
+    while (true) {
+        const level_path = std.fmt.allocPrint(
+            arena,
+            "{s}/level_{d}.txt",
+            .{ history1.current_state.mission.?.path, expected_level_count + 1 },
+        ) catch @panic("failed to build level probe path");
+        const bytes = file_source.readFile(arena, level_path) catch break;
+        arena.free(bytes);
+        expected_level_count += 1;
+    }
+    try std.testing.expect(expected_level_count > 0);
+    try std.testing.expectEqual(expected_level_count, history1.current_state.mission.?.level_count);
 
     // The player starts out of aggro range of every enemy, so skipping the
     // turn alone won't trigger enemy turns (enemies are inactive until
@@ -1661,9 +1693,9 @@ test "replay verification: clean replay through the slow path passes" {
 }
 
 test "ported campaign missions load through the event path" {
-    // The 4 designed missions ported from the Unity project (beginnings,
-    // forest, wetlands, seatown) plus the Camp at the Crossroads hub must
-    // load end-to-end through the event path - not just the parser. Each
+    // The shipped campaign's missions (derived - authored content, so
+    // the mission set is walked, never pinned) must load end-to-end
+    // through the event path - not just the parser. Each
     // start_mission reads mission.txt + level_1.txt via the reconstruction
     // cache, transitions to .level, and instantiates entities. This catches
     // mission/hub wiring + level loading issues that parser-only tests miss.
@@ -1696,25 +1728,27 @@ test "ported campaign missions load through the event path" {
         .hub = null,
     };
 
-    const missions = [_]struct { path: []const u8, min_entities: usize }{
-        .{ .path = "campaigns/main_campaign/missions/beginnings", .min_entities = 2 },
-        .{ .path = "campaigns/main_campaign/missions/forest", .min_entities = 2 },
-        .{ .path = "campaigns/main_campaign/missions/wetlands", .min_entities = 2 },
-        .{ .path = "campaigns/main_campaign/missions/seatown", .min_entities = 2 },
-    };
-    for (missions) |mission| {
+    // The shipped missions, DERIVED from the embedded map (authored
+    // content - the campaign is built in place, so no mission dir is
+    // pinned; the load event path must work for every one of them). The
+    // per-mission invariant: a player + at least one enemy (entity 0 is
+    // the player).
+    const missions = test_harness.officialMissionDirs(arena);
+    try std.testing.expect(missions.len > 0);
+    for (missions) |mission_dir| {
         // Fresh history per mission so each load is independent.
         var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &.{}, &file_source, io);
         runToIdle(&history);
         event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_mission = .{
-            .mission_path = mission.path,
+            .mission_path = mission_dir,
             .end_hub_id = null,
         } } }}, history.current_arena.allocator());
         runToIdle(&history);
         try std.testing.expectEqual(state.Screen.level, history.current_state.screen);
         const level = history.current_state.level orelse return error.expectedLevel;
         // Player (entity 0) + at least one enemy.
-        try std.testing.expect(level.entities.len >= mission.min_entities);
+        try std.testing.expect(level.entities.len >= 2);
+        try std.testing.expectEqual(@as(u8, 0), level.entities[0].team);
         try std.testing.expect(history.current_state.mission != null);
     }
 }
@@ -1811,37 +1845,45 @@ test "editor building blocks: open -> playtest -> end -> close round-trips" {
     var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &.{}, &file_source, io);
     runToIdle(&history);
 
-    // Open the editor on the shipped beginnings mission.
+    // Open the editor on the FIRST shipped mission, DERIVED from the
+    // embedded map (authored content - never pinned).
+    const shipped_mission_path = test_harness.officialMissionDir(arena);
     event_push.pushPlayerAction(&history.current_state, .{ .open_editor = .{
-        .mission_path = "campaigns/main_campaign/missions/beginnings",
+        .mission_path = shipped_mission_path,
     } }, history.current_arena.allocator());
     runToIdle(&history);
 
     // Editor is populated: screen is .editor, mission loaded, levels array
-    // has the mission's level_count entries, mode is .edit. The palette is
-    // reference-based: beginnings' level_1 has one enemy type (Skeleton
-    // Warrior at char '1') placed three times, so entity_types has one entry
-    // and level 0 has three placements referencing it. player_def carries
-    // the player loadout from player.txt.
+    // has one entry per level file (derived by the consecutive-probe rule),
+    // mode is .edit. The palette is reference-based and CONTENT-DERIVED:
+    // placements reference palette types by index (the contract - no
+    // authored type names or counts are pinned). player_def carries the
+    // player loadout from player.txt.
     try std.testing.expectEqual(state.Screen.editor, history.current_state.screen);
     try std.testing.expect(history.current_state.editor != null);
     const editor = &history.current_state.editor.?;
-    try std.testing.expectEqual(@as(usize, 3), editor.levels.len); // beginnings has 3 levels
+    var expected_level_count: u32 = 0;
+    while (true) {
+        const level_path = std.fmt.allocPrint(
+            arena,
+            "{s}/level_{d}.txt",
+            .{ shipped_mission_path, expected_level_count + 1 },
+        ) catch @panic("failed to build level probe path");
+        const bytes = file_source.readFile(arena, level_path) catch break;
+        arena.free(bytes);
+        expected_level_count += 1;
+    }
+    try std.testing.expect(expected_level_count > 0);
+    try std.testing.expectEqual(expected_level_count, editor.levels.len);
     try std.testing.expectEqual(types.EditorMode.edit, editor.mode);
-    try std.testing.expectEqual(@as(usize, 2), editor.entity_types.len); // two enemy types (Skeleton Warrior + Javelineer, mission-wide palette)
-    try std.testing.expectEqual(@as(usize, 3), editor.levels[0].entity_placements.len);
-    try std.testing.expectEqual(@as(u32, 0), editor.levels[0].entity_placements[0].type_id);
-    // Ground items: mission-wide item palette. beginnings level_1 authors one
-    // ground item (Comfortable Boots at 'a' - raw (3,6), (0,2) spawn-relative),
-    // level_2 another (Bamboo Spear) - two distinct types; level 0 has one
-    // placement. Level files author one item per stack (one layout char per
-    // item), so one placement per stack here.
-    try std.testing.expectEqual(@as(usize, 2), editor.item_types.len);
-    try std.testing.expectEqualStrings("Comfortable Boots", editor.item_types[0].id);
-    try std.testing.expectEqualStrings("Bamboo Spear", editor.item_types[1].id);
-    try std.testing.expectEqual(@as(usize, 1), editor.levels[0].item_placements.len);
-    try std.testing.expectEqual(@as(u32, 0), editor.levels[0].item_placements[0].type_id);
-    try std.testing.expectEqual(types.Vector2{ .x = 0, .y = 2 }, editor.levels[0].item_placements[0].position);
+    for (editor.levels) |level| {
+        for (level.entity_placements) |placement| {
+            try std.testing.expect(placement.type_id < editor.entity_types.len);
+        }
+        for (level.item_placements) |placement| {
+            try std.testing.expect(placement.type_id < editor.item_types.len);
+        }
+    }
     try std.testing.expect(std.mem.eql(u8, "Player", editor.player_def.template.name));
     try std.testing.expect(std.mem.eql(u8, "player", editor.player_def.template.sprite));
 
@@ -1852,21 +1894,29 @@ test "editor building blocks: open -> playtest -> end -> close round-trips" {
     runToIdle(&history);
 
     // Gameplay is live: screen is .level, current.level populated (entity 0
-    // = player from player_def at the '!', entities 1-3 = the three skeleton
-    // placements of the palette type), editor dormant with mode .playtest.
+    // = the player from player_def at the '!', the rest = the level's
+    // entity placements - the count derived from the editor's own state),
+    // editor dormant with mode .playtest.
     try std.testing.expectEqual(state.Screen.level, history.current_state.screen);
     try std.testing.expect(history.current_state.level != null);
-    try std.testing.expectEqual(@as(usize, 4), history.current_state.level.?.entities.len); // player + 3 enemies
+    try std.testing.expectEqual(
+        1 + editor.levels[0].entity_placements.len,
+        history.current_state.level.?.entities.len,
+    );
     try std.testing.expect(std.mem.eql(u8, "Player", history.current_state.level.?.entities[0].name));
-    try std.testing.expect(std.mem.eql(u8, "skeleton_1", history.current_state.level.?.entities[1].sprite));
     try std.testing.expectEqual(types.EditorMode.playtest, history.current_state.editor.?.mode);
     try std.testing.expect(history.current_state.editor != null); // dormant, not cleared
-    // The instantiated level carries the ground-item placements as stacks:
-    // one boots stack at the 'a' position.
-    try std.testing.expectEqual(@as(usize, 1), history.current_state.level.?.ground_items.len);
-    try std.testing.expectEqual(types.Vector2{ .x = 0, .y = 2 }, history.current_state.level.?.ground_items[0].position);
-    try std.testing.expectEqual(@as(usize, 1), history.current_state.level.?.ground_items[0].items.len);
-    try std.testing.expectEqualStrings("Comfortable Boots", history.current_state.level.?.ground_items[0].items[0].boots.name);
+    // The instantiated level carries the ground-item placements as stacks,
+    // one per placement position (index-aligned - the instantiate order
+    // follows the placement order).
+    try std.testing.expectEqual(
+        editor.levels[0].item_placements.len,
+        history.current_state.level.?.ground_items.len,
+    );
+    for (history.current_state.level.?.ground_items, editor.levels[0].item_placements) |stack, placement| {
+        try std.testing.expectEqual(placement.position, stack.position);
+        try std.testing.expect(stack.items.len > 0);
+    }
 
     // End the playtest (simulating the player completing the level - in live
     // play, end_level's guard pushes end_playtest; here we push it directly).
@@ -1879,7 +1929,7 @@ test "editor building blocks: open -> playtest -> end -> close round-trips" {
     try std.testing.expect(history.current_state.level == null);
     try std.testing.expect(history.current_state.mission == null);
     try std.testing.expectEqual(types.EditorMode.edit, history.current_state.editor.?.mode);
-    try std.testing.expectEqual(@as(usize, 3), history.current_state.editor.?.levels.len);
+    try std.testing.expectEqual(@as(usize, @intCast(expected_level_count)), history.current_state.editor.?.levels.len);
 
     // Close the editor.
     event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .close_editor }}, history.current_arena.allocator());
@@ -2021,7 +2071,7 @@ test "turn counters: per-mission increments, cumulative skipped in editor mode" 
 
     // Open editor + start playtest on beginnings level 0.
     event_push.pushPlayerAction(&history.current_state, .{ .open_editor = .{
-        .mission_path = "campaigns/main_campaign/missions/beginnings",
+        .mission_path = test_harness.officialMissionDir(arena),
     } }, history.current_arena.allocator());
     runToIdle(&history);
     event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_playtest = .{
@@ -2119,15 +2169,18 @@ test "open_editor with a path from inside the editor swaps missions + bumps worl
     const generation_before = history.current_state.world_generation;
 
     event_push.pushPlayerAction(&history.current_state, .{ .open_editor = .{
-        .mission_path = "campaigns/main_campaign/missions/beginnings",
+        .mission_path = test_harness.officialMissionDir(arena),
     } }, history.current_arena.allocator());
     runToIdle(&history);
 
-    // The swap landed (Beginnings, three levels) and the screen stayed
-    // .editor - but the generation bumped, so the driver's UI reset fires.
+    // The swap landed (the shipped mission's name + derived level count)
+    // and the screen stayed .editor - but the generation bumped, so the
+    // driver's UI reset fires.
     try std.testing.expectEqual(state.Screen.editor, history.current_state.screen);
-    try std.testing.expectEqualStrings("Beginnings", history.current_state.editor.?.mission.name);
-    try std.testing.expectEqual(@as(u32, 3), history.current_state.editor.?.mission.level_count);
+    try std.testing.expect(history.current_state.editor.?.mission.name.len > 0);
+    try std.testing.expect(history.current_state.editor.?.mission.level_count > 0);
+    try std.testing.expect(history.current_state.editor.?.levels.len ==
+        history.current_state.editor.?.mission.level_count);
     try std.testing.expectEqual(generation_before + 1, history.current_state.world_generation);
 }
 

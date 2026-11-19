@@ -31,8 +31,8 @@ const Sha256 = std.crypto.hash.sha2.Sha256;
 pub const ContentHash = [32]u8;
 
 /// Compute the content hash of a mission. `mission_path` is the
-/// content-root-relative folder path (e.g. "campaigns/main_campaign/
-/// missions/beginnings" or "missions/<dir>" for a persistent-dir custom
+/// content-root-relative folder path (e.g. "campaigns/<campaign>/
+/// missions/<mission>" or "missions/<dir>" for a persistent-dir custom
 /// mission). The level
 /// count is DERIVED here (the same rule as everywhere: the largest N with
 /// `{mission_path}/level_{1..N}.txt` all present, probed consecutively from

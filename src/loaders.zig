@@ -5743,7 +5743,16 @@ test "official campaign: a saved persistent copy loads clean (shadow, not duplic
     // campaign-editor save of the official campaign produces). Loading
     // then sees every uuid in BOTH tiers - the persistent copy must
     // shadow the embedded original silently, not warn "duplicate".
-    const hub_dirs = embeddedHubDirs("main_campaign", allocator);
+    // The campaign is DERIVED from the embedded map (authored content -
+    // never pinned to a name).
+    const official_campaign_dirs = file_source_mod.officialCampaignDirs(allocator);
+    defer {
+        for (official_campaign_dirs) |owned_dir| allocator.free(owned_dir);
+        allocator.free(official_campaign_dirs);
+    }
+    const official_campaign_dir = official_campaign_dirs[0];
+    const official_campaign_name = std.fs.path.basename(official_campaign_dir);
+    const hub_dirs = embeddedHubDirs(official_campaign_name, allocator);
     defer allocator.free(hub_dirs);
     for (hub_dirs) |hub_dir| {
         const hub_txt_path = std.fmt.allocPrint(allocator, "{s}/hub.txt", .{hub_dir}) catch
@@ -5754,7 +5763,10 @@ test "official campaign: a saved persistent copy loads clean (shadow, not duplic
         defer allocator.free(hub_txt);
         file_source.writeFile(hub_txt_path, hub_txt) catch @panic("failed to write the persistent hub copy");
     }
-    const mission_dirs = file_source_mod.officialMissionDirPathsForCampaign("campaigns/main_campaign/missions", allocator);
+    const official_missions_dir = std.fmt.allocPrint(allocator, "{s}/missions", .{official_campaign_dir}) catch
+        @panic("failed to build official missions dir path");
+    defer allocator.free(official_missions_dir);
+    const mission_dirs = file_source_mod.officialMissionDirPathsForCampaign(official_missions_dir, allocator);
     defer {
         for (mission_dirs) |mission_dir| allocator.free(mission_dir);
         allocator.free(mission_dirs);
@@ -5769,12 +5781,15 @@ test "official campaign: a saved persistent copy loads clean (shadow, not duplic
         file_source.writeFile(mission_txt_path, mission_txt) catch @panic("failed to write the persistent mission copy");
     }
 
-    const campaign_txt = file_source.readFile(allocator, "campaigns/main_campaign/campaign.txt") catch
+    const campaign_txt_path = std.fmt.allocPrint(allocator, "{s}/campaign.txt", .{official_campaign_dir}) catch
+        @panic("failed to build campaign.txt path");
+    defer allocator.free(campaign_txt_path);
+    const campaign_txt = file_source.readFile(allocator, campaign_txt_path) catch
         @panic("failed to read the embedded campaign.txt");
     defer allocator.free(campaign_txt);
     const sections = try parseConfigFile(campaign_txt, allocator, &campaign_sections);
     defer freeParsedSections(sections, allocator);
-    var campaign = try loadCampaign(sections, "campaigns/main_campaign", allocator, null);
+    var campaign = try loadCampaign(sections, official_campaign_dir, allocator, null);
     defer freeCampaign(campaign, allocator);
 
     var warnings: std.ArrayList([]const u8) = .empty;
@@ -7187,7 +7202,7 @@ test "data/max_player.txt parses: max gear equipped, weapons in inventory, all s
     try std.testing.expectEqual(@as(usize, 1), player_data.discovered_hubs.len);
     try std.testing.expectEqual(@as(usize, 1), player_data.discovered_hubs[0].hub_uuids.len);
     try std.testing.expectEqualStrings(
-        "03aeefda-c68b-4853-b65a-d46edb9790f1",
+        "b75df84a-745c-45d8-8ddb-09cfd819a253",
         player_data.discovered_hubs[0].hub_uuids[0],
     );
 
@@ -7205,29 +7220,35 @@ test "data/max_player.txt parses: max gear equipped, weapons in inventory, all s
     });
 }
 
-test "the shipped beginnings player.txt loads in the save-shaped format" {
+test "the shipped missions' player.txt files load in the save-shaped format" {
     const allocator = std.testing.allocator;
     var threaded_io = std.Io.Threaded.init(allocator, .{});
     defer threaded_io.deinit();
     const io = threaded_io.io();
     const file_source = FileSource.init(io, std.Io.Dir.cwd());
 
-    const parsed = try parseConfigFileFromPath(
-        &file_source,
-        "campaigns/main_campaign/missions/beginnings/player.txt",
-        allocator,
-        &player_loadout_sections,
-    );
-    defer allocator.free(parsed.raw_text);
-    defer freeParsedSections(parsed.sections, allocator);
+    // EVERY shipped mission's player.txt (derived - authored content, so
+    // no mission is pinned): each parses clean in the loadout format and
+    // carries a main-hand weapon (a playable mission needs one). The
+    // exhaustiveness property beats pinning one mission's authored gear,
+    // which churns as the campaign is built. The dir derivation rides a
+    // throwaway arena (the harness helpers assume arena ownership).
+    var dirs_arena = std.heap.ArenaAllocator.init(allocator);
+    defer dirs_arena.deinit();
+    const mission_dirs = @import("test_harness.zig").officialMissionDirs(dirs_arena.allocator());
+    try std.testing.expect(mission_dirs.len > 0);
+    for (mission_dirs) |mission_dir| {
+        const player_txt_path = try std.fmt.allocPrint(allocator, "{s}/player.txt", .{mission_dir});
+        defer allocator.free(player_txt_path);
+        const parsed = try parseConfigFileFromPath(&file_source, player_txt_path, allocator, &player_loadout_sections);
+        defer allocator.free(parsed.raw_text);
+        defer freeParsedSections(parsed.sections, allocator);
 
-    const template = try loadPlayerLoadout(parsed.sections, allocator, "player.txt", null);
-    try std.testing.expectEqualStrings("Player", template.name);
-    try std.testing.expectEqualStrings("Starter Sword", template.main_hand_weapon.?.name);
-    try std.testing.expectEqual(@as(u32, 3), template.main_hand_weapon.?.weapon_damage);
-    try std.testing.expectEqualStrings("Starter Shield", template.off_hand_weapon.?.name);
-    try std.testing.expectEqualStrings("Starter Amulet", template.amulet.?.name);
-    try std.testing.expectEqual(types.SkillId.replenish, template.equipped_utility_skills[0]);
+        // loadPlayerLoadout borrows into the parsed sections - no separate
+        // free (the sections free reclaims it).
+        const template = try loadPlayerLoadout(parsed.sections, allocator, "player.txt", null);
+        try std.testing.expect(template.main_hand_weapon != null);
+    }
 }
 
 test "loadLevel parses per-role gradient overrides, absent keys auto-derive" {

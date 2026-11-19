@@ -250,10 +250,6 @@ test "campaign browser: opens from the map, picks view (cache), the active pick 
     ));
     runToIdle(&history);
 
-    // The player is in the OFFICIAL campaign (the shipped uuid) - the
-    // active-campaign pick below must clear the cache.
-    history.current_state.player_data.current_campaign_uuid = "8ecb3f44-9a3d-497c-95a9-a000b8517b7d";
-
     // A local campaign to view: campaign.txt + a resolvable hub dir (the
     // scan-side fixtures the graph derivation reads).
     history.file_source.writeFile(
@@ -277,6 +273,11 @@ test "campaign browser: opens from the map, picks view (cache), the active pick 
     try testing.expectEqual(@as(usize, 1), history.session.campaign_browser_local.len);
     try testing.expectEqualStrings("Zeta Lands", history.session.campaign_browser_local[0].name);
     try testing.expect(history.session.campaign_browser_official.len > 0);
+
+    // The player is in the OFFICIAL campaign - the shipped uuid, DERIVED
+    // from the official tab's own scan (authored content, never pinned) -
+    // so the active-campaign pick below must clear the cache.
+    history.current_state.player_data.current_campaign_uuid = history.session.campaign_browser_official[0].uuid;
 
     // The OFFICIAL tab's row (the main campaign = the ACTIVE campaign):
     // the pick CLEARS the cache (the map falls back to the live GameState
