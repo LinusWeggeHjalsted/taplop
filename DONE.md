@@ -406,6 +406,7 @@ working rules).
 - [init deep-copies the starting state (initial_arena was designed, never wired)](#init-deep-copies-the-starting-state-initialarena-was-designed-never-wired)
 - [The load-error revert prunes through the shared timeline trim (extracted + tested)](#the-load-error-revert-prunes-through-the-shared-timeline-trim-extracted--tested)
 - [The record-time legality trap (dev builds)](#the-record-time-legality-trap-dev-builds)
+- [The editor_browser legality gap (campaign-editor ctrl+O trap)](#the-editorbrowser-legality-gap-campaign-editor-ctrlo-trap)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -23935,3 +23936,23 @@ validator gap to fix first. AGENTS's drive section also gained the
 observed environment note: close running instances before console
 smoke-driving (an uncapped-fps instance starves a second exe's
 initWindow indefinitely).
+
+## The editor_browser legality gap (campaign-editor ctrl+O trap)
+
+The record-time legality trap caught its first LEGAL flow, exactly the
+promotion-blocking class TODO warns about: opening the editor browser on
+the campaign editor (ctrl+O or the options-menu Open button) trapped
+with `player_toggle_ui_surface .editor_browser outside its screens`.
+Root cause: the validator's screen list (`surfaceToggleLegal`,
+state.zig) never learned the campaign/hub editor screens - it allowed
+only main_menu + editor, while the live input gate
+(`editorBrowserReachableScreen`, input_handlers.zig) accepts all three
+editor contexts + main menu. The fix mirrors the live gate exactly,
+including the session-present checks (editor != null on the editor
+screen, campaign_editor != null on campaign/hub editor screens) -
+`surfaceToggleLegal` gained a `self` parameter for them. A
+suite test pins the full mirror (every legal screen + the null-session
+and level-screen rejections). Reproduced via console drive on the old
+binary (fresh campaign + ctrl+O -> SIGILL with the same message), then
+the same drive on the fixed binary: browser opens (`report ui` shows
+`open_overlays: editor_browser`), clean exit.

@@ -2382,7 +2382,7 @@ pub const GameStateHistory = struct {
                     // gates: the in_game arms run at level/hub, the modal
                     // buttons render in their contexts, escape works everywhere).
                     .player_toggle_ui_surface => |toggle| {
-                        if (!surfaceToggleLegal(self.current_state.screen, toggle.surface)) {
+                        if (!surfaceToggleLegal(self, self.current_state.screen, toggle.surface)) {
                             var buf: [128]u8 = undefined;
                             const msg = std.fmt.bufPrint(
                                 &buf,
@@ -3212,14 +3212,23 @@ pub const GameStateHistory = struct {
     /// the editor browser is reachable on editor + main menu, and the
     /// options menu / settings are reachable from every screen via the
     /// options menu). See DESIGN → UI Framework → UI state classification.
-    fn surfaceToggleLegal(screen: Screen, surface: types.UiSurfaceId) bool {
+    fn surfaceToggleLegal(self: *GameStateHistory, screen: Screen, surface: types.UiSurfaceId) bool {
         return switch (surface) {
             .options_menu, .settings => true,
             .credits, .load_save_menu => screen == .main_menu,
             // The tips overlay opens from the global top bar, which draws
             // on every screen.
             .tips => true,
-            .editor_browser => screen == .main_menu or screen == .editor,
+            // Mirrors the live gate `editorBrowserReachableScreen`: the
+            // browser opens from the main menu and every editor context
+            // (the mission, campaign, and hub editors), each with its
+            // session present.
+            .editor_browser => switch (screen) {
+                .main_menu => true,
+                .editor => self.current_state.editor != null,
+                .campaign_editor, .hub_editor => self.current_state.campaign_editor != null,
+                else => false,
+            },
             // The campaign browser opens from the world map (its top-left
             // campaign button), which is itself level/hub-gated.
             .campaign_browser => screen == .level or screen == .hub,
@@ -4164,6 +4173,41 @@ test "replay validation: skill target legality (getValidTargets)" {
     try std.testing.expect(!history.skillTargetLegal(.slice, null));
     // Non-targeting skill (Spinblade) accepts any target (ignored).
     try std.testing.expect(history.skillTargetLegal(.spinblade, null));
+}
+
+test "replay validation: editor_browser toggle legality mirrors the live gate" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = test_harness.Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+
+    // The validator's screen set must mirror the live input gate
+    // (`editorBrowserReachableScreen`): the browser opens from the main
+    // menu and every editor context. A stale screen list here is the
+    // record-time legality trap firing on a LEGAL flow (the campaign
+    // editor's ctrl+O crash).
+    history.current_state.screen = .main_menu;
+    try std.testing.expect(history.surfaceToggleLegal(.main_menu, .editor_browser));
+
+    history.current_state.screen = .editor;
+    history.current_state.editor = .{};
+    try std.testing.expect(history.surfaceToggleLegal(.editor, .editor_browser));
+    history.current_state.editor = null;
+    try std.testing.expect(!history.surfaceToggleLegal(.editor, .editor_browser));
+
+    history.current_state.screen = .campaign_editor;
+    history.current_state.campaign_editor = .{};
+    try std.testing.expect(history.surfaceToggleLegal(.campaign_editor, .editor_browser));
+    // The hub editor drill-in rides the campaign editor session.
+    history.current_state.screen = .hub_editor;
+    try std.testing.expect(history.surfaceToggleLegal(.hub_editor, .editor_browser));
+    history.current_state.campaign_editor = null;
+    try std.testing.expect(!history.surfaceToggleLegal(.campaign_editor, .editor_browser));
+    try std.testing.expect(!history.surfaceToggleLegal(.hub_editor, .editor_browser));
+
+    // A screen the browser never opens on stays illegal.
+    history.current_state.screen = .level;
+    try std.testing.expect(!history.surfaceToggleLegal(.level, .editor_browser));
 }
 
 test "isPlayerAction: whitelist accepts player-pushable events" {
