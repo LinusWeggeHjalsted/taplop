@@ -133,6 +133,17 @@ pub const MetaEvent = union(enum) {
     // DESIGN → Architecture.
     end_level: struct {
         continuation: LevelExitContinuation = .default,
+        // The VALIDATION restart's resolved target (the mission the run
+        // re-enters): present ONLY on a validation-run restart, where the
+        // payload doubles as the router - a fresh-state replay of a
+        // validation-replay slice meets this event with no mission loaded,
+        // so the validation-vs-campaign routing and the re-entry's
+        // start_validation target both read the payload, never live state
+        // (the resolved-payload rule). Null on campaign restarts (state-
+        // routed, the mission always loaded live) and every other
+        // continuation; null on a validation restart recorded by an older
+        // build falls back to the loaded mission (the live/old-log shape).
+        mission_path: ?[]const u8 = null,
         // The map-acting override for `.exit_mission`: suppress the exit's
         // own hub return (end_mission -> start_hub) - the world-map
         // travel / mission-entry cascades queue their REAL arrival
@@ -1888,8 +1899,18 @@ pub const PlayerInputEvent = union(enum) {
     // the handler pushes end_level with the default continuation.
     player_skip_level: void,
     // Options-menu "restart mission" button. Handler pushes
-    // end_level{.restart_mission}.
-    player_restart_mission: void,
+    // end_level{.restart_mission}. Carries the mission's resolved path
+    // ONLY for a validation run (the resolved-payload rule): a
+    // validation-replay slice whose final attempt began at this click
+    // replays from a FRESH state - no mission loaded - so the click must
+    // carry what its cascade needs (the path flows click ->
+    // end_level{.mission_path} -> start_validation; the payload's
+    // presence is also what routes the end_level to the validation arm
+    // on that missionless state). Campaign restarts carry null - the
+    // campaign restart is state-routed and never enters a slice.
+    player_restart_mission: struct {
+        mission_path: ?[]const u8 = null,
+    },
     // Options-menu "exit mission" button. Handler pushes
     // end_level{.exit_mission}.
     player_exit_mission: void,

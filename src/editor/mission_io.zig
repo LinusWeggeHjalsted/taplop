@@ -493,15 +493,31 @@ pub fn writeValidationReplay(history: *GameStateHistory) void {
     const mission = if (current.mission) |*some_mission| some_mission else return;
     const scratch = history.current_arena.allocator();
 
-    // The slice start: the LAST player_start_validation in the recorded
-    // stream. Every attempt begins with that orchestrator (the edit-mode
-    // button or the restart re-entry), so the last one is the final
-    // attempt's start - restarts and failed attempts fall outside the
-    // slice by construction.
-    var slice_start: ?usize = null;
+    // The attempt boundary: the LAST start_validation in the recorded
+    // stream. Every attempt begins with one (the Validate click's child or
+    // the restart re-entry's child - the machinery event is the boundary
+    // both ways, which is what lets handlers push it with no
+    // orchestrator-shaped exception). The slice START then backs up to the
+    // nearest preceding player action - the genuine initiator (the Validate
+    // click, or the restart click that began this attempt): a fresh-state
+    // replay must seed a player action at depth 0, so the slice begins
+    // where the player actually acted. Restarted and failed attempts fall
+    // outside the slice by construction (only the final attempt's
+    // boundary is taken).
+    var boundary_index: ?usize = null;
     for (history.event_history.items, 0..) |event, index| {
-        if (event == .player_input_event and event.player_input_event == .player_start_validation) {
-            slice_start = index;
+        if (event == .meta_event and event.meta_event == .start_validation) {
+            boundary_index = index;
+        }
+    }
+    const boundary = boundary_index orelse return; // unreachable live; nothing to write
+    var slice_start: ?usize = null;
+    var scan = boundary;
+    while (scan > 0) {
+        scan -= 1;
+        if (history.event_history.items[scan] == .player_input_event) {
+            slice_start = scan;
+            break;
         }
     }
     const start = slice_start orelse return; // unreachable live; nothing to write

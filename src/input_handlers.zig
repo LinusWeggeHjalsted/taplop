@@ -1823,7 +1823,15 @@ pub fn handleAnytimeInput(
             // or end_hub + open_main_menu) as children. See events.zig.
             .restart_mission => {
                 if (current.screen != .level) return;
-                pushPlayerActionAndDrain(history, .player_restart_mission);
+                const mission = current.mission orelse return;
+                pushPlayerActionAndDrain(history, .{
+                    .player_restart_mission = .{
+                        // The validation run's restart carries the resolved
+                        // path (the fresh-state slice-replay contract - see
+                        // events.zig); a campaign restart stays state-routed.
+                        .mission_path = if (mission.validation_run) mission.path else null,
+                    },
+                });
             },
             .exit_mission => {
                 if (current.screen != .level) return;

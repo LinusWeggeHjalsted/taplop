@@ -402,6 +402,7 @@ working rules).
 - [Savefile resume by campaign uuid (drop `current_campaign`)](#savefile-resume-by-campaign-uuid-drop-currentcampaign)
 - [Handler-pushed orchestrator strands on the replay stack (the undo-mangle root cause)](#handler-pushed-orchestrator-strands-on-the-replay-stack-the-undo-mangle-root-cause)
 - [The orchestrator convention is machine-enforced at the push funnels](#the-orchestrator-convention-is-machine-enforced-at-the-push-funnels)
+- [The validate-restart exception dissolved (the slice keys on the machinery boundary)](#the-validate-restart-exception-dissolved-the-slice-keys-on-the-machinery-boundary)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -23838,3 +23839,42 @@ quietly:
   the no-expectPanics convention; the thin panic layer rides it.
 - DESIGN → Architecture records the settle (the machine-enforced
   funnels); AGENTS's key-files line points at it. 1083 tests green.
+
+## The validate-restart exception dissolved (the slice keys on the machinery boundary)
+
+The follow-up to the funnel gate: the ONE sanctioned handler-side
+`pushPlayerAction` (meta.zig's restart_mission re-entry) is gone - the
+push funnels are now exception-free, input-origin only.
+
+- The design move (the author's): split the validation-replay slice's
+  BOUNDARY from its START. The boundary is the machinery
+  `start_validation` (every attempt begins with one - the Validate
+  click's child or the restart re-entry's child, which is what lets a
+  HANDLER push it); the slice START backs up to the nearest preceding
+  player action - the genuine initiator (the Validate click, or the
+  restart click). The fresh-state replay seeds that player action and
+  streams the machinery after it; no fabricated player events anywhere.
+- The resolved-payload rule carries the seam: the restart click
+  (`player_restart_mission`) fills `mission_path` ONLY for a validation
+  run, and the payload's PRESENCE is what routes the missionless
+  fresh-state replay's `end_level{restart}` to the validation arm (the
+  state gate `mission.validation_run` can't work there - no mission
+  loaded). Campaign restarts carry null and stay state-routed; older
+  logs (null payload) fall back to the loaded mission.
+- `end_level` gained the optional `mission_path`; the restart arm
+  pushes `start_validation` via the machinery funnel; the extractor
+  (mission_io) rekeyed; the artifact-format bracket (validation_replay)
+  accepts either initiating click as the first event; the restart
+  click's legality arm allows the cross-session no-run shape (the
+  player_start_validation bar's rationale).
+- Back-compat: old artifacts (first event the Validate click) load and
+  replay unchanged - their slices predate the restart-click shape.
+- The regression test drives the whole shape: validation run -> restart
+  click mid-run -> machinery re-entry -> completion; asserts the slice
+  starts at the restart click with its resolved path, the
+  artifact-format gate accepts it, and the fresh-state reconstruction
+  (no mission loaded at the click) rebuilds the attempt with the
+  derived turn count and lands on the main menu. 1084 tests green.
+- DESIGN updated: the slice rule (boundary/start split), the exit
+  guard's validate-restart prose, and the Architecture funnel bullet
+  (zero handler-side uses).

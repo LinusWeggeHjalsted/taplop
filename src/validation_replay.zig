@@ -39,8 +39,10 @@ pub const ValidationReplay = struct {
 
 pub const ValidationReplayError = session_log.SessionLogError || error{
     /// The event stream is not a validation bracket: too short, the first
-    /// event is not `player_start_validation`, or the last is not
-    /// `end_validation{success=true}`.
+    /// event is not the initiating player action (`player_start_validation`
+    /// for a first attempt's slice, `player_restart_mission` for a
+    /// restarted final attempt - both carry the mission path), or the last
+    /// is not `end_validation{success=true}`.
     NotAValidationReplay,
     /// Metadata lacks `mission_uuid` / `content_hash`.
     MissingValidationMetadata,
@@ -48,10 +50,11 @@ pub const ValidationReplayError = session_log.SessionLogError || error{
 
 /// Load + structurally check a validation replay from config sections (the
 /// loadEventLog shape: the caller parses the file and owns the sections).
-/// The bracket checks encode the file's contract - first event the
-/// seedable orchestrator, last event the successful bracket close - so a
-/// file that fails here is not a validation replay, whatever its Metadata
-/// claims.
+/// The bracket checks encode the file's contract - first event a seedable
+/// initiating player action (the Validate click or the restart click - see
+/// the slice rule in mission_io's extractor), last event the successful
+/// bracket close - so a file that fails here is not a validation replay,
+/// whatever its Metadata claims.
 pub fn loadValidationReplay(
     sections: []const parser.Section,
     allocator: std.mem.Allocator,
@@ -60,9 +63,14 @@ pub fn loadValidationReplay(
 
     if (log.events.len < 2) return error.NotAValidationReplay;
     const first = log.events[0];
-    if (first != .player_input_event or first.player_input_event != .player_start_validation) {
-        return error.NotAValidationReplay;
-    }
+    const first_is_initiator = switch (first) {
+        .player_input_event => |pi| switch (pi) {
+            .player_start_validation, .player_restart_mission => true,
+            else => false,
+        },
+        else => false,
+    };
+    if (!first_is_initiator) return error.NotAValidationReplay;
     const last = log.events[log.events.len - 1];
     if (last != .meta_event) return error.NotAValidationReplay;
     switch (last.meta_event) {
@@ -145,9 +153,10 @@ pub fn checkMissionValidationArtifact(
 }
 
 /// The first mission_path any event carries - the artifact's recorded
-/// mission dir (the slice starts at the seedable player_start_validation
-/// orchestrator, which always carries it; null for a hand-crafted slice
-/// with none, which then skips the rebase and replays as recorded).
+/// mission dir (the slice starts at the initiating player action - the
+/// Validate click or the restart click, both of which carry it; null for a
+/// hand-crafted slice with none, which then skips the rebase and replays as
+/// recorded).
 fn recordedMissionDir(events: []const Event) ?[]const u8 {
     // The event unions have outgrown the default 1000-branch comptime
     // budget - the inline category/variant/payload-field walks evaluate
@@ -349,10 +358,9 @@ pub fn revalidateMission(
     }
 
     // The checking replay: the recorded run against the current files.
-    // Empty stack - the slice starts at the seedable
-    // player_start_validation orchestrator (the cross-session shape; see
-    // the validation crown test), so the boot open_main_menu is
-    // deliberately NOT seeded.
+    // Empty stack - the slice starts at the seedable initiating player
+    // action (the cross-session shape; see the validation crown test), so
+    // the boot open_main_menu is deliberately NOT seeded.
     // The recorded paths ride the artifact's creation-time dirs - the
     // campaign root (or the mission dir itself) may have RENAMED since
     // (the cosmetic dir tidy made renames routine, and the artifact's

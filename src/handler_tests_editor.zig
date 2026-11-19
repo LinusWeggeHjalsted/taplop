@@ -6541,6 +6541,128 @@ test "a validation run's slice reconstructs from a fresh state (no editor - the 
     try testing.expect(history3.current_state.mission == null);
 }
 
+test "a restarted validation run's slice starts at the restart click and reconstructs from a fresh state" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    try writeValidationFixtureMission(&harness);
+
+    // The restart shape end to end: first attempt begins at the Validate
+    // click, dies mid-run (the restart click - a genuine player action
+    // carrying the resolved mission path), and the re-entry rides the
+    // start_validation MACHINERY boundary (no handler-pushed orchestrator
+    // anywhere). The final attempt's slice must then START at the restart
+    // click (the extractor backs up from the last start_validation to the
+    // nearest player action) and reconstruct from a fresh state - the
+    // resolved-payload rule is what makes the click replayable with no
+    // mission loaded.
+    var history = harness.newHistory(null);
+    runToIdle(&history);
+    event_push.pushPlayerAction(
+        &history.current_state,
+        .{ .player_start_validation = .{
+            .mission_path = validation_fixture_path,
+        } },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.screen == .level);
+
+    // Mid-run, the options-menu Restart click (the real input shape).
+    event_push.pushPlayerAction(
+        &history.current_state,
+        .{ .player_restart_mission = .{
+            .mission_path = validation_fixture_path,
+        } },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    // The re-entry: back at level 1, a fresh validation attempt - pushed
+    // as machinery, so the recorded stream between the click and the new
+    // attempt carries no fabricated player action.
+    try testing.expect(history.current_state.screen == .level);
+    try testing.expectEqualStrings("Fixture Level One", history.current_state.level.?.name);
+    try testing.expectEqual(@as(u32, 1), history.current_state.mission.?.current_level_index);
+
+    // Complete the restarted attempt exactly as the cross-session test
+    // above: skip, step onto the level end, skip, step onto level 2's end.
+    event_push.pushPlayerAction(&history.current_state, .{ .player_skip_move = .{} }, history.current_arena.allocator());
+    runToIdle(&history);
+    event_push.pushPlayerAction(&history.current_state, .{ .player_move_action = .{
+        .destination = .{ .x = 1, .y = 0 },
+    } }, history.current_arena.allocator());
+    runToIdle(&history);
+    try testing.expectEqualStrings("Fixture Level Two", history.current_state.level.?.name);
+    event_push.pushPlayerAction(&history.current_state, .{ .player_skip_move = .{} }, history.current_arena.allocator());
+    runToIdle(&history);
+    event_push.pushPlayerAction(&history.current_state, .{ .player_move_action = .{
+        .destination = .{ .x = 1, .y = 0 },
+    } }, history.current_arena.allocator());
+    runToIdle(&history);
+    try testing.expect(history.current_state.screen == .main_menu);
+
+    // The extractor rule: the boundary is the LAST start_validation; the
+    // slice start backs up to the nearest preceding player action - the
+    // restart click (with its resolved mission_path).
+    var boundary: usize = 0;
+    for (history.event_history.items, 0..) |event, index| {
+        if (event == .meta_event and event.meta_event == .start_validation) {
+            boundary = index;
+        }
+    }
+    var slice_start: usize = 0;
+    var scan = boundary;
+    while (scan > 0) {
+        scan -= 1;
+        if (history.event_history.items[scan] == .player_input_event) {
+            slice_start = scan;
+            break;
+        }
+    }
+    const slice = history.event_history.items[slice_start..];
+    try testing.expect(slice[0] == .player_input_event);
+    try testing.expect(slice[0].player_input_event == .player_restart_mission);
+    try testing.expectEqualStrings(
+        validation_fixture_path,
+        slice[0].player_input_event.player_restart_mission.mission_path.?,
+    );
+    // The restarted attempt's turns alone (the failed attempt's turns
+    // fall outside the slice by construction).
+    try testing.expectEqual(@as(u32, 4), validation_replay.deriveValidationTurns(slice));
+
+    // The artifact-format gate accepts a restart-click-first slice (the
+    // same writer call the extractor uses, with the bracket metadata).
+    const body = try session_log.writeEventLogWithMetadata(
+        slice,
+        "20260101_000000",
+        &.{
+            .{ .name = "mission_uuid", .value = "33333333-3333-3333-3333-333333333333" },
+            .{ .name = "content_hash", .value = "0000" },
+        },
+        backing.allocator(),
+    );
+    const metadata_sections = try parser.parseConfigFile(body, backing.allocator(), &parser.session_log_sections);
+    const replay = try validation_replay.loadValidationReplay(metadata_sections, backing.allocator());
+    try testing.expectEqualStrings(validation_fixture_path, replay.events[0].player_input_event.player_restart_mission.mission_path.?);
+
+    // The fresh-state reconstruction: no mission loaded at the restart
+    // click - the payload (not live state) carries what the cascade needs.
+    const log = try session_log.loadEventLog(metadata_sections, backing.allocator());
+    var reconstruction_start = test_harness.defaultStartingState();
+    reconstruction_start.event_stack = &.{};
+    var history2 = harness.newHistory(reconstruction_start);
+    history2.reconstructFromEventLog(log.events, @intCast(log.events.len - 1), &event_handlers.processEvent, .lazy_disk);
+    try testing.expect(history2.current_state.mission != null);
+    try testing.expect(history2.current_state.mission.?.validation_run);
+    try testing.expectEqual(@as(u32, 4), history2.current_state.mission.?.turns_spent);
+
+    // The full slice (end_validation included) lands on the main menu.
+    var history3 = harness.newHistory(reconstruction_start);
+    history3.reconstructFromEventLog(log.events, @intCast(log.events.len), &event_handlers.processEvent, .lazy_disk);
+    try testing.expect(history3.current_state.screen == .main_menu);
+    try testing.expect(history3.current_state.mission == null);
+}
+
 // ──────────── checking-mode replay (the revalidate machinery) ────────────
 // reconstructFromEventLogChecking replays a stored log against CURRENT
 // content, aborting + reporting at the first verification failure instead

@@ -54,10 +54,11 @@ pub fn batchContainsPlayerAction(new_events: []const Event) bool {
 /// pops and every state past it reconstructs as mid-cascade (the
 /// undo-mangle crash's root cause - see DONE.md). Fail fast here
 /// instead: player actions enter the stack only through
-/// `pushPlayerAction` (the input channel; its ONE sanctioned
-/// handler-side use is meta.zig's restart_mission re-entry - the
-/// validation-replay slice rule). See DESIGN → Architecture
-/// (orchestrator convention).
+/// `pushPlayerAction`, and handlers NEVER call it - the one flow that
+/// once did (meta.zig's restart_mission re-entry) now pushes the
+/// machinery boundary instead (see DESIGN → Custom Missions & Online
+/// Services → Validation replay, the slice rule). See DESIGN →
+/// Architecture (orchestrator convention).
 pub fn pushEvents(
     current: *GameState,
     new_events: []const Event,
@@ -104,9 +105,9 @@ fn appendToStack(
 /// input handlers call this instead of `pushEvents`, so they can't push
 /// machinery events, and the handler for a `PlayerInputEvent` may push
 /// machinery events as children via `pushEvents` (that's the orchestrator
-/// convention). The ONE sanctioned handler-side use is meta.zig's
-/// restart_mission re-entry (the validation-replay slice rule - the recorded
-/// stream must begin each attempt at a seedable top-level player action).
+/// convention). Input-origin only - no handler calls this (the restart
+/// re-entry that once did pushes the machinery boundary instead; see
+/// DESIGN → Custom Missions & Online Services → Validation replay).
 pub fn pushPlayerAction(
     current: *GameState,
     action: events.PlayerInputEvent,

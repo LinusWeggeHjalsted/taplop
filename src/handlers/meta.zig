@@ -643,30 +643,44 @@ pub fn handleMetaEvent(
             const validation_run = if (current.editor) |editor|
                 editor.mode == .validate
             else
-                current.mission != null and current.mission.?.validation_run;
+                (current.mission != null and current.mission.?.validation_run) or
+                    // A payload-carrying restart is validation-shaped BY
+                    // DEFINITION: a fresh-state replay of a validation-
+                    // replay slice meets this event with no mission
+                    // loaded, so the restart's own payload routes it
+                    // (campaign restarts carry null and stay state-gated).
+                    (end.continuation == .restart_mission and end.mission_path != null);
             if (validation_run) {
                 if (end.continuation == .restart_mission) {
                     // Re-run the whole mission from level 1: inline
                     // teardown (an editor's real player data + edit
                     // mode - a transitionScreen would CLEAR the event
                     // stack, eating the queued re-entry), then re-entry
-                    // via the ORCHESTRATOR so every attempt in the
-                    // linear stream begins with a seedable top-level
-                    // player action (the validation-replay slice rule).
-                    // start_validation needs no prior state, so a
-                    // fresh-state reconstruction of the final attempt ≡
-                    // the live re-entry.
+                    // via the MACHINERY boundary event. The validation-
+                    // replay slice keys on start_validation (every attempt,
+                    // first or restarted, begins with one) and the slice
+                    // START backs up to the nearest preceding player action
+                    // (the Validate click, or the restart click that
+                    // initiated this attempt) - so no player orchestrator
+                    // is ever pushed from a handler. start_validation needs
+                    // no prior state, so a fresh-state reconstruction of the
+                    // final attempt ≡ the live re-entry. The mission path
+                    // rides the event (the resolved-payload rule): a
+                    // fresh-state slice replay meets this event with no
+                    // mission loaded.
                     if (current.editor) |*editor| {
                         editor.mode = .edit;
                         editor_handlers.restorePrePlaytestPlayerData(current);
                     }
-                    // The ONE sanctioned handler-side pushPlayerAction
-                    // (the machinery funnel refuses player orchestrators):
-                    // the slice rule below needs the recorded stream to
-                    // begin at a seedable top-level player action.
-                    event_push.pushPlayerAction(current, .{ .player_start_validation = .{
-                        .mission_path = current.mission.?.path,
-                    } }, allocator);
+                    // Pre-change logs recorded the restart continuation
+                    // without the payload; live/old-log replays have the
+                    // mission loaded at this point, so the fallback keeps
+                    // them replayable. Unresolvable = nothing to restart.
+                    const restart_mission_path = end.mission_path orelse
+                        (if (current.mission) |mission| mission.path else return);
+                    pushEvents(current, &.{.{ .meta_event = .{ .start_validation = .{
+                        .mission_path = restart_mission_path,
+                    } } }}, allocator);
                 } else if (end.continuation == .exit_to_menu) {
                     // The button means the MAIN MENU. With an editor:
                     // inline teardown + close_editor (the restore must

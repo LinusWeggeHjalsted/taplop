@@ -2083,11 +2083,29 @@ pub const GameStateHistory = struct {
                 switch (pi) {
                     // Exit/skip orchestrators: screen-context legality.
                     .player_skip_level,
-                    .player_restart_mission,
                     .player_exit_mission,
                     => {
                         if (self.current_state.screen != .level) {
                             self.rejectReplay("replay validation: player exit/skip action outside level screen");
+                            return;
+                        }
+                    },
+                    // Live: the restart button exists only over the level
+                    // screen. A cross-session validation replay may seed
+                    // the restart CLICK as its slice's first event (the
+                    // final attempt's slice starts at the initiating player
+                    // action - the extractor backs up from the
+                    // start_validation boundary), so a no-run state is also
+                    // legal - the player_start_validation bar's rationale:
+                    // the click carries its resolved mission_path (the
+                    // resolved-payload rule), and the mission files are read
+                    // in the handler (missing/unreadable - the recoverable
+                    // path).
+                    .player_restart_mission => {
+                        if (self.current_state.screen != .level and
+                            (self.current_state.level != null or self.current_state.mission != null))
+                        {
+                            self.rejectReplay("replay validation: player_restart_mission outside level screen with a run active");
                             return;
                         }
                     },
@@ -4093,7 +4111,9 @@ test "isPlayerAction: whitelist accepts player-pushable events" {
     try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .{ .open_editor = .{ .mission_path = "m" } } }));
     try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .{ .save_game = .{ .save_path = "s" } } }));
     try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .dismiss_mission_complete }));
-    try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .player_restart_mission }));
+    try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .{ .player_restart_mission = .{
+        .mission_path = "missions/test",
+    } } }));
     try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .player_exit_mission }));
     try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .player_exit_to_menu }));
     try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .player_replay_mission }));

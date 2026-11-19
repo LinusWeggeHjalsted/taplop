@@ -3042,18 +3042,24 @@ dir comes from `current.mission.?.path`, no session state at write time).
 See DESIGN → Level Editor (playtest/validate framing + the exit guard)
 for the run-side design.
 
-- **The slice = `event_history` from the LAST `player_start_validation`
-  through the final `end_validation{success=true}`.** Because the
-  validate-restart re-entry rides the ORCHESTRATOR (not the machinery
-  event), every attempt in the linear stream begins with a top-level,
-  seedable player action - so "the last one" is the final attempt's
-  start, and restarts are excluded BY CONSTRUCTION: any restart inside a
-  candidate slice would have produced a later `player_start_validation`,
-  which would then be the slice start. No synthetic events, no log
-  editing - the file is a verbatim contiguous slice of `event_history`.
-  Restarting is a clean boundary precisely because `start_validation`
-  needs no prior state (it reads everything from files): a fresh-state
-  reconstruction of the final attempt ≡ the live re-entry.
+- **The slice = `event_history` from the slice START through the final
+  `end_validation{success=true}`, where the START is the nearest player
+  action before the LAST `start_validation`.** The ATTEMPT BOUNDARY is
+  the machinery `start_validation` - present at every attempt's start
+  (the Validate click's child, or the restart re-entry's child), so "the
+  last one" is the final attempt's boundary, and restarts are excluded BY
+  CONSTRUCTION: any restart inside a candidate slice would have produced
+  a later boundary. The START then backs up to the genuine initiating
+  player action - the Validate click for a first attempt, the restart
+  click (`player_restart_mission`, carrying the resolved `mission_path`)
+  for a restarted final attempt - because a fresh-state replay must seed
+  a player action at depth 0. No synthetic events, no handler-pushed
+  orchestrators (the machine-enforced funnel rule), no log editing - the
+  file is a verbatim contiguous slice of `event_history`. Restarting is a
+  clean boundary precisely because the restart CLICK carries its
+  resolved mission path (the resolved-payload rule) and
+  `start_validation` needs no prior state: a fresh-state reconstruction
+  of the final attempt ≡ the live re-entry, restart click included.
 - **Self-contained given the mission files.** Reconstruction = fresh
   state, seed the slice's events; every top-level event passes the
   two-layer gates (`isPlayerAction` + `validatePlayerAction`) as-is -
@@ -5069,10 +5075,13 @@ the game cheating):
   on the replay stack, because replay seeds every recorded player_input
   event as input-origin; the stranded copy then leaks into restores and
   poisons recorded logs - the undo-mangle crash's root cause), and
-  `pushPlayerAction` is the only channel for them. The ONE sanctioned
-  handler-side `pushPlayerAction` use is meta.zig's restart_mission
-  re-entry (the validation-replay slice rule: the recorded stream must
-  begin each attempt at a seedable top-level player action).
+  `pushPlayerAction` is the only channel for them - input-origin only,
+  zero handler-side uses. The one flow that once needed a handler-side
+  push (the validate-restart re-entry) was restructured onto the
+  machinery boundary instead: the validation-replay slice keys on
+  `start_validation` and backs its start up to the initiating player
+  action (see DESIGN → Custom Missions & Online Services → Validation
+  replay, the slice rule).
 - **Frame-level player actions (a RESTRICTED exception - do not extend
   casually).** The convention above rests on a contract the undo system
   depends on: EVERY player action is initiated from inside `update()`
@@ -5640,10 +5649,12 @@ by a fresh `start_playtest` on the same level, which takes the normal
 enter-from-edit path (backup + rebuild from `player_def`); any other exit
 (natural completion or Exit Playtest/Validation) pushes `end_playtest`. In
 `.validate`: restart does the same inline teardown + re-entry via the
-ORCHESTRATOR `player_start_validation{mission_path}` (not the machinery
-event - every attempt must begin with a seedable top-level player action
-for the validation-replay slice; see DESIGN → Custom Missions & Online
-Services → Validation replay); an Exit Mission continuation ABORTS the
+MACHINERY boundary `start_validation{mission_path}` (the
+validation-replay slice keys on it and backs the slice start up to the
+initiating player action - the restart click carries the resolved
+`mission_path` end to end, so no handler ever pushes an orchestrator;
+see DESIGN → Custom Missions & Online Services → Validation replay); an
+Exit Mission continuation ABORTS the
 run (`end_validation{success=false}` - only successful runs write a
 replay); the default continuation is the campaign's own
 next-`start_level` push (file-based, cache-read) - for VALIDATION with

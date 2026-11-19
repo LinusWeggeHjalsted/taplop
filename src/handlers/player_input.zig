@@ -510,9 +510,10 @@ pub fn handlePlayerInputEvent(
         .player_skip_level => {
             pushEvents(current, &.{.{ .meta_event = .{ .end_level = .{} } }}, allocator);
         },
-        .player_restart_mission => {
+        .player_restart_mission => |restart| {
             pushEvents(current, &.{.{ .meta_event = .{ .end_level = .{
                 .continuation = .restart_mission,
+                .mission_path = restart.mission_path,
             } } }}, allocator);
         },
         .player_exit_mission => {
