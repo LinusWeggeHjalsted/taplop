@@ -508,16 +508,21 @@ test "player_skip_move_to_skill: prepare branch fans out prepare + player_turn_a
         .prepare = true,
     } });
     stepOnce(&history);
-    // LIFO: array = [player_prepare_skill, player_turn_attack, clear_highlights]
+    // LIFO: the batch is pure machinery (the old shape pushed a
+    // player_input player_prepare_skill child - a handler pushing an
+    // orchestrator, which strands on the replay stack; the arm's body is
+    // inlined into the skip handler now, and stab yields no
+    // prepare-targets event against an empty board).
     // stack top (last) = clear_highlights (runs first).
     const stack = history.current_state.event_stack;
-    try testing.expectEqual(@as(usize, 3), stack.len);
-    try testing.expect(stack[0].player_input_event == .player_prepare_skill); // bottom
-    try testing.expect(stack[1].level_event == .player_turn_attack);
-    try testing.expect(stack[2].level_event == .clear_highlights); // top, runs first
+    try testing.expectEqual(@as(usize, 2), stack.len);
+    try testing.expect(stack[0].level_event == .player_turn_attack); // bottom
+    try testing.expect(stack[1].level_event == .clear_highlights); // top, runs first
     // The attack step is always forced so auto_skip_attack_step_out_of_combat
     // can't end the turn before the prepared skill fires.
-    try testing.expect(stack[1].level_event.player_turn_attack.force_attack_step);
+    try testing.expect(stack[0].level_event.player_turn_attack.force_attack_step);
+    // The prepare arm's inlined writes.
+    try testing.expect(history.current_state.level.?.prepared_skill == .stab);
 }
 
 test "player_skip_move_to_skill: use branch fans out use + player_turn_attack(forced) + clear" {
@@ -535,12 +540,73 @@ test "player_skip_move_to_skill: use branch fans out use + player_turn_attack(fo
         .prepare = false,
     } });
     stepOnce(&history);
+    // LIFO: the use arm's composition inlined as pure machinery (stab is a
+    // weapon skill, so it ends the turn). Pop order matches the old
+    // phantom flow exactly: clear_highlights, player_turn_attack,
+    // clear_prepared_skill, clear_highlights, use_skill, turn_end.
     const stack = history.current_state.event_stack;
-    try testing.expectEqual(@as(usize, 3), stack.len);
-    try testing.expect(stack[0].player_input_event == .player_use_skill); // bottom
-    try testing.expect(stack[1].level_event == .player_turn_attack);
-    try testing.expect(stack[2].level_event == .clear_highlights); // top, runs first
-    try testing.expect(stack[1].level_event.player_turn_attack.force_attack_step);
+    try testing.expectEqual(@as(usize, 6), stack.len);
+    try testing.expect(stack[0].level_event == .turn_end); // bottom
+    try testing.expect(stack[1].level_event == .use_skill);
+    try testing.expect(stack[2].level_event == .clear_highlights);
+    try testing.expect(stack[3].level_event == .clear_prepared_skill);
+    try testing.expect(stack[4].level_event == .player_turn_attack);
+    try testing.expect(stack[5].level_event == .clear_highlights); // top, runs first
+    try testing.expect(stack[4].level_event.player_turn_attack.force_attack_step);
+}
+
+test "player_skip_move_to_skill: the drained cascade reconstructs with an empty stack" {
+    // The undo-mangle regression: the old skip handler pushed a
+    // player_input player_use_skill child; replay seeds every recorded
+    // player_input event as input-origin, so the handler-pushed copy
+    // stranded on the replay stack forever - every state past it
+    // reconstructed as mid-cascade, and a slow-path restore into that
+    // region drained + recorded the stray against the wrong state (the
+    // replay-legality trap + the poisoned saved logs). The reconstructed
+    // session must land with an EMPTY stack, like live play did.
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    // A dagger puts stab on the bar, and the adjacent enemy makes the
+    // stab target replay-legal (validateSkillOnBarAndOffCooldown +
+    // validateSkillTarget both pass).
+    // NOTE: GameStateHistory.init BORROWS the starting state (no deep copy),
+    // so each history needs its OWN fixture - a shared one would leak the
+    // forward play's entity mutations into the replay's initial state.
+    const starting_state = test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 }, .main_hand_weapon = .{ .weapon_type = .dagger, .weapon_damage = 4 } },
+            .{ .team = 1, .position = .{ .x = 1, .y = 0 }, .max_health = 10, .current_health = 10 },
+        },
+        &five_by_five,
+    );
+    var history = harness.newHistory(starting_state);
+    pushPlayerInput(&history, .{ .player_skip_move_to_skill = .{
+        .skill_id = .stab,
+        .target = .{ .x = 1, .y = 0 },
+        .prepare = false,
+    } });
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // Reconstruct the recorded session into a fresh history and assert
+    // the same: no stranded orchestrator on the replayed stack.
+    var replay_history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 }, .main_hand_weapon = .{ .weapon_type = .dagger, .weapon_damage = 4 } },
+            .{ .team = 1, .position = .{ .x = 1, .y = 0 }, .max_health = 10, .current_health = 10 },
+        },
+        &five_by_five,
+    ));
+    replay_history.reconstructFromEventLog(
+        history.event_history.items,
+        @intCast(history.event_history.items.len),
+        &event_handlers.processEvent,
+        .lazy_disk,
+    );
+    try testing.expectEqual(@as(usize, 0), replay_history.current_state.event_stack.len);
 }
 
 // ───────────────────────── clone system ─────────────────────────

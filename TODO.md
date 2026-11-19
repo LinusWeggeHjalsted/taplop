@@ -25,6 +25,17 @@ Test by running `zig build run` and clicking through.
       consumption layer for outcome-gated cases (the design note in
       types.zig's applyAction already names this class). Leaving it: the
       cases are rare + the fix touches the audio choke point.
+- **The tile-click confirm path records player_use_skill unvalidated
+      (undo-mangle investigation residue, real but exonerated for the
+      crash)**: `resolveSkillSlotAction` gates the slot click (bar +
+      cooldown), but the tile-click confirm (`prepared_skill` + a
+      highlighted tile) pushes `player_use_skill` with only a
+      skill-definition lookup - a stale prepared skill could record a use
+      replay would reject. The undo-mangle crash turned out to be the
+      stranded `player_skip_move_to_skill` orchestrator instead (DONE.md,
+      "handler-pushed orchestrator strands on the replay stack"); this
+      gap is the same live/replay asymmetry class and wants the same
+      `skillOnBarAndOffCooldown` helper wired in at the confirm site.
 - **Mission-scan duplication (session-reflection rider, low priority)** -
       `listMissions` + `listOfficialMissions` (file_source.zig) are
       near-clones (the same mission.txt-parse-in-arena dance, different

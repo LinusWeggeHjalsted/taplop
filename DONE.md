@@ -400,6 +400,7 @@ working rules).
 - [Replay tolerates anytime input recorded mid-cascade (the mid-drain seed)](#replay-tolerates-anytime-input-recorded-mid-cascade-the-mid-drain-seed)
 - [That Which Explodes: effect-sourced attacks never trigger effects](#that-which-explodes-effect-sourced-attacks-never-trigger-effects)
 - [Savefile resume by campaign uuid (drop `current_campaign`)](#savefile-resume-by-campaign-uuid-drop-currentcampaign)
+- [Handler-pushed orchestrator strands on the replay stack (the undo-mangle root cause)](#handler-pushed-orchestrator-strands-on-the-replay-stack-the-undo-mangle-root-cause)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -23752,3 +23753,58 @@ reference. This change finishes the settle:
   longer exists - exactly the recipe the comptime-materialization
   gotcha forbids; the live implementation is the runtime-sliced
   `embeddedCampaignDirs` in loaders.zig.
+
+## Handler-pushed orchestrator strands on the replay stack (the undo-mangle root cause)
+
+The author hit it as: undo through a validation run gets stuck in one
+spot, kills redo access, and the session log saved afterward is
+unplayable (`--replay` panics at a `player_use_skill` the reconstruction
+rejects - the skill on cooldown where the recording says it fired).
+Reproduced twice with the author driving, instrumented live with a
+trace of the undo/restore/idle bookkeeping plus a record-time legality
+check (the replay validator run on every recorded player action - the
+trap that caught the poison the moment it recorded, with a crash bundle
+as the artifact).
+
+- Root cause: `player_skip_move_to_skill`'s handler pushed a
+  `player_input_event player_use_skill` (and its prepare sibling a
+  `player_prepare_skill`) as cascade CHILDREN - a handler pushing an
+  orchestrator-category event, violating the convention the replay
+  model is built on (player_input events are input-origin; replay seeds
+  every recorded one - drained at depth 0, LIFO mid-drain for anytime
+  interjections). Live copes (LIFO pops the child eventually, recording
+  it legally), but replay seeds the RECORDED use a second time on top of
+  the handler-pushed copy, and the original strands at the stack bottom
+  forever: every state past it reconstructs as mid-cascade. A slow-path
+  restore into that region lands with the stray on the live stack; the
+  frame drain pops it, `recordEvent` records it against the CURRENT
+  state (wrong cooldown, wrong phase), and the log is poisoned -
+  replayable only until the poison index, exactly the two crashes
+  observed.
+- The bisect that nailed it: replaying the crash bundle's clean prefix
+  to successive targets showed the stack diverging at the skip event
+  (the author's crash log made this headless - the bundle embeds its
+  content, so `reconstructFromEventLog` to a target index reproduces
+  the stranding deterministically).
+- The fix: both arms inline their target arm's composition as pure
+  `level_event` machinery, preserving the exact pop order of the old
+  phantom flow (clear_highlights, player_turn_attack, then the
+  use/prepare arm's own batch). The recorded stream shape is unchanged
+  apart from the phantom rows, so pre-fix logs replay CLEANLY post-fix
+  (their recorded phantoms seed as ordinary top-level actions at
+  positions where the stack is empty).
+- Tests: the two fan-out tests re-pinned to the machinery-only batches,
+  and a regression test that forward-plays a skip-driven stab turn and
+  reconstructs the log into a fresh history, asserting the replayed
+  stack drains EMPTY - pre-fix the phantom rides it forever. 1082 tests
+  green.
+- Two riders worth keeping in mind: the record-time legality check is a
+  strong candidate permanent gate (it caught the poison live where the
+  suite is blind - the live-loop bookkeeping runs only in `frame()`),
+  left out of this change as a design decision; and
+  `GameStateHistory.init` BORROWS the starting state (no deep copy), so
+  multi-history tests must build independent fixtures - a shared
+  fixture leaks the forward play's entity mutations into the replay's
+  initial state (found as a false divergence while authoring the
+  regression test; the existing round-trip tests dodge it by
+  convergent mutation, worth knowing when authoring new ones).

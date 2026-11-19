@@ -1552,28 +1552,80 @@ pub fn handlePlayerInputEvent(
             }, allocator);
         },
         .player_skip_move_to_skill => |skip| {
+            // Inline composition, never a player_input orchestrator child:
+            // the orchestrator convention is load-bearing for replay - every
+            // recorded player_input event is seeded as input-origin, so a
+            // handler-pushed player_input copy strands on the replay stack
+            // forever (replay seeds the recorded event a second time on top,
+            // and the handler-pushed original never pops). A slow-path
+            // restore into such a region then drains + records the stray
+            // against the wrong state - the undo-mangle crash's root cause.
+            // The pop order below matches the old phantom flow exactly:
+            // clear_highlights, player_turn_attack, then the prepare/use
+            // arm's own composition.
             if (skip.prepare) {
-                pushEvents(current, &.{
-                    .{ .player_input_event = .{ .player_prepare_skill = .{
-                        .caster_index = 0,
-                        .skill_id = skip.skill_id,
-                    } } },
-                    .{ .level_event = .{ .player_turn_attack = .{
-                        .force_attack_step = true,
-                    } } },
-                    .{ .level_event = .clear_highlights },
-                }, allocator);
+                // The player_prepare_skill arm's body, inlined (order-safe:
+                // player_turn_attack only flips the phase, and
+                // clear_highlights is a no-op over the already-cleared set).
+                const level = &current.level.?;
+                level.highlighted_tiles = &.{};
+                level.prepared_skill = skip.skill_id;
+                const prepare_event: ?Event = if (lookups.getSkillDefinition(skip.skill_id)) |skill_definition|
+                    skill_definition.playerPrepareSkill(0, current.*, allocator)
+                else
+                    null;
+                if (prepare_event) |event| {
+                    pushEvents(current, &.{
+                        event,
+                        .{ .level_event = .{ .player_turn_attack = .{
+                            .force_attack_step = true,
+                        } } },
+                        .{ .level_event = .clear_highlights },
+                    }, allocator);
+                } else {
+                    pushEvents(current, &.{
+                        .{ .level_event = .{ .player_turn_attack = .{
+                            .force_attack_step = true,
+                        } } },
+                        .{ .level_event = .clear_highlights },
+                    }, allocator);
+                }
             } else {
-                pushEvents(current, &.{
-                    .{ .player_input_event = .{ .player_use_skill = .{
-                        .skill_id = skip.skill_id,
-                        .target = skip.target,
-                    } } },
-                    .{ .level_event = .{ .player_turn_attack = .{
-                        .force_attack_step = true,
-                    } } },
-                    .{ .level_event = .clear_highlights },
-                }, allocator);
+                // The player_use_skill arm's composition, inlined.
+                const ends_turn = if (lookups.getSkillDefinition(skip.skill_id)) |def|
+                    (def.skill_type == .weapon_skill or def.skill_type == .spell)
+                else
+                    false;
+                if (ends_turn) {
+                    pushEvents(current, &.{
+                        .{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } },
+                        .{ .level_event = .{ .use_skill = .{
+                            .caster_index = 0,
+                            .skill_id = skip.skill_id,
+                            .target = skip.target,
+                        } } },
+                        .{ .level_event = .clear_highlights },
+                        .{ .level_event = .clear_prepared_skill },
+                        .{ .level_event = .{ .player_turn_attack = .{
+                            .force_attack_step = true,
+                        } } },
+                        .{ .level_event = .clear_highlights },
+                    }, allocator);
+                } else {
+                    pushEvents(current, &.{
+                        .{ .level_event = .{ .use_skill = .{
+                            .caster_index = 0,
+                            .skill_id = skip.skill_id,
+                            .target = skip.target,
+                        } } },
+                        .{ .level_event = .clear_highlights },
+                        .{ .level_event = .clear_prepared_skill },
+                        .{ .level_event = .{ .player_turn_attack = .{
+                            .force_attack_step = true,
+                        } } },
+                        .{ .level_event = .clear_highlights },
+                    }, allocator);
+                }
             }
         },
         .player_cancel_skill => {
