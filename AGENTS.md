@@ -109,6 +109,16 @@ tier conventions (where each kind of test lives), the assertion patterns
 deletion policy), and the rejected coverage-matrix - live in DESIGN →
 Testing. This section holds only the working mechanics.
 
+**Shipped campaign content is AUTHORED content** (the campaign is built
+in place - the Polpat swap + the 27-test migration it forced, DONE.md).
+Tests never pin its names/uuids/counts: derive handles via
+`test_harness.officialCampaignDir` / `officialMissionDir(s)` (runtime
+scans of the embedded map) + `file_source.officialCampaignDirs`, assert
+the projection/fork/load CONTRACTS instead of specific graphs, and carry
+synthetic PNG fixtures (`loaders.minimalPngHeader`) rather than shipped
+art. A new surface touching campaign content starts content-agnostic on
+day one - migrating after the tests pin it is the 27-failure lesson.
+
 Most tests wrap in an `ArenaAllocator` for easy cleanup (every sub-allocation
 freed at once on deinit). Arena-wrapping MASKS two classes of bug:
 - **Leaks** - arena `free` is a no-op, so a forgotten `free` is invisible

@@ -3212,7 +3212,10 @@ pub const GameStateHistory = struct {
     /// the editor browser is reachable on editor + main menu, and the
     /// options menu / settings are reachable from every screen via the
     /// options menu). See DESIGN → UI Framework → UI state classification.
-    fn surfaceToggleLegal(self: *GameStateHistory, screen: Screen, surface: types.UiSurfaceId) bool {
+    /// TEST-ONLY pub: the surface-screen census in view.zig walks every
+    /// Screen x UiSurfaceId pair against this gate (the validator-mirror
+    /// exhaustiveness check); no production consumer outside this file.
+    pub fn surfaceToggleLegal(self: *GameStateHistory, screen: Screen, surface: types.UiSurfaceId) bool {
         return switch (surface) {
             .options_menu, .settings => true,
             .credits, .load_save_menu => screen == .main_menu,
@@ -3235,10 +3238,15 @@ pub const GameStateHistory = struct {
             .inventory,
             .gear,
             .skills,
-            .entity_inspect,
             .world_map,
             .full_combat_log,
             => screen == .level or screen == .hub,
+            // The inspect panel reads current_state.level (a live
+            // inspected entity); the right-click gesture is level-only,
+            // and the keyboard toggle on hub renders nothing - a hub
+            // inspect toggle is a recorded no-op the view can never draw
+            // (pinned by the surface-screen census).
+            .entity_inspect => screen == .level,
         };
     }
 

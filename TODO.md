@@ -950,3 +950,21 @@ Done items in DONE.md. Open:
   exact-format sites read `_ = try validateFileFormatVersion(..., v, v)`.
   A void wrapper (`validateExactFileFormatVersion`) would read as intent;
   revisit when a second ranged format lands or the file is open anyway.
+
+- **`FileSource.init(io, undefined)`'s persistent-dir footgun
+      (reflection punch list).** Several existing tests pass `undefined`
+      as the persistent dir; it works until a test touches the persistent
+      tier (listDirFiles, any persistent scan), then it's an opaque
+      `BADF` syscall panic with no hint at the cause. Fix shape: an
+      `embeddedOnly(io)` constructor (or an assert at the persistent-tier
+      seams that the dir is real) + migrating the `undefined` call sites.
+      Small; next session that touches file_source tests.
+- **Should `dump` paths accept `.?` optional-unwrap notation
+      (reflection question, low priority).** The dump walker already
+      auto-unwraps optionals when steps remain (`history.current_state.hub`
+      works with no `.?`), but the path CHARSET rejects `?` - a driver who
+      tries the natural Zig spelling gets "dump path may contain only
+      letters, digits..." with no hint that plain descent works. Either
+      accept + ignore `.?` as a no-op step, or extend the console's
+      `help` to say optionals auto-descend. Cosmetic; note it here so the
+      next console-drive session doesn't rediscover it.

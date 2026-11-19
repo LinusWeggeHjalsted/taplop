@@ -4581,7 +4581,12 @@ pub fn handleAnytimeInput(
             } });
         }
 
-        if (in_game.toggle_entity_inspect) {
+        // Level-only (the right-click gesture's own gate - the panel reads
+        // current_state.level, which hub screens never have): a hub press
+        // is a no-op BEFORE recording, not a recorded illegal toggle (the
+        // no-op discipline - the surface-screen census pins the screen
+        // contract).
+        if (in_game.toggle_entity_inspect and history.current_state.screen == .level) {
             pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
                 .surface = .entity_inspect,
             } });

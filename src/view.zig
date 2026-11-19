@@ -887,7 +887,16 @@ pub fn view(
                     &session.ui_state.keybind_picker_scroll_offset,
                 ) catch @panic("failed to build settings panel");
             },
-            .editor_browser => {
+            // Belted like the load-save browser (the surface-screen
+            // census): the only openers are the main menu + the editor
+            // contexts with their sessions present (the input gate
+            // `editorBrowserReachableScreen`); state that somehow holds
+            // it elsewhere renders nothing.
+            .editor_browser => if (current_state.screen == .main_menu or
+                (current_state.screen == .editor and current_state.editor != null) or
+                ((current_state.screen == .campaign_editor or current_state.screen == .hub_editor) and
+                    current_state.campaign_editor != null))
+            {
                 ui.buildEditorBrowser(
                     &ui_elements,
                     frame_allocator,
@@ -908,8 +917,11 @@ pub fn view(
             // The campaign browser (the world map's picker): the campaign
             // lists live on SessionState (scanned when the browser opens -
             // the editor browser's acquisition pattern; view stays
-            // file-free).
-            .campaign_browser => {
+            // file-free). Screen-belted like the load-save browser: its
+            // only opener is the world map (level/hub-reachable), so
+            // state that somehow holds it elsewhere renders nothing (the
+            // surface-screen census pins this).
+            .campaign_browser => if (current_state.screen == .level or current_state.screen == .hub) {
                 ui.buildCampaignBrowser(
                     &ui_elements,
                     frame_allocator,
@@ -6468,8 +6480,8 @@ test "z-order census: overlays emit in open order; announcements + chrome fixed 
     // level-reachable surface up in ANOTHER non-canonical order (different
     // from frame 1), with the world map opened LAST (top of the stack -
     // also the map-over-options-menu pairing from the campaign-editor 2c
-    // rider). Open order: tips < options menu < editor browser < settings
-    // < world map; then the fixed rungs: mission-fail < mission-complete
+    // rider). Open order: tips < options menu < campaign browser < settings
+    // < world map (raised to top); then the fixed rungs: mission-fail < mission-complete
     // (the pinned never-co-rendered order) < error popup < top bar < FPS
     // label. The load-save browser + credits are main-menu-gated and
     // absent here.
@@ -6490,9 +6502,17 @@ test "z-order census: overlays emit in open order; announcements + chrome fixed 
         var session = state.SessionState{};
         level_state.ui_surfaces.openSurface(.tips);
         level_state.ui_surfaces.openSurface(.options_menu);
-        level_state.ui_surfaces.openSurface(.editor_browser);
-        level_state.ui_surfaces.openSurface(.settings);
+        // The campaign browser rides the world map (its opener) - the
+        // editor browser is NOT level-reachable (the screen belts, pinned
+        // by the surface-screen census), so this frame's third rung uses
+        // the browser that IS.
         level_state.ui_surfaces.openSurface(.world_map);
+        level_state.ui_surfaces.openSurface(.campaign_browser);
+        level_state.ui_surfaces.openSurface(.settings);
+        // The map LAST = topmost: a plain openSurface would no-op (already
+        // open), so RAISE it through the toggle seam (a covered overlay
+        // raises instead of closing).
+        level_state.ui_surfaces.toggle(.world_map);
         session.setPendingError(arena, "census frame");
         session.input_state.mouse_screen_position = .{ .x = @floatFromInt(hover.x), .y = @floatFromInt(hover.y) };
 
@@ -6520,7 +6540,11 @@ test "z-order census: overlays emit in open order; announcements + chrome fixed 
         const bottom_bar = firstButton(elements, .skip);
         const tips_back = firstButton(elements, .open_tips);
         const options_menu = firstButton(elements, .restart_mission);
-        const editor_browser = lastButton(elements, .toggle_editor_browser);
+        // firstButton, not last: the world map ALSO emits a
+        // toggle_campaign_browser button (its opener), and the raised map
+        // emits LAST - the browser's own Back (in the stack walk) is the
+        // FIRST marker.
+        const campaign_browser = firstButton(elements, .toggle_campaign_browser);
         const settings_screen = firstButton(elements, .change_setting);
         // The world map's marker: its hub-icon image (the only element
         // with that sprite id - the level screen's base UI never draws
@@ -6537,8 +6561,8 @@ test "z-order census: overlays emit in open order; announcements + chrome fixed 
         // tips UNDER the options menu, settings UNDER the browser).
         try std.testing.expect(bottom_bar < tips_back);
         try std.testing.expect(tips_back < options_menu);
-        try std.testing.expect(options_menu < editor_browser);
-        try std.testing.expect(editor_browser < settings_screen);
+        try std.testing.expect(options_menu < campaign_browser);
+        try std.testing.expect(campaign_browser < settings_screen);
         try std.testing.expect(settings_screen < world_map);
         // The announcements sit fixed ABOVE the whole stack (complete
         // above fail: the pinned never-co-rendered order), then the
@@ -6671,4 +6695,323 @@ test "hub editor: the world scene projects the hub grid + the return button" {
     };
     try std.testing.expect(return_button_x != null);
     try std.testing.expectEqual(3 * (ui.top_bar_slot_size + ui.ui_gap), return_button_x.?);
+}
+
+// SURFACE-SCREEN CENSUS (the campaign-editor ctrl+O trap's structural
+// fix): `surfaceToggleLegal` (state.zig, the replay validator's gate) and
+// the VIEW's emission contexts are hand-maintained mirrors of one policy -
+// which surfaces exist on which screens. They drifted once (the editor
+// browser gained the campaign/hub editor screens in the input gate, the
+// validator never learned them), and nothing machine-checked the mirror -
+// the drift surfaced as a player crash. This census walks every Screen x
+// UiSurfaceId pair, asks view() to render the surface force-opened, and
+// asserts the validator agrees with whether the surface ACTUALLY renders.
+// A new screen or surface, or a gate/emission divergence, fails here
+// instead of trapping at runtime.
+//
+// "Renders" detection per surface: a button whose action toggles the
+// surface back off (the panel's own Back/close affordance - every
+// implemented surface emits one) or the surface's distinctive open action
+// in the underlying chrome. The middle panels' close affordances live in
+// the bottom bar (the same screen band that hosts the panels); overlays
+// carry their own. full_combat_log is the known exception - the toggle is
+// legal level/hub but the view is an unimplemented panic (TODO →
+// Combat-log UI) - so its pair asserts the legality side only.
+test "surface-screen census: surfaceToggleLegal mirrors the view's emission contexts" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+    var harness = test_harness.Harness.init(arena);
+    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+    const state_mod = state;
+
+    const screen_names = @typeInfo(state_mod.Screen).@"enum".field_names;
+
+    // The per-screen starting states: the minimal content each screen's
+    // render needs (level entities, the editor session, the campaign
+    // editor graph, the hub editor drill-in riding the campaign editor).
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
+    const entities = [_]types.Entity{.{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .main_hand_weapon = .{ .name = "census sword", .weapon_type = .sword },
+    }};
+    const editor_levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 1, .y = 0 },
+    }};
+    const campaign_hubs = [_]types.CampaignHubEdit{.{
+        .handle = 0,
+        .uuid = "census-hub",
+        .name = "Census Hub",
+        .position = .{ .x = 0, .y = 0 },
+        .grid = .{ .level_tiles = &tiles, .player_start = .{ .x = 0, .y = 0 } },
+    }};
+    const campaign_missions = [_]types.CampaignMissionEdit{.{
+        .handle = 1,
+        .uuid = "census-mission",
+        .name = "Census Mission",
+        .dir = "census_mission",
+        .start = 0,
+        .destination = 0,
+    }};
+    const campaign_editor: types.CampaignEditor = .{
+        .campaign_name = "Census",
+        .campaign_uuid = "census-campaign",
+        .campaign_dir = "campaigns/census",
+        .start_hub = 0,
+        .hubs = &campaign_hubs,
+        .missions = &campaign_missions,
+    };
+
+    const ScreenState = struct { screen: state_mod.Screen, game_state: GameState };
+    const screen_count = @typeInfo(state_mod.Screen).@"enum".field_names.len;
+    var screen_states: [screen_count]ScreenState = undefined;
+    for (screen_names, 0..) |_, screen_index| {
+        const screen: state_mod.Screen = @fromBackingInt(@intCast(screen_index));
+        const game_state = switch (screen) {
+            .main_menu => GameState{
+                .screen = .main_menu,
+                .event_stack = &.{},
+                .player_data = .{},
+                .camera = null,
+                .editor = null,
+                .replay_viewer = null,
+                .campaign = null,
+                .mission = null,
+                .level = null,
+                .hub = null,
+            },
+            .level => test_harness.levelStateWithEntities(arena, &entities, &tiles),
+            .hub => GameState{
+                .screen = .hub,
+                .event_stack = &.{},
+                .player_data = .{},
+                .camera = null,
+                .editor = null,
+                .replay_viewer = null,
+                .campaign = .{ .dir = "census" },
+                .mission = null,
+                .level = null,
+                .hub = .{
+                    .hub_tiles = &tiles,
+                    .player = .{ .position = .{ .x = 0, .y = 0 } },
+                },
+            },
+            .editor => GameState{
+                .screen = .editor,
+                .event_stack = &.{},
+                .player_data = .{},
+                .camera = null,
+                .editor = .{
+                    .levels = &editor_levels,
+                    .player_def = .{ .id = "Player", .template = .{ .name = "Census Player", .sprite = "player", .team = 0 } },
+                },
+                .replay_viewer = null,
+                .campaign = null,
+                .mission = null,
+                .level = null,
+                .hub = null,
+            },
+            .campaign_editor, .hub_editor => GameState{
+                .screen = screen,
+                .event_stack = &.{},
+                .player_data = .{},
+                .camera = null,
+                .editor = null,
+                .campaign_editor = campaign_editor,
+                .replay_viewer = null,
+                .campaign = null,
+                .mission = null,
+                .level = null,
+                .hub = null,
+            },
+            .replay_viewer => GameState{
+                .screen = .replay_viewer,
+                .event_stack = &.{},
+                .player_data = .{},
+                .camera = null,
+                .editor = null,
+                .replay_viewer = .{},
+                .campaign = null,
+                .mission = null,
+                .level = null,
+                .hub = null,
+            },
+        };
+        screen_states[screen_index] = .{ .screen = screen, .game_state = game_state };
+    }
+
+    // The history the validator gate reads: screen + session presence per
+    // screen, mirrored from the render states.
+    var history = harness.newHistory(null);
+    const tips = [_][]const u8{"census tip"};
+
+    // The "did this surface render" probe per surface: the closing action
+    // a rendered surface carries (the Back/close affordance - overlay or
+    // bottom-bar slot) or the surface's own open action when the close
+    // affordance is not a toggle (load_save's back is the same toggle; the
+    // campaign browser's close rides toggle_campaign_browser).
+    //
+    // Reachability (the INPUT layer's open gates, mirrored here): which
+    // screens can actually open each surface. On a REACHABLE screen the
+    // census asserts render == legal (the validator must agree with what
+    // the view draws). On an UNREACHABLE screen it asserts the view HIDES
+    // the force-opened surface (the belt-and-suspenders gates - the
+    // load_save/credits precedent; view() renders whatever open_overlays
+    // holds unless the arm gates its screen) and the validator rejects
+    // it, so state that drifts there can't leak a phantom surface either.
+    // The gates mirrored: the middle panels + world map + full combat log
+    // ride in_game (level/hub); the campaign browser rides the world map
+    // (level/hub); the editor browser rides editorBrowserReachableScreen
+    // (main_menu + the three editors, with their sessions present);
+    // settings/tips/options are anytime; credits + load-save are
+    // main-menu-only menu entries.
+    const reachable = struct {
+        fn on(screen: state_mod.Screen, surface: types.UiSurfaceId, game_state: *const GameState) bool {
+            return switch (surface) {
+                .options_menu, .settings, .tips => true,
+                .credits, .load_save_menu => screen == .main_menu,
+                .editor_browser => switch (screen) {
+                    .main_menu => true,
+                    .editor => game_state.editor != null,
+                    .campaign_editor, .hub_editor => game_state.campaign_editor != null,
+                    else => false,
+                },
+                .campaign_browser, .world_map, .inventory, .gear, .skills, .full_combat_log => screen == .level or screen == .hub,
+                // The inspect panel reads current_state.level (a live
+                // inspected entity); the right-click gesture is level-only,
+                // and the keyboard toggle on hub renders nothing.
+                .entity_inspect => screen == .level,
+            };
+        }
+    }.on;
+    const probe_actions = [_]struct { surface: types.UiSurfaceId, actions: []const types.Action }{
+        // The options menu has no Back button of its own (Escape closes
+        // it - the escape action is not a button), but its buttons are
+        // uniquely identifying: Exit Game only the main-menu variant
+        // emits, and open_settings/open_credits/open_tips are the menu's
+        // own entries (distinctive per-surface on every screen variant).
+        .{ .surface = .options_menu, .actions = &.{ .exit_game, .open_settings } },
+        .{ .surface = .settings, .actions = &.{.open_settings} },
+        .{ .surface = .load_save_menu, .actions = &.{.toggle_load_save_menu} },
+        .{ .surface = .credits, .actions = &.{.open_credits} },
+        .{ .surface = .tips, .actions = &.{.open_tips} },
+        .{ .surface = .editor_browser, .actions = &.{.toggle_editor_browser} },
+        .{ .surface = .campaign_browser, .actions = &.{.toggle_campaign_browser} },
+        .{ .surface = .inventory, .actions = &.{.toggle_inventory} },
+        .{ .surface = .gear, .actions = &.{.toggle_gear} },
+        .{ .surface = .skills, .actions = &.{.toggle_skills} },
+        .{ .surface = .entity_inspect, .actions = &.{.toggle_entity_inspect} },
+        .{ .surface = .world_map, .actions = &.{.toggle_world_map} },
+    };
+
+    for (screen_states) |screen_state| {
+        for (probe_actions) |probe| {
+            // The view renders the surface open (a copy so the open state
+            // never leaks across probes). The campaign browser only opens
+            // atop the world map (its opener); reachable screens have both.
+            var render_state = screen_state.game_state;
+            if (probe.surface == .campaign_browser and
+                reachable(screen_state.screen, probe.surface, &screen_state.game_state))
+            {
+                render_state.ui_surfaces.openSurface(.world_map);
+            }
+            // The middle panels are not overlay-stack members (side-by-side
+            // layout - openSurface would trip view()'s stack-membership
+            // panic); their own seam opens them.
+            if (probe.surface == .entity_inspect) {
+                // The panel's content contract: a live inspected target
+                // (the right-click/keyboard open sets it; the panel hides
+                // without one - the dead-target gate's clean twin).
+                render_state.ui_surfaces.inspected_entity_index = 0;
+            }
+            if (probe.surface == .inventory or probe.surface == .gear or
+                probe.surface == .skills or probe.surface == .entity_inspect)
+            {
+                const panel: types.MiddlePanelId = switch (probe.surface) {
+                    .inventory => .inventory,
+                    .gear => .gear,
+                    .skills => .skills,
+                    .entity_inspect => .entity_inspect,
+                    else => unreachable,
+                };
+                render_state.ui_surfaces.openMiddlePanel(panel);
+            } else {
+                render_state.ui_surfaces.openSurface(probe.surface);
+            }
+            var session = state_mod.SessionState{};
+            const view_state = view(
+                &render_state,
+                &session,
+                .{ .input_bindings = &.{} },
+                harness.color_theme_definitions,
+                &harness.weapon_type_definitions,
+                &tips,
+                .{
+                    .camera = types.Camera{ .position = .{ .x = 0, .y = 0 } },
+                    .camera_zoom = 1.0,
+                    .event_history = &.{},
+                    .level_start_index = null,
+                    .current_event_index = 0,
+                    .frame_allocator = arena,
+                    .font_metrics = font_metrics,
+                    .sprite_bounds = .{},
+                    .can_undo = false,
+                    .can_redo = false,
+                },
+            );
+            var renders = false;
+            for (view_state.ui_elements) |element| {
+                if (element != .button) continue;
+                for (probe.actions) |action| {
+                    if (element.button.action == action) {
+                        renders = true;
+                        break;
+                    }
+                }
+                if (renders) break;
+            }
+
+            // The validator's verdict on the same screen + session.
+            history.current_state = screen_state.game_state;
+            const legal = history.surfaceToggleLegal(screen_state.screen, probe.surface);
+            const is_reachable = reachable(screen_state.screen, probe.surface, &screen_state.game_state);
+            if (is_reachable) {
+                // Reachable: the validator must agree with what the view
+                // draws (the ctrl+O crash class - gate drift).
+                if (legal != renders) {
+                    std.debug.print(
+                        "surface {s} on {s}: reachable, surfaceToggleLegal = {}, view renders = {}\n",
+                        .{ @tagName(probe.surface), @tagName(screen_state.screen), legal, renders },
+                    );
+                }
+                try std.testing.expect(legal == renders);
+            } else {
+                // Unreachable: the view must HIDE the force-opened surface
+                // (the belt gates - a phantom render is its own drift
+                // class) and the validator must reject it.
+                if (renders or legal) {
+                    std.debug.print(
+                        "surface {s} on {s}: unreachable but renders = {}, legal = {}\n",
+                        .{ @tagName(probe.surface), @tagName(screen_state.screen), renders, legal },
+                    );
+                }
+                try std.testing.expect(!renders);
+                try std.testing.expect(!legal);
+            }
+        }
+    }
+
+    // The known exception, asserted on the legality side only: the combat
+    // log's full-screen view is unimplemented (a view() panic), so the
+    // census cannot ask the view about it. Its gate still mirrors the
+    // level/hub-only contract the log lives in.
+    history.current_state = test_harness.levelStateWithEntities(arena, &entities, &tiles);
+    try std.testing.expect(history.surfaceToggleLegal(.level, .full_combat_log));
+    history.current_state.screen = .hub;
+    try std.testing.expect(history.surfaceToggleLegal(.hub, .full_combat_log));
+    history.current_state.screen = .main_menu;
+    try std.testing.expect(!history.surfaceToggleLegal(.main_menu, .full_combat_log));
 }

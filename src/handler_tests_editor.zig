@@ -4294,16 +4294,10 @@ test "decoration sprite picker: mission-local pick derives dims + bottom-left de
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
 
-    // A minimal PNG header (signature + IHDR width/height at the offsets
-    // parsePngDimensions reads): 512x768 → a 2x3 sprite grid → the default
-    // footprint reserves the bottom-left tile (0, 2).
-    const banner_png = [_]u8{
-        0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n',
-    } ++ @as([8]u8, @splat(0)) ++ [_]u8{
-        0, 0, 2, 0, // width 512
-        0, 0, 3, 0, // height 768
-    };
-    try harness.file_source.writeFile("missions/artists_den/banner.png", &banner_png);
+    // A minimal PNG header fixture: 512x768 → a 2x3 sprite grid → the
+    // default footprint reserves the bottom-left tile (0, 2).
+    const banner_png = loaders.minimalPngHeader(backing.allocator(), 512, 768);
+    try harness.file_source.writeFile("missions/artists_den/banner.png", banner_png);
 
     const stone_footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
     const decoration_types = [_]types.DecorationTypeDef{.{
@@ -7508,18 +7502,14 @@ test "decoration layer picker: registry-authored color, custom dims check keeps 
     var harness = Harness.init(backing.allocator());
 
     // A 768x768 PNG (matching the base's dims) + a 256x256 one (mismatch).
-    const png_header = struct {
-        fn make(width: u32, height: u32) [24]u8 {
-            var bytes = [_]u8{
-                0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n',
-            } ++ @as([8]u8, @splat(0)) ++ [_]u8{ 0, 0, 0, 0, 0, 0, 0, 0 };
-            std.mem.writeInt(u32, bytes[16..20], width, .big);
-            std.mem.writeInt(u32, bytes[20..24], height, .big);
-            return bytes;
-        }
-    }.make;
-    try harness.file_source.writeFile("missions/artists_den/banner.png", &png_header(768, 768));
-    try harness.file_source.writeFile("missions/artists_den/small.png", &png_header(256, 256));
+    try harness.file_source.writeFile(
+        "missions/artists_den/banner.png",
+        loaders.minimalPngHeader(backing.allocator(), 768, 768),
+    );
+    try harness.file_source.writeFile(
+        "missions/artists_den/small.png",
+        loaders.minimalPngHeader(backing.allocator(), 256, 256),
+    );
 
     // The base type is 768x768 (tree_1's real dims); the registry's
     // tree_1 prefab carries a canopy layer (color 2) at the same dims.

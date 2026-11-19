@@ -428,7 +428,7 @@ test "campaign editor events: start-hub radio + campaign name + background dims"
     var history_two = harness.newHistory(campaignEditorEventFixtureState());
     harness.file_source.writeFile(
         "campaigns/bg_dims_fixture/map.png",
-        &test_harness.pngHeaderBytes(640, 480),
+        @import("loaders.zig").minimalPngHeader(backing.allocator(), 640, 480),
     ) catch @panic("write fixture map.png");
     history_two.current_state.campaign_editor.?.campaign_dir = "campaigns/bg_dims_fixture";
     event_push.pushEvents(
@@ -456,7 +456,7 @@ test "campaign editor background picker: open, pick (stem + dims + close in one 
     // campaign may carry no background at all).
     harness.file_source.writeFile(
         "campaigns/bg_pick_fixture/map.png",
-        &test_harness.pngHeaderBytes(640, 480),
+        @import("loaders.zig").minimalPngHeader(backing.allocator(), 640, 480),
     ) catch @panic("write fixture map.png");
     history.current_state.campaign_editor.?.campaign_dir = "campaigns/bg_pick_fixture";
 
@@ -1636,7 +1636,7 @@ test "saveCampaignEditor: an official-origin campaign forks - fresh identity, wh
     runToIdle(&history);
     harness.file_source.writeFile(
         try std.fmt.allocPrint(arena, "{s}/probe.png", .{fork_dir}),
-        &test_harness.pngHeaderBytes(128, 128),
+        @import("loaders.zig").minimalPngHeader(arena, 128, 128),
     ) catch @panic("write fork probe.png");
     campaign_editor_handlers.rescanCampaignBackgroundStems(&history);
     var probe_offered = false;
@@ -1799,11 +1799,11 @@ test "campaign editor background scan: the campaign dir's PNGs are offered whate
     history.current_state.campaign_editor.?.campaign_dir = "campaigns/bg_scan_fixture";
     harness.file_source.writeFile(
         "campaigns/bg_scan_fixture/map.png",
-        &test_harness.pngHeaderBytes(640, 480),
+        @import("loaders.zig").minimalPngHeader(backing.allocator(), 640, 480),
     ) catch @panic("write fixture map.png");
     harness.file_source.writeFile(
         "campaigns/bg_scan_fixture/banner.png",
-        &test_harness.pngHeaderBytes(256, 256),
+        @import("loaders.zig").minimalPngHeader(backing.allocator(), 256, 256),
     ) catch @panic("write fixture banner.png");
 
     campaign_editor_handlers.rescanCampaignBackgroundStems(&history);
@@ -1818,7 +1818,7 @@ test "campaign editor background scan: the campaign dir's PNGs are offered whate
     // installed shape - one row per distinct stem).
     harness.file_source.writeFile(
         "campaigns/bg_scan_fixture/extra.png",
-        &test_harness.pngHeaderBytes(128, 128),
+        @import("loaders.zig").minimalPngHeader(backing.allocator(), 128, 128),
     ) catch @panic("write fixture extra.png");
     campaign_editor_handlers.rescanCampaignBackgroundStems(&history);
     try testing.expectEqual(@as(usize, 3), history.session.campaign_background_stems.len);

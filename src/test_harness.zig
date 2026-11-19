@@ -62,20 +62,6 @@ pub fn officialMissionDir(arena: std.mem.Allocator) []const u8 {
     return dirs[0];
 }
 
-/// A minimal PNG header (signature + IHDR with the given dims, 24 bytes)
-/// for fixtures that need a readable PNG whose dims the custom-asset
-/// machinery resolves - the shipped art is authored content, so PNG-dependent
-/// tests carry their own synthetic bytes (dims derived from what the test
-/// wrote, never from shipped art).
-pub fn pngHeaderBytes(width: u32, height: u32) [24]u8 {
-    var bytes = [_]u8{
-        0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n',
-    } ++ @as([8]u8, @splat(0)) ++ [_]u8{ 0, 0, 0, 0, 0, 0, 0, 0 };
-    std.mem.writeInt(u32, bytes[16..20], width, .big);
-    std.mem.writeInt(u32, bytes[20..24], height, .big);
-    return bytes;
-}
-
 /// The shared session bootstrap. Owns the loaded config arrays in the test's
 /// backing arena; histories are initialized with pointers into those arrays.
 pub const Harness = struct {

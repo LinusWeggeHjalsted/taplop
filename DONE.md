@@ -408,6 +408,7 @@ working rules).
 - [The record-time legality trap (dev builds)](#the-record-time-legality-trap-dev-builds)
 - [The editor_browser legality gap (campaign-editor ctrl+O trap)](#the-editorbrowser-legality-gap-campaign-editor-ctrlo-trap)
 - [The Polpat swap: the official campaign becomes authored, content-agnostic tests](#the-polpat-swap-the-official-campaign-becomes-authored-content-agnostic-tests)
+- [The surface-screen census (the validator-view mirror, machine-checked)](#the-surface-screen-census-the-validator-view-mirror-machine-checked)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24034,3 +24035,52 @@ start hub), the exit click starts Forest Outskirts (derived 2 levels), the
 editor browser + campaign editor open on the persistent copy, and the
 in-place save leaves exactly one campaign dir with the original uuid.
 All 1088 tests pass; web compiles.
+
+## The surface-screen census (the validator-view mirror, machine-checked)
+
+Reflection follow-up to the ctrl+O trap: the crash exposed a STRUCTURAL
+class - `surfaceToggleLegal` (the replay validator's gate), the input
+layer's open gates, and the view's emission contexts are hand-maintained
+mirrors of one policy (which surfaces exist on which screens), and nothing
+machine-checked the mirror. The census (`view.zig`, beside the z-order
+census) walks every Screen x UiSurfaceId pair: per-screen minimal render
+states, each surface force-opened (the middle panels via their own
+openMiddlePanel seam; the campaign browser atop its opener), a rendered
+verdict detected via each surface's distinctive toggle/open action, and
+two assertions - REACHABLE screens: render == legal (the gate-drift
+crash class); UNREACHABLE screens: the view must HIDE the force-opened
+surface (the belt-gate class) and the validator must reject it. The
+reachability table mirrors the input gates and documents each surface's
+opener. full_combat_log asserts legality only (its view is the known
+unimplemented panic). surfaceToggleLegal went pub (TEST-ONLY, noted).
+
+**The census caught three real divergences on its first runs**, exactly
+the class it exists for: (1) the campaign_browser view arm had no screen
+belt - state holding it on the main menu rendered it; (2) the
+editor_browser arm likewise (its input gate is main_menu + the three
+editor contexts); both got belts, the load_save/credits precedent.
+(3) entity_inspect: the VALIDATOR was over-permissive - legal on hub,
+where the panel can never render (it reads current_state.level; the
+right-click gesture was already level-only). Tightened to level-only and
+the keyboard consumption site gates before recording (a hub press is a
+no-op, not a recorded illegal toggle - the no-op discipline; otherwise
+the tightened validator would trap a legal-but-inert flow).
+
+The z-order census's frame 2 (a level screen) had to swap its
+editor-browser rung for the campaign browser (the browser belts away on
+levels now): the world map raised to topmost via the toggle seam (a
+covered overlay raises, it does not close), and the browser's Back
+marker is firstButton, not last - the raised map emits after it and the
+map itself carries a toggle_campaign_browser button (its opener).
+
+Also: the PNG fixture duplication consolidated to ONE implementation -
+`loaders.minimalPngHeader` (the pre-existing pub helper, 9 call sites).
+The reflection note said "migrate two locals to my new shared helper";
+reading the tree first showed the helper already existed and MINE was
+the fourth duplicate (test_harness.pngHeaderBytes, deleted). Two inline
+stragglers in handler_tests_editor migrated; the campaign-editor
+background tests ride it too. AGENTS → Testing discipline gained the
+content-agnostic convention note (authored campaign content - derive
+via test_harness.official*, never pin). TODO gained the
+`FileSource.init(io, undefined)` persistent-dir footgun + the dump-path
+`.?` question.
