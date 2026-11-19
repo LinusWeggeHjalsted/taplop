@@ -404,6 +404,8 @@ working rules).
 - [The orchestrator convention is machine-enforced at the push funnels](#the-orchestrator-convention-is-machine-enforced-at-the-push-funnels)
 - [The validate-restart exception dissolved (the slice keys on the machinery boundary)](#the-validate-restart-exception-dissolved-the-slice-keys-on-the-machinery-boundary)
 - [init deep-copies the starting state (initial_arena was designed, never wired)](#init-deep-copies-the-starting-state-initialarena-was-designed-never-wired)
+- [The load-error revert prunes through the shared timeline trim (extracted + tested)](#the-load-error-revert-prunes-through-the-shared-timeline-trim-extracted--tested)
+- [The record-time legality trap (dev builds)](#the-record-time-legality-trap-dev-builds)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -23898,3 +23900,38 @@ fixture both stay pristine). The two leak-checked input tests
 `initial_arena.deinit()` - the full history deinit stays wrong for a
 borrowed-configs test history (it frees session-owned settings the
 harness owns). 1085 tests green.
+
+## The load-error revert prunes through the shared timeline trim (extracted + tested)
+
+Session-reflection follow-up #2: main.zig's drain loop had a hand-rolled
+load-error revert (restore to the last idle point + a log-only shrink).
+The real hazard it left: a failed transaction's SUCCESSFUL mid-cascade
+reconstruction reads (mission.txt + player.txt read before the chained
+level read failed) leave cache entries past the revert point, and the
+regrown log's replay finds the STALE bytes at those indices - the poison
+class the funnel gate exists to kill. The revert is now a named
+operation, `revertAfterLoadError` (clear the flag, exact-snapshot
+restore, prune through the shared `discardFutureTimeline` - now pub with
+the two-caller doc), and frame()'s drain loop calls it in one line. The
+regression test forces the failure (corrupted level_1.txt: two reads
+succeed, the third fails), drives the REAL operation directly (frame()'s
+loop is suite-blind - the extraction is what makes it testable), and
+asserts no ledger entry dangles past the reverted position + the landed
+state is a coherent idle point. 1086 tests green.
+
+## The record-time legality trap (dev builds)
+
+Session-reflection follow-up #4, landed staged: `recordEvent` now runs
+`validatePlayerAction` on every recorded player action in dev builds
+(live sessions only - tests excluded by design: harness pushes ride
+synthetic fixtures legality correctly rejects, and the legality core is
+fully suite-covered). This is the temporary instrument from the
+undo-mangle investigation made permanent-on-probation: it converts the
+worst failure mode (silent log poisoning, discovered at the next replay
+or never) into the best (instant trap, crash-dump bundle capturing the
+live state). Promotion to release is tracked in TODO - the criterion is
+a false-positive-free dev stretch; a trap on a legal flow means a
+validator gap to fix first. AGENTS's drive section also gained the
+observed environment note: close running instances before console
+smoke-driving (an uncapped-fps instance starves a second exe's
+initWindow indefinitely).

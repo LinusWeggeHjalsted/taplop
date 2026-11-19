@@ -25,6 +25,12 @@ Test by running `zig build run` and clicking through.
       consumption layer for outcome-gated cases (the design note in
       types.zig's applyAction already names this class). Leaving it: the
       cases are rare + the fix touches the audio choke point.
+- **Record-time legality trap: promote to release builds** - the trap
+      (`recordEvent` runs `validatePlayerAction` on every recorded
+      player action) is live in DEV builds only; the staged plan (DONE.md,
+      "the record-time legality trap") is to promote after a
+      false-positive-free dev stretch. If a dev session ever traps on a
+      LEGAL flow, that's a validator gap to fix before promoting.
 - **The tile-click confirm path records player_use_skill unvalidated
       (undo-mangle investigation residue, real but exonerated for the
       crash)**: `resolveSkillSlotAction` gates the slot click (bar +

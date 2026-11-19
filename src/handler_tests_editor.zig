@@ -6663,6 +6663,75 @@ test "a restarted validation run's slice starts at the restart click and reconst
     try testing.expect(history3.current_state.mission == null);
 }
 
+test "a mid-cascade read failure reverts with the shared prune (no dangling ledgers)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    try writeValidationFixtureMission(&harness);
+
+    // Corrupt level_1.txt AFTER the fixture write: the validation entry
+    // cascade reads mission.txt + player.txt SUCCESSFULLY mid-transaction
+    // (cache entries past the last idle point), then the chained
+    // start_level's level_1.txt read fails -> failReconstructionRead ->
+    // the drain loop's load-error revert. Pre-fix, the revert's
+    // hand-rolled log-only shrink left those successful reads' cache
+    // entries dangling past the reverted position - the regrown log's
+    // replay would find the STALE bytes at those indices (the poison
+    // class). Post-fix, the revert runs the shared prune.
+    try harness.file_source.writeFile(validation_fixture_path ++ "/level_1.txt", "Metadata\nfile_format_version 99\n");
+
+    var history = harness.newHistory(null);
+    runToIdle(&history);
+    event_push.pushPlayerAction(
+        &history.current_state,
+        .{ .player_start_validation = .{
+            .mission_path = validation_fixture_path,
+        } },
+        history.current_arena.allocator(),
+    );
+    // Drain manually, stopping on load_error (runToIdle would panic - it
+    // asserts no load_error for valid test content; the autosave test's
+    // drain-loop shape).
+    while (history.current_state.event_stack.len > 0) {
+        event_handlers.processEvent(&history);
+        if (history.load_error) break;
+    }
+
+    // The recoverable revert: the real drain-loop operation, driven
+    // directly (frame()'s loop is suite-blind - this is the named fn it
+    // calls). The popup was set by the failing handler; the state
+    // returns to the last idle point (main menu, no mission).
+    try testing.expect(history.load_error);
+    try testing.expect(history.session.pending_error != null);
+    history.revertAfterLoadError(&event_handlers.processEvent);
+    try testing.expect(!history.load_error);
+    try testing.expect(history.current_state.screen == .main_menu);
+    try testing.expect(history.current_state.mission == null);
+
+    // The shared prune: the log ends at the current position and NO
+    // ledger entry dangles past it - cache entries (the successful
+    // mission.txt/player.txt reads), snapshots, checkpoints, idle points.
+    try testing.expectEqual(history.current_event_index, @as(u32, @intCast(history.event_history.items.len)));
+    for (history.reconstruction_cache.items) |entry| {
+        try testing.expect(entry.event_index < history.current_event_index);
+    }
+    for (&history.snapshots) |*slot| {
+        if (slot.*) |saved| try testing.expect(saved.event_index <= history.current_event_index);
+    }
+    for (&history.checkpoints) |*slot| {
+        if (slot.*) |saved| try testing.expect(saved.event_index <= history.current_event_index);
+    }
+    for (history.idle_points.items) |point| {
+        try testing.expect(point <= history.current_event_index);
+    }
+
+    // The reverted position is a REAL idle point, not a wedged one: the
+    // failed transaction was the session's first action, so undo
+    // correctly reports no earlier history (and the stack sits empty).
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try testing.expect(!history.undo(&event_handlers.processEvent));
+}
+
 // ──────────── checking-mode replay (the revalidate machinery) ────────────
 // reconstructFromEventLogChecking replays a stored log against CURRENT
 // content, aborting + reporting at the first verification failure instead

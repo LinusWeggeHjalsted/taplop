@@ -339,6 +339,12 @@ WEB COMPILES ≠ RUNS). `zig build` first.
 
 ### Launching a drive
 
+- **Close any running instance first** (yours or a player's) - a second
+  instance's `initWindow` can hang indefinitely against a live one's
+  render loop (observed with an uncapped-fps instance saturating GL/X;
+  the second exe spins in window init forever). `timeout` is the hang
+  guard, but a hung boot tells you nothing - check for a live instance
+  before diagnosing the build.
 - `printf '<commands>\nquit\n' | timeout 60 ./zig-out/bin/ziglop` - the
   native window opens + renders real frames (a human can watch); commands
   drain one per frame; `timeout` is the hang guard. Prompts + the boot

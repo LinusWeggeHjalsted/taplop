@@ -1244,6 +1244,25 @@ pub const GameStateHistory = struct {
         const arena = self.history_arena.allocator();
         const durable_event = deepCopy(Event, event, arena);
         self.event_history.append(arena, durable_event) catch @panic("failed to append event");
+
+        // The record-time legality trap (dev builds only, live sessions
+        // only): run the replay-side player-action legality check at
+        // RECORD time, so a live-pushed action the log cannot reconstruct
+        // traps HERE - with the crash-dump bundle capturing the live
+        // state - instead of silently poisoning the log for the next
+        // replay. This is the instrument that caught the undo-mangle
+        // poison at the moment it recorded (DONE.md, "the undo-mangle
+        // root cause"); the crash turns the worst failure mode (silent
+        // poisoning) into the best (instant, actionable, bundled). Dev
+        // builds first: promote to release after a false-positive-free
+        // stretch (TODO tracks it). Tests are excluded by design - the
+        // harness pushes actions against synthetic fixtures (force-opened
+        // surfaces, hand-built states) that legality correctly rejects;
+        // the legality CORE (validatePlayerAction) is fully suite-covered.
+        if (build_info.dev_mode and !@import("builtin").is_test) switch (event) {
+            .player_input_event => self.validatePlayerAction(event),
+            else => {},
+        };
     }
 
     /// Read a file for a reconstruction-read event handler (start_level /
@@ -1467,7 +1486,19 @@ pub const GameStateHistory = struct {
     /// log and idle points to the current position and frees any snapshots /
     /// checkpoints that captured the abandoned branch (those at a later event
     /// index; positions at or before the branch point are shared history).
-    fn discardFutureTimeline(self: *GameStateHistory) void {
+    /// The shared timeline prune to the current position: log +
+    /// idle_points + snapshots/checkpoints + reconstruction-cache entries
+    /// past `current_event_index`. TWO callers: `recordEvent`'s
+    /// undo-branch (a new action recorded after an undo discards the
+    /// replaced timeline) and the load-error revert in main.zig's drain
+    /// loop (the failed transaction's recorded events AND its
+    /// mid-cascade reconstruction reads - a successful read before the
+    /// failing one leaves a cache entry past the revert point, and the
+    /// regrown log's replay would find the STALE bytes at that
+    /// position). Both must trim through THIS one function: a hand-rolled
+    /// log-only shrink leaves the other ledgers dangling at positions
+    /// whose meaning changes when the log regrows.
+    pub fn discardFutureTimeline(self: *GameStateHistory) void {
         self.event_history.shrinkRetainingCapacity(self.current_event_index);
 
         // current_event_index is an idle point (new events only start from
@@ -3498,6 +3529,28 @@ pub const GameStateHistory = struct {
     }
 
     /// Restore from a saved state, or replay if no exact match exists.
+    /// The load-error revert (the recoverable-read path's state half,
+    /// called from frame()'s drain loop): clear the flag, restore to the
+    /// last idle point (guaranteed exact - its snapshot was just taken -
+    /// and stack-empty by construction), then prune through the shared
+    /// discardFutureTimeline - never a hand-rolled log-only shrink: the
+    /// failed transaction's successful mid-cascade reads left cache
+    /// entries past the revert point, and the log regrows with new events
+    /// at those positions - an untrimmed ledger dangles against
+    /// rewritten content (the poison class the funnel gate exists to
+    /// kill). The pending_error popup was set by the failing handler and
+    /// survives the restore (SessionState is off GameState). See DESIGN
+    /// → Error Handling → context 2.
+    pub fn revertAfterLoadError(
+        self: *GameStateHistory,
+        apply_event: *const fn (*GameStateHistory) void,
+    ) void {
+        self.load_error = false;
+        const last_idle_event_index = self.idle_points.items[self.current_idle_index];
+        self.restoreTo(last_idle_event_index, apply_event);
+        self.discardFutureTimeline();
+    }
+
     pub fn restoreTo(
         self: *GameStateHistory,
         target_event_index: u32,

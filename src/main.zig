@@ -653,10 +653,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         // a descriptive message (it survives the revert - SessionState is
         // off GameState). See DESIGN → Error Handling → three contexts.
         if (history.load_error) {
-            history.load_error = false;
-            const last_idle_event_index = history.idle_points.items[history.current_idle_index];
-            history.restoreTo(last_idle_event_index, &event_handlers.processEvent);
-            history.event_history.shrinkRetainingCapacity(history.current_event_index);
+            history.revertAfterLoadError(&event_handlers.processEvent);
             break;
         }
 
