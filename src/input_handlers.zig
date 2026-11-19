@@ -7197,9 +7197,9 @@ test "hub exit click resolves the destination through the campaign edge table (d
                 .mission_exits = &exits,
             },
         });
-        @import("event_push.zig").pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .move_player = .{
+        @import("event_push.zig").pushPlayerAction(&history.current_state, .{ .move_player = .{
             .destination = exits[0].position,
-        } } }}, history.current_arena.allocator());
+        } }, history.current_arena.allocator());
         @import("test_harness.zig").runToIdle(&history);
 
         var ridden: ?[]const u8 = null;
@@ -7233,9 +7233,9 @@ test "hub exit click resolves the destination through the campaign edge table (d
                 .mission_exits = &exits,
             },
         });
-        @import("event_push.zig").pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .move_player = .{
+        @import("event_push.zig").pushPlayerAction(&history.current_state, .{ .move_player = .{
             .destination = exits[1].position,
-        } } }}, history.current_arena.allocator());
+        } }, history.current_arena.allocator());
         @import("test_harness.zig").runToIdle(&history);
 
         var passed: ?[]const u8 = "sentinel";

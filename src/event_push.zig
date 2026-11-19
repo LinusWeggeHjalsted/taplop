@@ -34,9 +34,47 @@ pub fn pushPlayerSkillUse(
     } }, allocator);
 }
 
+/// Whether a batch contains a player_input orchestrator - the bool core
+/// of the machinery-only funnel gate below (the no-expectPanics
+/// convention: the panic layer is thin, this is what tests pin).
+pub fn batchContainsPlayerAction(new_events: []const Event) bool {
+    for (new_events) |event| {
+        if (event == .player_input_event) return true;
+    }
+    return false;
+}
+
 /// Push events onto the event stack. Events are processed from the back
 /// (top of stack), so the last event pushed is processed first.
+///
+/// THE MACHINERY-ONLY FUNNEL: a handler pushing a player_input
+/// orchestrator as a cascade child strands it on the replay stack -
+/// replay seeds every recorded player_input event as input-origin
+/// (drained seed or mid-drain LIFO), so a handler-pushed copy never
+/// pops and every state past it reconstructs as mid-cascade (the
+/// undo-mangle crash's root cause - see DONE.md). Fail fast here
+/// instead: player actions enter the stack only through
+/// `pushPlayerAction` (the input channel; its ONE sanctioned
+/// handler-side use is meta.zig's restart_mission re-entry - the
+/// validation-replay slice rule). See DESIGN → Architecture
+/// (orchestrator convention).
 pub fn pushEvents(
+    current: *GameState,
+    new_events: []const Event,
+    allocator: std.mem.Allocator,
+) void {
+    if (new_events.len == 0) return;
+
+    if (batchContainsPlayerAction(new_events)) {
+        @panic("pushEvents: a player_input orchestrator pushed through the machinery funnel - player actions enter the stack only via pushPlayerAction (see DESIGN -> Architecture, orchestrator convention)");
+    }
+
+    appendToStack(current, new_events, allocator);
+}
+
+/// The shared stack-append core both funnels ride (LIFO - the last
+/// pushed is processed first).
+fn appendToStack(
     current: *GameState,
     new_events: []const Event,
     allocator: std.mem.Allocator,
@@ -62,14 +100,40 @@ pub fn pushEvents(
 }
 
 /// Push a player-input event (the ONLY kind input handlers may push - see
-/// `PlayerInputEvent` in events.zig). This wrapper is the compile-time gate:
+/// `PlayerInputEvent` in events.zig). This wrapper is the input channel:
 /// input handlers call this instead of `pushEvents`, so they can't push
-/// machinery events. The handler for a `PlayerInputEvent` may push machinery
-/// events as children via `pushEvents` (that's the orchestrator convention).
+/// machinery events, and the handler for a `PlayerInputEvent` may push
+/// machinery events as children via `pushEvents` (that's the orchestrator
+/// convention). The ONE sanctioned handler-side use is meta.zig's
+/// restart_mission re-entry (the validation-replay slice rule - the recorded
+/// stream must begin each attempt at a seedable top-level player action).
 pub fn pushPlayerAction(
     current: *GameState,
     action: events.PlayerInputEvent,
     allocator: std.mem.Allocator,
 ) void {
-    pushEvents(current, &.{.{ .player_input_event = action }}, allocator);
+    appendToStack(current, &.{.{ .player_input_event = action }}, allocator);
+}
+
+test "batchContainsPlayerAction: the machinery-funnel gate core" {
+    // The undo-mangle class in miniature: a machinery batch is clean, a
+    // batch carrying a player_input orchestrator trips the gate.
+    const machinery_only = [_]Event{
+        .{ .level_event = .clear_highlights },
+        .{ .level_event = .{ .use_skill = .{
+            .caster_index = 0,
+            .skill_id = .stab,
+            .target = null,
+        } } },
+    };
+    try std.testing.expect(!batchContainsPlayerAction(&machinery_only));
+
+    const with_orchestrator = [_]Event{
+        .{ .level_event = .clear_highlights },
+        .{ .player_input_event = .{ .player_use_skill = .{
+            .skill_id = .stab,
+            .target = null,
+        } } },
+    };
+    try std.testing.expect(batchContainsPlayerAction(&with_orchestrator));
 }

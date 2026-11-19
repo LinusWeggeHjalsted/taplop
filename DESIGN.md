@@ -5063,6 +5063,16 @@ the game cheating):
   stream, so they must funnel through a single orchestrator. Bonus: undo
   granularity matches a single click/key. Orchestrators carry only the
   player's intent; all mutation is in the verbs they push.
+- **The convention is MACHINE-ENFORCED at the two push funnels**
+  (`event_push.zig`): `pushEvents` refuses `player_input_event`s outright
+  (panics - a handler pushing an orchestrator as a cascade child strands it
+  on the replay stack, because replay seeds every recorded player_input
+  event as input-origin; the stranded copy then leaks into restores and
+  poisons recorded logs - the undo-mangle crash's root cause), and
+  `pushPlayerAction` is the only channel for them. The ONE sanctioned
+  handler-side `pushPlayerAction` use is meta.zig's restart_mission
+  re-entry (the validation-replay slice rule: the recorded stream must
+  begin each attempt at a seedable top-level player action).
 - **Frame-level player actions (a RESTRICTED exception - do not extend
   casually).** The convention above rests on a contract the undo system
   depends on: EVERY player action is initiated from inside `update()`

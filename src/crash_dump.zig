@@ -284,9 +284,9 @@ test "dump writes a parseable crash session log to crashes/" {
     var history = harness.newHistory(null);
     @import("test_harness.zig").runToIdle(&history);
     // Record at least one real event so event_history is non-empty.
-    @import("event_push.zig").pushEvents(
+    @import("event_push.zig").pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .start_new_game }},
+        .start_new_game,
         history.current_arena.allocator(),
     );
     @import("test_harness.zig").runToIdle(&history);

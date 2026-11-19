@@ -26,11 +26,11 @@ test "open_campaign_editor: the official campaign projects into the authored gra
     var history = harness.newHistory(null);
     runToIdle(&history);
 
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+        .{ .open_campaign_editor = .{
             .campaign_dir = "campaigns/main_campaign",
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -110,11 +110,11 @@ test "open_campaign_editor: null dir opens the fresh default campaign" {
     var history = harness.newHistory(null);
     runToIdle(&history);
 
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+        .{ .open_campaign_editor = .{
             .campaign_dir = null,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -147,11 +147,11 @@ test "close_campaign_editor: the scope swap discards the editor state" {
     var history = harness.newHistory(null);
     runToIdle(&history);
 
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+        .{ .open_campaign_editor = .{
             .campaign_dir = null,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -183,11 +183,11 @@ test "open_campaign_editor: an unreadable campaign dir surfaces the recoverable 
     runToIdle(&history);
     const screen_before = history.current_state.screen;
 
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+        .{ .open_campaign_editor = .{
             .campaign_dir = "campaigns/does_not_exist",
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     // Drain manually, stopping on load_error (runToIdle would panic - it
@@ -445,11 +445,11 @@ test "campaign editor background picker: open, pick (stem + dims + close in one 
     runToIdle(&history);
     try testing.expect(history.current_state.campaign_editor.?.picker == .background);
 
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_set_campaign_background = .{
+        .{ .player_set_campaign_background = .{
             .stem = "map",
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -463,9 +463,9 @@ test "campaign editor background picker: open, pick (stem + dims + close in one 
     try testing.expectEqual(@as(usize, 0), history.current_state.campaign_editor.?.background_stem.len);
 
     // The Back button's close.
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .player_close_campaign_picker }},
+        .player_close_campaign_picker,
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -487,9 +487,9 @@ test "campaign editor: exit to main menu via the options menu path, sidebar togg
 
     // The sidebar toggles ride the timeline (the player_toggle_editor_*
     // convention): one event each flips the flag; undo restores.
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .player_toggle_campaign_metadata_sidebar }},
+        .player_toggle_campaign_metadata_sidebar,
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -500,9 +500,9 @@ test "campaign editor: exit to main menu via the options menu path, sidebar togg
     // Exit to Main Menu (the options-menu button): close_campaign_editor
     // owns the teardown + transition - the campaign editor state is
     // discarded, the screen is the main menu.
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .player_exit_to_menu }},
+        .player_exit_to_menu,
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -1174,11 +1174,11 @@ test "saveCampaignEditor: the full round trip - save, reopen, compare; the delet
     // Reopen the saved campaign through the ordinary open path: the
     // inverse projection reconstructs the graph.
     const saved_campaign_dir = history.current_arena.allocator().dupe(u8, campaign_memo.dir) catch unreachable;
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+        .{ .open_campaign_editor = .{
             .campaign_dir = saved_campaign_dir,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -1263,11 +1263,11 @@ test "saveCampaignEditor: the full round trip - save, reopen, compare; the delet
     _ = campaign_editor_io.saveCampaignEditor(&history);
     // The reopen still finds Alpha's dir (delete-then-undo-then-save kept
     // it).
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+        .{ .open_campaign_editor = .{
             .campaign_dir = reopen_dir,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -1284,11 +1284,11 @@ test "saveCampaignEditor: the full round trip - save, reopen, compare; the delet
     // The second delete leaves the start on Beta (the reload resolved
     // it); the save + reopen confirm the deletion stuck.
     _ = campaign_editor_io.saveCampaignEditor(&history);
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+        .{ .open_campaign_editor = .{
             .campaign_dir = reopen_dir,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -1489,11 +1489,11 @@ test "saveCampaignEditor: an official-origin campaign forks - fresh identity, wh
     // official-origin).
     var history = harness.newHistory(null);
     runToIdle(&history);
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+        .{ .open_campaign_editor = .{
             .campaign_dir = "campaigns/main_campaign",
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -1579,11 +1579,11 @@ test "saveCampaignEditor: an official-origin campaign forks - fresh identity, wh
     // The background scan reads the EFFECTIVE dir (the fork): with the
     // current stem cleared, the carried map.png is the only source that
     // can offer "map".
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_set_campaign_background = .{
+        .{ .player_set_campaign_background = .{
             .stem = "",
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -1592,11 +1592,11 @@ test "saveCampaignEditor: an official-origin campaign forks - fresh identity, wh
     try testing.expectEqualStrings("map", history.session.campaign_background_stems[0]);
     // Restore the background (the None above was only the scan probe) -
     // the reopen asserts its dims resolve against the carried PNG.
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_set_campaign_background = .{
+        .{ .player_set_campaign_background = .{
             .stem = "map",
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -1607,11 +1607,11 @@ test "saveCampaignEditor: an official-origin campaign forks - fresh identity, wh
 
     // The reopen through the ordinary open path: the fork loads with its
     // minted identity, the full graph, and the carried background's dims.
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+        .{ .open_campaign_editor = .{
             .campaign_dir = fork_dir,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -1636,11 +1636,11 @@ test "campaignImportDir: an official-origin campaign imports into the minted for
     // the effective dir follows it.
     var history = harness.newHistory(null);
     runToIdle(&history);
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+        .{ .open_campaign_editor = .{
             .campaign_dir = "campaigns/main_campaign",
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -1658,11 +1658,11 @@ test "campaignImportDir: an official-origin campaign imports into the minted for
         "campaigns/local_test/campaign.txt",
         "Metadata\nfile_format_version 5\ncampaign_uuid 99999999-9999-9999-9999-999999999999\nname Local Test\n",
     ) catch @panic("write local campaign");
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+        .{ .open_campaign_editor = .{
             .campaign_dir = "campaigns/local_test",
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -1877,11 +1877,11 @@ test "hub editor framing: open drills in, close returns, the scope rule owns the
     // clamp snapshot covers the grid's tiles (0,0 .. 3,2); the campaign
     // graph SURVIVES (the .hub_editor scope carries campaign_editor -
     // edits write through into it by handle).
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_hub_editor = .{
+        .{ .open_hub_editor = .{
             .hub = 0,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -1893,11 +1893,11 @@ test "hub editor framing: open drills in, close returns, the scope rule owns the
 
     // A crafted dead handle no-ops (the defensive convention - no
     // transition, no state).
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_hub_editor = .{
+        .{ .open_hub_editor = .{
             .hub = 99,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -1923,9 +1923,9 @@ test "hub editor framing: open drills in, close returns, the scope rule owns the
 
     // Exit-to-menu from the drill-in discards the whole editing session
     // (the scope swap clears hub_editor AND campaign_editor).
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .player_exit_to_menu }},
+        .player_exit_to_menu,
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -1968,9 +1968,9 @@ test "hub editor events: tile paint, selection, the move chain over the drilled-
     runToIdle(&history);
 
     // Drill in.
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_hub_editor = .{ .hub = 0 } } }},
+        .{ .open_hub_editor = .{ .hub = 0 } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -1978,11 +1978,11 @@ test "hub editor events: tile paint, selection, the move chain over the drilled-
 
     // Tile paint on empty ground: the tile lands in the AUTHORED graph (the
     // write-through - the hub grid in campaign_editor, not a copy).
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_paint_hub_tile = .{
+        .{ .player_paint_hub_tile = .{
             .position = .{ .x = 5, .y = 5 },
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -1993,21 +1993,21 @@ test "hub editor events: tile paint, selection, the move chain over the drilled-
 
     // The tool switch: tile -> select clears nothing (no selection yet);
     // a switch away from select with a selection takes it along.
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_set_hub_tool = .{
+        .{ .player_set_hub_tool = .{
             .tool = .select,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
 
     // Select the spawn ('!' singleton group).
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_replace_hub_selection = .{
+        .{ .player_replace_hub_selection = .{
             .position = .{ .x = 0, .y = 0 },
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -2018,11 +2018,11 @@ test "hub editor events: tile paint, selection, the move chain over the drilled-
     // hub_commit_selection_move paints the ground at the target, moves the
     // spawn, and clears the selection. One undo step reverts the whole
     // move.
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_move_hub_selection = .{
+        .{ .player_move_hub_selection = .{
             .delta = .{ .x = 1, .y = 0 },
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -2043,11 +2043,11 @@ test "hub editor events: tile paint, selection, the move chain over the drilled-
     // The crafted-log belt: a dead drill-in handle no-ops every edit (the
     // state is untouched, no panic).
     history.current_state.hub_editor.?.hub = 99;
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_paint_hub_tile = .{
+        .{ .player_paint_hub_tile = .{
             .position = .{ .x = 9, .y = 9 },
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -2188,12 +2188,12 @@ test "hub editor events: the NPC placement, the exit-marker upsert + delete over
 
     // The NPC tool click (the orchestrator): places the NPC + its ground
     // tile in one plan.
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_place_hub_npc = .{
+        .{ .player_place_hub_npc = .{
             .npc_type = .dream_guide,
             .position = .{ .x = 3, .y = 0 },
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -2206,12 +2206,12 @@ test "hub editor events: the NPC placement, the exit-marker upsert + delete over
 
     // The mission tool click (the orchestrator): the upsert creates the
     // marker + its ground; the co-located NPC yields.
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_place_hub_exit_marker = .{
+        .{ .player_place_hub_exit_marker = .{
             .mission = 5,
             .position = .{ .x = 3, .y = 0 },
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -2223,12 +2223,12 @@ test "hub editor events: the NPC placement, the exit-marker upsert + delete over
     }
 
     // Placing the same mission elsewhere MOVES the marker (the upsert).
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_place_hub_exit_marker = .{
+        .{ .player_place_hub_exit_marker = .{
             .mission = 5,
             .position = .{ .x = 4, .y = 0 },
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -2240,11 +2240,11 @@ test "hub editor events: the NPC placement, the exit-marker upsert + delete over
 
     // The right-click delete's marker tier (the orchestrator): the
     // marker goes, the graph wiring survives, the ground stays.
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_delete_hub_at = .{
+        .{ .player_delete_hub_at = .{
             .position = .{ .x = 4, .y = 0 },
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -2257,11 +2257,11 @@ test "hub editor events: the NPC placement, the exit-marker upsert + delete over
 
     // A crafted mission tool for a NON-outgoing mission is rejected at
     // the tool switch (the editor_set_tool posture).
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_set_hub_tool = .{
+        .{ .player_set_hub_tool = .{
             .tool = .{ .mission = 99 },
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -2346,11 +2346,11 @@ test "hub editor events: the decoration-type delete cascade + the granular edits
     // hubs; the higher type ids (1, 2 -> 0, 1) decremented everywhere; the
     // selection's index 2 (type 2's placement, above one removed) shifts
     // to 1; the ACTIVE TOOL (the deleted type) resets to select.
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_delete_hub_decoration_type = .{
+        .{ .player_delete_hub_decoration_type = .{
             .type_id = 0,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -2426,24 +2426,24 @@ test "hub editor: the surface-polymorphic decoration commits route to the campai
     // the hub events (the 4-5d reuse). The orchestrator arms are the
     // contract here: the same player events that edit the mission
     // palette on .editor edit the CAMPAIGN palette on .hub_editor.
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_set_editor_decoration_color_index = .{
+        .{ .player_set_editor_decoration_color_index = .{
             .type_id = 1,
             .value = 2,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
     try testing.expectEqual(@as(u32, 2), history.current_state.campaign_editor.?.decoration_types[1].color_index);
     try testing.expectEqual(@as(u32, 0), history.current_state.campaign_editor.?.decoration_types[0].color_index);
 
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_set_editor_decoration_keep_original_colors = .{
+        .{ .player_set_editor_decoration_keep_original_colors = .{
             .type_id = 1,
             .value = true,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -2451,12 +2451,12 @@ test "hub editor: the surface-polymorphic decoration commits route to the campai
 
     // An out-of-range type id no-ops defensively (the hub handler's
     // bound) instead of corrupting the palette.
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_set_editor_decoration_color_index = .{
+        .{ .player_set_editor_decoration_color_index = .{
             .type_id = 99,
             .value = 4,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -2517,11 +2517,11 @@ test "hub editor: the sprite-picker pick commits the whole def + the cross-hub p
 
     // The picker open (the surface-polymorphic sprite button) + the pick:
     // a registry prefab adoption (the whole def incl. the flag).
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_open_hub_picker = .{
+        .{ .player_open_hub_picker = .{
             .target = .{ .decoration_sprite = {} },
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -2531,9 +2531,9 @@ test "hub editor: the sprite-picker pick commits the whole def + the cross-hub p
     // def construction itself is exercised via the handler contract):
     // adopt a 2-tile-wide footprint that invalidates the (3,0) placement.
     const new_footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_set_hub_decoration_def = .{
+        .{ .player_set_hub_decoration_def = .{
             .type_id = 0,
             .sprite = "bush_1",
             .footprint = &new_footprint,
@@ -2541,7 +2541,7 @@ test "hub editor: the sprite-picker pick commits the whole def + the cross-hub p
             .color_index = 2,
             .keep_original_colors = false,
             .layers = &.{},
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -3025,11 +3025,11 @@ test "saveHubEditor: the drill-in save self-serves a fresh campaign's identity (
         .hub = null,
     });
     runToIdle(&history);
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_hub_editor = .{
+        .{ .open_hub_editor = .{
             .hub = 0,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -3096,11 +3096,11 @@ test "saveHubEditor: an official-origin hub save forks (the root carry) and the 
     // official-origin) and drill into its single hub.
     var history = harness.newHistory(null);
     runToIdle(&history);
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+        .{ .open_campaign_editor = .{
             .campaign_dir = "campaigns/main_campaign",
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -3110,11 +3110,11 @@ test "saveHubEditor: an official-origin hub save forks (the root carry) and the 
     // The hub-only save FORKS instead of refusing (the old gate): a
     // fresh campaign identity + the root carry, the hub minted under it,
     // the official dir never shadowed.
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_hub_editor = .{
+        .{ .open_hub_editor = .{
             .hub = opened.hubs[0].handle,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -3175,11 +3175,11 @@ test "mission editor hand-off: the on-disk open adopts the graph name + context;
     // hand-off loads through the reconstruction cache.
     var history = harness.newHistory(null);
     runToIdle(&history);
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+        .{ .open_campaign_editor = .{
             .campaign_dir = "campaigns/main_campaign",
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -3204,12 +3204,12 @@ test "mission editor hand-off: the on-disk open adopts the graph name + context;
     // graph's name is adopted over the file's (identical here - the
     // official mission was never renamed), the mission's real content
     // loads, and the campaign survives below.
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_mission_editor = .{
+        .{ .open_mission_editor = .{
             .mission = mission.handle,
             .mission_path = mission_path,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -3242,11 +3242,11 @@ test "mission editor hand-off: the on-disk open adopts the graph name + context;
     // hand-off (the editor browser's rows) clears the campaign below -
     // the replacement payload carries no context, so the campaign would
     // linger alive-but-orphaned otherwise. Undo restores both.
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_editor = .{
+        .{ .open_editor = .{
             .mission_path = null,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -3331,12 +3331,12 @@ test "the drill-in mission editor's validation run keeps the campaign context" {
 
     // The hand-off: the fresh-template branch (mission_path null), the
     // campaign context live on the editor payload.
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_mission_editor = .{
+        .{ .open_mission_editor = .{
             .mission = 3,
             .mission_path = null,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -3432,12 +3432,12 @@ test "mission editor hand-off: a never-saved mission opens the fresh template at
     // The hand-off: the fresh template at the campaign's missions/
     // anchor, the GRAPH's name adopted (a map rename that was never
     // full-saved beats the would-be file name).
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_mission_editor = .{
+        .{ .open_mission_editor = .{
             .mission = 3,
             .mission_path = null,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -3490,12 +3490,12 @@ test "mission editor hand-off save: campaign-context ctrl+S writes into the camp
     runToIdle(&history);
 
     // The hand-off: the fresh-template branch.
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_mission_editor = .{
+        .{ .open_mission_editor = .{
             .mission = 3,
             .mission_path = null,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -3630,11 +3630,11 @@ test "mission editor hand-off save: an official-origin campaign forks at the han
     // Open the REAL official campaign, hand off its first mission.
     var history = harness.newHistory(null);
     runToIdle(&history);
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+        .{ .open_campaign_editor = .{
             .campaign_dir = "campaigns/main_campaign",
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -3648,12 +3648,12 @@ test "mission editor hand-off save: an official-origin campaign forks at the han
         official_mission,
         arena,
     ).?;
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_mission_editor = .{
+        .{ .open_mission_editor = .{
             .mission = official_mission.handle,
             .mission_path = mission_path,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -4008,11 +4008,11 @@ test "mission hand-off save: an in-place campaign's table references the persist
 
     var history = harness.newHistory(null);
     runToIdle(&history);
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+        .{ .open_campaign_editor = .{
             .campaign_dir = "campaigns/inplace_test",
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -4039,12 +4039,12 @@ test "mission hand-off save: an in-place campaign's table references the persist
     const placed_handle = campaign_now.missions[0].handle;
     try testing.expect(campaign_now.missions[0].uuid.len == 0);
 
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .open_mission_editor = .{
+        .{ .open_mission_editor = .{
             .mission = placed_handle,
             .mission_path = null,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);

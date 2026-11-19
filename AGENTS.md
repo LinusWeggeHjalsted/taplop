@@ -702,8 +702,10 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   (the `.level_event`/`.sub_level_event` arms): turn flow + combat
   primitives, enemy AI, anim/pacing constants.
 - `src/event_push.zig` - the event-stack push utilities (`pushEvents`/
-  `pushPlayerSkillUse`/`pushPlayerAction`, the input-side compile-time gate)
-  shared by the handlers, input_handlers, main.zig, and the tests.
+  `pushPlayerSkillUse`/`pushPlayerAction`, the two-sided funnel gate: the
+  input-side compile-time gate + the machinery-side runtime refusal of
+  player orchestrators) shared by the handlers, input_handlers, main.zig,
+  and the tests.
 - `src/editor/planning.zig` - the pure editor click planners
   (`planEditor*Actions`, one per tool) + editor selection algebra, shared by
   the editor handlers and the input-side no-op gate

@@ -660,9 +660,13 @@ pub fn handleMetaEvent(
                         editor.mode = .edit;
                         editor_handlers.restorePrePlaytestPlayerData(current);
                     }
-                    pushEvents(current, &.{.{ .player_input_event = .{ .player_start_validation = .{
+                    // The ONE sanctioned handler-side pushPlayerAction
+                    // (the machinery funnel refuses player orchestrators):
+                    // the slice rule below needs the recorded stream to
+                    // begin at a seedable top-level player action.
+                    event_push.pushPlayerAction(current, .{ .player_start_validation = .{
                         .mission_path = current.mission.?.path,
-                    } } }}, allocator);
+                    } }, allocator);
                 } else if (end.continuation == .exit_to_menu) {
                     // The button means the MAIN MENU. With an editor:
                     // inline teardown + close_editor (the restore must

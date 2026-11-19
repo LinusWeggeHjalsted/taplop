@@ -45,7 +45,7 @@ fn pushOne(history: *state.GameStateHistory, event: LevelEvent) void {
 /// but for `PlayerInputEvent` (the player orchestrator variants that moved
 /// out of LevelEvent).
 fn pushPlayerInput(history: *state.GameStateHistory, event: events.PlayerInputEvent) void {
-    event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = event }}, history.current_arena.allocator());
+    event_push.pushPlayerAction(&history.current_state, event, history.current_arena.allocator());
 }
 
 /// Run exactly one processEvent step (pops the top, runs its handler, leaves

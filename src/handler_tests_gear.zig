@@ -571,7 +571,7 @@ test "equip_item: weapon into empty hand preserves own cds" {
 
 /// Push a single player-input orchestrator event and run to idle.
 fn pushInputAndRun(history: *state.GameStateHistory, event: events.PlayerInputEvent) void {
-    event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = event }}, history.current_arena.allocator());
+    event_push.pushPlayerAction(&history.current_state, event, history.current_arena.allocator());
     runToIdle(history);
 }
 

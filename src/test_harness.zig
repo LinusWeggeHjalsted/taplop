@@ -179,16 +179,16 @@ pub fn runToIdle(history: *GameStateHistory) void {
 /// on replay/undo (the check mirrors the live gate - see DESIGN →
 /// Determinism → Replay PLAYER-ACTION LEGALITY).
 pub fn openMiddlePanel(history: *GameStateHistory, panel_id: types.MiddlePanelId) void {
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_toggle_ui_surface = .{
+        .{ .player_toggle_ui_surface = .{
             .surface = switch (panel_id) {
                 .inventory => .inventory,
                 .gear => .gear,
                 .skills => .skills,
                 .entity_inspect => .entity_inspect,
             },
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(history);

@@ -29,11 +29,11 @@ test "player_toggle_ui_surface: flips the surface state, undo/redo restores" {
     var history = harness.newHistory(null);
     runToIdle(&history);
 
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_toggle_ui_surface = .{
+        .{ .player_toggle_ui_surface = .{
             .surface = .options_menu,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -76,11 +76,11 @@ test "surface-gated orchestrators: a recorded panel open makes the action replay
     // salvage - the replay (undo below) re-runs the recorded open + the
     // salvage and the legality gate passes.
     test_harness.openMiddlePanel(&history, .inventory);
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_salvage_inventory_item = .{
+        .{ .player_salvage_inventory_item = .{
             .inventory_slot_index = 0,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -109,11 +109,11 @@ test "tips surface: flips via the toggle orchestrator, undo restores" {
     var history = harness.newHistory(null);
     runToIdle(&history);
 
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_toggle_ui_surface = .{
+        .{ .player_toggle_ui_surface = .{
             .surface = .tips,
-        } } }},
+        } },
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -191,11 +191,11 @@ test "player_inspect_entity: opens, retargets, and closes via the machinery" {
 
     const allocator = history.current_arena.allocator();
     // Open on entity 1 (the gesture resolved "no panel open").
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_inspect_entity = .{
+        .{ .player_inspect_entity = .{
             .entity_index = 1,
-        } } }},
+        } },
         allocator,
     );
     runToIdle(&history);
@@ -203,22 +203,22 @@ test "player_inspect_entity: opens, retargets, and closes via the machinery" {
     try testing.expectEqual(@as(?u32, 1), history.current_state.ui_surfaces.inspected_entity_index);
 
     // Retarget on entity 0 (the gesture resolved "different entity").
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_inspect_entity = .{
+        .{ .player_inspect_entity = .{
             .entity_index = 0,
-        } } }},
+        } },
         allocator,
     );
     runToIdle(&history);
     try testing.expectEqual(@as(?u32, 0), history.current_state.ui_surfaces.inspected_entity_index);
 
     // Close (the gesture resolved "same entity").
-    event_push.pushEvents(
+    event_push.pushPlayerAction(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_inspect_entity = .{
+        .{ .player_inspect_entity = .{
             .entity_index = null,
-        } } }},
+        } },
         allocator,
     );
     runToIdle(&history);
@@ -387,9 +387,9 @@ test "any fullscreen overlay pauses gameplay input (world map, tips, settings)" 
         input_handlers.handleAnytimeInput(&history, gameplay_anytime, null, .{ .x = -4096, .y = -4096 }, &.{});
         try testing.expectEqual(events_before, history.event_history.items.len);
         // Close through the recorded toggle (the real close path).
-        event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .player_toggle_ui_surface = .{
+        event_push.pushPlayerAction(&history.current_state, .{ .player_toggle_ui_surface = .{
             .surface = surface,
-        } } }}, history.current_arena.allocator());
+        } }, history.current_arena.allocator());
         runToIdle(&history);
         try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(surface));
     }

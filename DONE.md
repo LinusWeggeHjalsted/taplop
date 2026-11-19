@@ -401,6 +401,7 @@ working rules).
 - [That Which Explodes: effect-sourced attacks never trigger effects](#that-which-explodes-effect-sourced-attacks-never-trigger-effects)
 - [Savefile resume by campaign uuid (drop `current_campaign`)](#savefile-resume-by-campaign-uuid-drop-currentcampaign)
 - [Handler-pushed orchestrator strands on the replay stack (the undo-mangle root cause)](#handler-pushed-orchestrator-strands-on-the-replay-stack-the-undo-mangle-root-cause)
+- [The orchestrator convention is machine-enforced at the push funnels](#the-orchestrator-convention-is-machine-enforced-at-the-push-funnels)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -23808,3 +23809,32 @@ as the artifact).
   initial state (found as a false divergence while authoring the
   regression test; the existing round-trip tests dodge it by
   convergent mutation, worth knowing when authoring new ones).
+
+## The orchestrator convention is machine-enforced at the push funnels
+
+The follow-up to the undo-mangle root cause: the convention ("handlers
+push machinery; player orchestrators are input-origin") was a comment
+contract, and the bug class was the natural way to break it - a handler
+casually pushing a `player_input_event` child. Now it cannot happen
+quietly:
+
+- `pushEvents` (the machinery funnel) refuses `player_input_event`s
+  outright - a loud panic naming the convention and the correct channel.
+  The panic fires on the first test drain, not months later in a saved
+  log.
+- `pushPlayerAction` is the only channel for player actions; its ONE
+  sanctioned handler-side use is meta.zig's restart_mission re-entry
+  (the validation-replay slice rule - the slice extractor keys on the
+  recorded `player_start_validation`), now routed through it with the
+  justification in place.
+- The sweep to green under the gate converted 160+ test-side
+  emulation pushes to `pushPlayerAction` (single-element batches, one
+  named-variable helper, one runtime event-list loop restructured to
+  the typed channel) - the conversion script's own lessons relearned:
+  write per file (aborted runs left partial writes + one mangled
+  multiline conversion), and the compiler + suite are the real
+  verifiers.
+- The gate's bool core (`batchContainsPlayerAction`) is unit-tested per
+  the no-expectPanics convention; the thin panic layer rides it.
+- DESIGN → Architecture records the settle (the machine-enforced
+  funnels); AGENTS's key-files line points at it. 1083 tests green.
