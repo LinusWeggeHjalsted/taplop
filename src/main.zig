@@ -2571,6 +2571,35 @@ test "undo during a mid-drain reverts to the current idle point, not one further
     try std.testing.expectEqual(idle_index_before - 1, history.current_idle_index);
 }
 
+test "init deep-copies the starting state (histories from one fixture stay isolated)" {
+    // The regression: init BORROWED the starting state, so two histories
+    // built from one fixture shared its entity slices - the first
+    // history's in-place mutations leaked into the second's initial
+    // state (observed as a false replay divergence while authoring the
+    // skip_move_to_skill regression test). initial_arena's ownership
+    // claim existed but was never wired.
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = test_harness.Harness.init(backing.allocator());
+
+    const starting = test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 }, .momentum = 0 }},
+        &three_by_three_tiles,
+    );
+    var history1 = harness.newHistory(starting);
+    var history2 = harness.newHistory(starting);
+
+    // Mutate through history1's live state - the in-place slice write
+    // that used to reach every alias of the fixture.
+    test_harness.levelEntity(&history1, 0).momentum = 7;
+
+    // The second history's initial state stayed pristine, and so did the
+    // caller's own fixture memory.
+    try std.testing.expectEqual(@as(u32, 0), test_harness.levelEntity(&history2, 0).momentum);
+    try std.testing.expectEqual(@as(u32, 0), starting.level.?.entities[0].momentum);
+}
+
 test "maybeRecordIdlePoint: first idle point from empty idle_points (no out-of-bounds)" {
     // Regression: maybeRecordIdlePoint reads idle_points[current_idle_index]
     // to check "not already an idle point." At startup idle_points is empty

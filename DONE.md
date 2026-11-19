@@ -403,6 +403,7 @@ working rules).
 - [Handler-pushed orchestrator strands on the replay stack (the undo-mangle root cause)](#handler-pushed-orchestrator-strands-on-the-replay-stack-the-undo-mangle-root-cause)
 - [The orchestrator convention is machine-enforced at the push funnels](#the-orchestrator-convention-is-machine-enforced-at-the-push-funnels)
 - [The validate-restart exception dissolved (the slice keys on the machinery boundary)](#the-validate-restart-exception-dissolved-the-slice-keys-on-the-machinery-boundary)
+- [init deep-copies the starting state (initial_arena was designed, never wired)](#init-deep-copies-the-starting-state-initialarena-was-designed-never-wired)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -23878,3 +23879,22 @@ push funnels are now exception-free, input-origin only.
 - DESIGN updated: the slice rule (boundary/start split), the exit
   guard's validate-restart prose, and the Architecture funnel bullet
   (zero handler-side uses).
+
+## init deep-copies the starting state (initial_arena was designed, never wired)
+
+Session-reflection follow-up: `GameStateHistory.init` BORROWED the
+starting state - `.initial_state = initial_state, .current_state =
+initial_state` - while `initial_arena`'s field doc already claimed it
+"owns all memory referenced by initial_state". Two histories built from
+one fixture silently shared its slices (hit as a false replay divergence
+while authoring the skip_move_to_skill regression test; the round-trip
+tests dodged it by convergent mutation). init now deep-copies the
+starting state into initial_arena, wiring the designed ownership; both
+fields alias the one owned copy, preserving the existing initial<->
+current aliasing semantics on owned memory. The isolation test pins it
+three ways (mutate through history1; history2 and the caller's own
+fixture both stay pristine). The two leak-checked input tests
+(testing.allocator-backed histories) return the new allocation via
+`initial_arena.deinit()` - the full history deinit stays wrong for a
+borrowed-configs test history (it frees session-owned settings the
+harness owns). 1085 tests green.

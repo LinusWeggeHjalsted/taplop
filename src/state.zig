@@ -1107,7 +1107,7 @@ pub const GameStateHistory = struct {
         file_source: *const FileSource,
         io: std.Io,
     ) GameStateHistory {
-        return .{
+        var history = GameStateHistory{
             .settings = settings,
             .weapon_type_definitions = weapon_type_definitions,
             .color_theme_definitions = color_theme_definitions,
@@ -1117,7 +1117,7 @@ pub const GameStateHistory = struct {
             .io = io,
             .backing_allocator = allocator,
             .history_arena = std.heap.ArenaAllocator.init(allocator),
-            .initial_state = initial_state,
+            .initial_state = undefined,
             .initial_arena = std.heap.ArenaAllocator.init(allocator),
             .event_history = .empty,
             .checkpoints = @splat(null),
@@ -1127,10 +1127,23 @@ pub const GameStateHistory = struct {
             .idle_points = .empty,
             .current_idle_index = 0,
             .current_event_index = 0,
-            .current_state = initial_state,
+            .current_state = undefined,
             .current_arena = std.heap.ArenaAllocator.init(allocator),
             .replaying = false,
         };
+        // The starting state is DEEP-COPIED into initial_arena (the
+        // arena's own ownership claim - designed, never wired until now):
+        // the caller's fixture stays pristine, so two histories built
+        // from one starting state stay isolated. A borrowed state used to
+        // leak the first history's in-place entity mutations into the
+        // second's initial state (observed as a false replay divergence
+        // while authoring the skip_move_to_skill regression test; the
+        // round-trip tests dodged it by convergent mutation). Both
+        // fields alias the ONE owned copy - the existing initial<->
+        // current aliasing semantics, preserved on owned memory.
+        history.initial_state = deepCopy(GameState, initial_state, history.initial_arena.allocator());
+        history.current_state = history.initial_state;
+        return history;
     }
 
     /// Free everything the history owns: the session-owned config values

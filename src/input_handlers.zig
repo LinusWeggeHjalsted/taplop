@@ -7440,6 +7440,12 @@ test "keybind confirm/remove: the rebuild-ownership path (leak-checked)" {
         &harness.file_source,
         harness.file_source.io,
     );
+    // The history runs on testing.allocator and init deep-copies the
+    // starting state into initial_arena - that copy is a history-owned
+    // allocation under the leak checker, so the test returns it (the
+    // full history.deinit stays wrong for a borrowed-configs test
+    // history - it frees session-owned settings the harness owns).
+    defer history.initial_arena.deinit();
 
     // Self-owned bindings: escape/Escape, skip/Enter, undo/ctrl+KeyZ.
     const binding_count = 3;
@@ -7554,6 +7560,12 @@ test "resetSettingsToDefaults: full reset + flush-then-copy settings backup" {
         &harness.file_source,
         harness.file_source.io,
     );
+    // The history runs on testing.allocator and init deep-copies the
+    // starting state into initial_arena - that copy is a history-owned
+    // allocation under the leak checker, so the test returns it (the
+    // full history.deinit stays wrong for a borrowed-configs test
+    // history - it frees session-owned settings the harness owns).
+    defer history.initial_arena.deinit();
 
     // Custom settings to be destroyed: non-default values + a self-owned
     // binding set + an active keybind edit on a scrolled keybinds tab.
