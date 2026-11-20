@@ -4,8 +4,8 @@ taplop is a tactical turnbased gridbased rpg working towards full official relea
 
 Zig rewrite of the Unity original at https://github.com/LinusWeggeHjalsted/taplop-unity
 
-**Play:** a hosted browser build is planned (GitHub Pages) - this becomes
-the link when it lands. until then, build and run locally (see below).
+**Play:** [linusweggehjalsted.github.io/taplop](https://linusweggehjalsted.github.io/taplop/)
+(the web build, hosted via GitHub Pages)
 
 ## How this codebase is written
 

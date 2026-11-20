@@ -421,6 +421,7 @@ working rules).
 - [Windows port: the cross-build + the wine smoke](#windows-port-the-cross-build--the-wine-smoke)
 - [The doc-index check gate (and the wrong-levels regeneration it caught)](#the-doc-index-check-gate-and-the-wrong-levels-regeneration-it-caught)
 - [emitCornerNumber: the one corner-count recipe](#emitcornernumber-the-one-corner-count-recipe)
+- [Rename to taplop + the GitHub migration](#rename-to-taplop--the-github-migration)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24537,3 +24538,51 @@ position against the emitted icon element (icon.x + width - measured
 count width - inset), not against a copy of the emitter's math, so
 the recipe swap is invisible to it - the contract-over-mechanics
 testing discipline paying off one session after it was written.
+
+## Rename to taplop + the GitHub migration
+
+The game's name is taplop; "ziglop" was a development codename that
+never should be player-facing. The rename + migration ran as one
+focused session (the plan's own discipline: whole sweep or don't start).
+
+The sweep: every ziglop/Ziglop/ZIGLOP occurrence outside this archive
+became taplop - the build.zig.zon package name (+ the regenerated
+fingerprint; Zig 0.17 requires a new one when the name changes), exe +
+wasm names, taplop.html web output, mac bundle id + display name, window
+titles, the /taplop MEMFS mount, $TAPLOP_DATA (field ziglop_data →
+taplop_data), taplop.zip export download name, report headers, scripts,
+and the docs. Unity-repo URLs → taplop-unity (the GitHub rename that
+freed the name). Stale ~/.ziglop/ path shorthands fixed to the real
+~/.local/share/taplop/ resolution. The player's persistent dir moved
+with it (~/.local/share/taplop; ~/.taplop symlink) - free pre-release,
+no real players with saves. Verified: all 1116 tests, fmt/dash/doc
+lints, native console smoke, and web runtime checks at every platform
+step.
+
+The migration: origin moved from sr.ht to GitHub (the ssh form -
+computeRepoUrl handles both; the sr.ht repo stays online as a frozen
+archive at the last pre-rename push). The stale fully-merged tmp-hello
+branch deleted; master pushed; GitHub auto-enabled Pages off the
+gh-pages branch push.
+
+The Pages mechanism: the web artifact is ~16 MB of binaries (all game
+assets embedded), so it never enters master's history - scripts/pages.sh
+builds the release web artifact (clean-tree + --cache-poison +
+wasm-stamp gates, the release.sh pattern), renames the html to
+index.html (Pages serves it for the bare directory URL), and
+force-pushes the gh-pages orphan branch as ONE rewritten commit (amend
+per deploy - the branch has no history value). Both deploy paths
+(first-create + amend) were tested end-to-end against a scratch bare
+remote before touching origin. The plan's subpath worry was falsified
+empirically: the emcc shell output already uses relative asset refs, so
+the /taplop/ subpath needs no <base> tag - verified by serving the
+build under a /taplop/ subpath, then on the live URL
+(linusweggehjalsted.github.io/taplop/, 60fps menu).
+
+The README got its public-repo pass in the same session: the # taplop
+H1, the Play link (live now), the cross-compile matrix, and the "How
+this codebase is written" section (code/tests/docs written by an AI
+agent at the maintainer's direction - the front-page disclosure).
+Machine-local references were pruned from AGENTS (the ziglop-mac-bisect
+kit pointer, "the Linux box" phrasing) - the repo now reads
+machine-neutral.

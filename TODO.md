@@ -772,55 +772,6 @@ designed:
 - Server component: out of scope for the single-file exe - a separate
   backend. The game client only needs a thin HTTP fetch/submit seam.
 
-## Rename to taplop + migrate to GitHub
-
-The game's name is taplop (friends already call it that); "ziglop" was a
-development codename that never should be player-facing. The rename is
-IN PROGRESS: the code sweep + the Pages plumbing are done, what remains
-is the push itself + flipping Pages on. Finish it as a focused session,
-not interleaved with feature work (a half-renamed project is worse than
-either clean state; the data-dir rename was free pre-release - no real
-players with saves yet).
-
-Status:
-1. DONE - the Unity repo renamed on GitHub `taplop` → `taplop-unity`
-   (GitHub auto-redirects old URLs, so existing links keep working -
-   stars/watchers/history all follow).
-2. DONE - the new empty GitHub repo created
-   (`https://github.com/LinusWeggeHjalsted/taplop.git`) and `origin` now
-   points at it; the sr.ht remote is REMOVED from the local repo. The
-   sr.ht repo stays online as a frozen archive (don't delete it - avoid
-   surprise 404s), but its master is frozen at the last pre-rename push.
-3. DONE - the code sweep, one commit on top of the sr.ht history:
-   - `build.zig.zon` package name
-   - exe name (`build.zig`) + web output (`taplop.html`)
-   - persistent data dir `~/.local/share/taplop/` (`$XDG_DATA_HOME/<name>`
-     on Linux, `%LOCALAPPDATA%/<name>` on Windows,
-     `~/Library/Application Support/<name>` on macOS) + `$TAPLOP_DATA`
-   - doc references: the Unity-repo URLs in AGENTS.md + DONE.md →
-     `taplop-unity`
-   - every remaining internal "ziglop" string (window titles, the web
-     MEMFS mount, `taplop.zip`, report headers, scripts)
-4. REMAINING - push the history up to GitHub: `git push -u origin
-   master`. Decide the fate of the stale fully-merged `tmp-hello`
-   branch first - it is 366 commits behind master with nothing unique;
-   delete it (it must not ride the push).
-5. REMAINING (the serving source is chosen: the `gh-pages` orphan branch
-   via `scripts/pages.sh` - clean-tree + stamp gated, `index.html` for
-   the bare directory URL, force-pushed as one rewritten commit; tested
-   end-to-end against a scratch remote). GitHub Pages: project sites
-   serve at `linusweggehjalsted.github.io/taplop/` (a SUBPATH, not repo
-   root). RESOLVED (verified, not assumed): the emcc shell output already
-   uses relative asset refs (`taplop.js` / `taplop.wasm`), and the build
-   was served under a `/taplop/` subpath and booted to a rendering menu -
-   no `<base>` tag or build-time path config needed. What remains is the
-   first `scripts/pages.sh origin` deploy + flipping Pages on in the repo
-   settings.
-
-Reversible throughout (GitHub renames back if needed; redirects cover the
-transition). Never delete-and-recreate to shuffle names - rename always,
-or GitHub's redirect gets shadowed.
-
 ## Tech Debt / Refactoring
 
 Done items in DONE.md. Open:
