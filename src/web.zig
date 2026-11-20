@@ -2,12 +2,12 @@
 //!
 //! Mirrors native.zig but with two platform differences:
 //!   - Persistence: instead of the native per-OS default (persistent_path.zig -
-//!     e.g. ~/.local/share/ziglop on Linux), the persistent dir is an
-//!     in-memory (MEMFS) mount at the virtual path /ziglop - SESSION-SCOPED
+//!     e.g. ~/.local/share/taplop on Linux), the persistent dir is an
+//!     in-memory (MEMFS) mount at the virtual path /taplop - SESSION-SCOPED
 //!     (see DESIGN → File System & IO → Web storage model): browser storage
 //!     is NEVER touched by the game, nothing persists between sessions by
 //!     design (a refresh is a session end), and cross-session data lives in
-//!     Import Game / Export Game (ziglop.zip round-trips). Within the
+//!     Import Game / Export Game (taplop.zip round-trips). Within the
 //!     session, FileSource reads/writes the mount exactly like native.
 //!   - Loop: instead of a blocking while-loop, registers frame() (the shared
 //!     per-frame core from main.zig) via emscripten_set_main_loop_arg. The
@@ -168,11 +168,11 @@ fn rebootSession(session: *WebSession) void {
 /// memory for the session; browser storage is NEVER touched by the game
 /// (no IDBFS, no syncfs - nothing persists between sessions by design, a
 /// refresh is a session end). Cross-session data lives in Import Game /
-/// Export Game (ziglop.zip round-trips).
+/// Export Game (taplop.zip round-trips).
 fn mountPersistentDir() void {
     const script =
-        \\FS.mkdir('/ziglop');
-        \\FS.mount(MEMFS, {}, '/ziglop');
+        \\FS.mkdir('/taplop');
+        \\FS.mount(MEMFS, {}, '/taplop');
     ;
     emscripten_run_script(script);
 }
@@ -214,8 +214,8 @@ fn installAudioLeadWatchdog() void {
         "(function() {" ++
         "  var m = window.miniaudio;" ++
         "  var d = m && m.devices && m.devices[0];" ++
-        "  if (!d || !d.scriptNode || d.scriptNode.__ziglopWatchdog) return;" ++
-        "  d.scriptNode.__ziglopWatchdog = true;" ++
+        "  if (!d || !d.scriptNode || d.scriptNode.__taplopWatchdog) return;" ++
+        "  d.scriptNode.__taplopWatchdog = true;" ++
         "  var last_lead = null;" ++
         "  var high_streak = 0;" ++
         "  var orig = d.scriptNode.onaudioprocess;" ++
@@ -244,7 +244,7 @@ fn installAudioLeadWatchdog() void {
         "    high_streak = 0;" ++
         "    var old = d.scriptNode;" ++
         "    if (old !== e.target) return;" ++
-        "    console.warn('[ziglop] audio queue banked ' + lead.toFixed(0) +" ++
+        "    console.warn('[taplop] audio queue banked ' + lead.toFixed(0) +" ++
         "      'ms of playback ahead - rebuilding the audio node (the queue never drains; see the web-audio latency notes)');" ++
         "    var fresh = d.webaudio.createScriptProcessor(old.bufferSize, 0, old.channelCount || 2);" ++
         "    fresh.onaudioprocess = old.onaudioprocess;" ++
@@ -285,7 +285,7 @@ pub fn main() void {
     const persistent_dir = std.Io.Dir.cwd().openDir(io, persistent_virtual_path, .{
         .access_sub_paths = true,
         .iterate = true,
-    }) catch @panic("failed to open /ziglop persistent dir");
+    }) catch @panic("failed to open /taplop persistent dir");
     defer persistent_dir.close(io);
 
     const file_source = FileSource.init(io, persistent_dir);
@@ -297,7 +297,7 @@ pub fn main() void {
         allocator,
         @divTrunc(types.reference_width, 2),
         @divTrunc(types.reference_height, 2),
-        "Ziglop",
+        "taplop",
         &file_source,
     );
     defer backend.deinit();

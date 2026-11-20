@@ -131,7 +131,7 @@ fn dumpEventLog(history: *GameStateHistory) void {
     };
 
     // Feedback for this dev tool: the bundle lands in the persistent data
-    // dir (~/.local/share/ziglop/logs/).
+    // dir (~/.local/share/taplop/logs/).
     std.debug.print("wrote session log bundle: {s} ({d} events)\n", .{
         bundle_dir,
         history.event_history.items.len,
@@ -5012,7 +5012,7 @@ pub fn handleIdleInput(
                 // autosave first).
                 .continue_game => event_push.pushPlayerAction(current, .player_continue, allocator),
                 // Import Game: open the browser file picker for a full
-                // ziglop.zip. The picked file lands at the staging temp +
+                // taplop.zip. The picked file lands at the staging temp +
                 // the game import marker is written; the EVERY-FRAME poll
                 // in main.frame consumes it whenever it lands - the
                 // overlay runs there, then the session re-boots at the

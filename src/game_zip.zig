@@ -1,4 +1,4 @@
-//! The game-folder zip (ziglop.zip) - the web build's cross-session data
+//! The game-folder zip (taplop.zip) - the web build's cross-session data
 //! path (browser storage never persists sessions, so a downloaded archive is
 //! the only durable home for a web player's data; DESIGN → File System & IO →
 //! Web storage model). Both halves of the round trip:
@@ -6,11 +6,11 @@
 //!     recursively (`FileSource.listPersistentDirFiles`), read every file,
 //!     write a STORE archive (zip_writer; entry names are the persistent-
 //!     relative paths), stage it at the `.game_export.zip` temp, download it
-//!     as ziglop.zip, delete the temp. Called from the input path
+//!     as taplop.zip, delete the temp. Called from the input path
 //!     (live-only - input handling never replays, so no replay gate), AFTER
 //!     the `.export_game` orchestrator arm drained the autosave write, so
 //!     mid-level progress is in the archive.
-//!   - IMPORT (main menu): the picked ziglop.zip lands at the
+//!   - IMPORT (main menu): the picked taplop.zip lands at the
 //!     `.game_import.zip` staging temp (the upload JS + marker - see
 //!     pollGameImportMarker, called every frame from the web driver), then
 //!     importGameFolder overlays it onto the persistent dir: validated
@@ -25,11 +25,11 @@ const file_source_mod = @import("file_source.zig");
 
 const FileSource = file_source_mod.FileSource;
 
-/// The downloaded archive's name: ziglop.zip until the project rename to
-/// taplop, at which point this constant (the one site) becomes taplop.zip.
-pub const export_download_name = "ziglop.zip";
+/// The downloaded archive's name. One site - the web Export Game download
+/// filename (the import side accepts any zip).
+pub const export_download_name = "taplop.zip";
 
-/// Export the full game folder (the whole persistent dir) as a ziglop.zip
+/// Export the full game folder (the whole persistent dir) as a taplop.zip
 /// browser download. Best-effort (the autosave-backup policy - see DESIGN →
 /// File System & IO): any failure surfaces the recoverable popup and
 /// aborts; the staging temp is cleaned up best-effort (the listing also
@@ -100,7 +100,7 @@ const import_max_entries: usize = 65_536;
 const import_max_entry_bytes: usize = 512 * 1024 * 1024;
 const import_max_total_bytes: usize = 2 * 1024 * 1024 * 1024;
 
-/// Overlay a picked ziglop.zip onto the persistent dir (Import Game - web
+/// Overlay a picked taplop.zip onto the persistent dir (Import Game - web
 /// only by reachability, platform-neutral by construction). The overlay
 /// semantics: same-path files are OVERWRITTEN by the zip (restore wins),
 /// files the zip doesn't mention are kept (this session's new work
@@ -263,7 +263,7 @@ fn importGameFolder(
     history.session.pending_import_reboot = true;
 }
 
-/// Consume the web game-import marker, if present: the picked ziglop.zip
+/// Consume the web game-import marker, if present: the picked taplop.zip
 /// has landed at the staging temp - delete the marker, overlay the zip onto
 /// the persistent dir (see importGameFolder). Called every frame from the
 /// web driver's frame path (gated comptime at the call site - see main.zig);

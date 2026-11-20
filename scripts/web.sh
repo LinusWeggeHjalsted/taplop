@@ -14,7 +14,7 @@
 # (same as native + tests).
 #
 # Usage:
-#   scripts/web.sh            # zig build web  -> zig-out/web/ziglop.html
+#   scripts/web.sh            # zig build web  -> zig-out/web/taplop.html
 #   scripts/web.sh --raw      # full verbatim output (no filtering)
 #   scripts/web.sh emrun      # zig build emrun (serve + open in a browser)
 #   scripts/web.sh emrun --raw

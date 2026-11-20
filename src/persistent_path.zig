@@ -14,9 +14,9 @@ const std = @import("std");
 /// read. Callers fill it from `std.c.getenv` (slicing at the NUL); tests
 /// pass synthetic values.
 pub const Env = struct {
-    /// `$ZIGLOP_DATA` - the dev / portable-install / test override. Wins
+    /// `$TAPLOP_DATA` - the dev / portable-install / test override. Wins
     /// over every per-OS default.
-    ziglop_data: ?[]const u8 = null,
+    taplop_data: ?[]const u8 = null,
     /// `$HOME` (linux fallback, macOS).
     home: ?[]const u8 = null,
     /// `$XDG_DATA_HOME` - honored only when set and ABSOLUTE (the XDG
@@ -30,12 +30,12 @@ pub const Env = struct {
 };
 
 /// Build the persistent data dir path in priority order:
-///   1. `$ZIGLOP_DATA`
+///   1. `$TAPLOP_DATA`
 ///   2. per-OS default:
-///      - linux: `$XDG_DATA_HOME/ziglop`, else `$HOME/.local/share/ziglop`
-///      - macOS: `$HOME/Library/Application Support/ziglop`
-///      - windows: `%LOCALAPPDATA%/ziglop`, else
-///        `%USERPROFILE%/AppData/Local/ziglop`
+///      - linux: `$XDG_DATA_HOME/taplop`, else `$HOME/.local/share/taplop`
+///      - macOS: `$HOME/Library/Application Support/taplop`
+///      - windows: `%LOCALAPPDATA%/taplop`, else
+///        `%USERPROFILE%/AppData/Local/taplop`
 /// Forward slashes on windows: both the Zig Dir layer and raylib accept
 /// them, so one separator convention serves every arm. Returned bytes are
 /// caller-owned. Returns `error.EnvironmentVariableMissing` when no rule
@@ -45,7 +45,7 @@ pub fn resolvePersistentPath(
     os_tag: std.Target.Os.Tag,
     env: Env,
 ) ![]u8 {
-    if (env.ziglop_data) |override| {
+    if (env.taplop_data) |override| {
         if (override.len > 0) return allocator.dupe(u8, override);
     }
     switch (os_tag) {
@@ -53,18 +53,18 @@ pub fn resolvePersistentPath(
             const home = env.home orelse return error.EnvironmentVariableMissing;
             return std.fmt.allocPrint(
                 allocator,
-                "{s}/Library/Application Support/ziglop",
+                "{s}/Library/Application Support/taplop",
                 .{home},
             );
         },
         .windows => {
             if (env.localappdata) |localappdata| {
-                return std.fmt.allocPrint(allocator, "{s}/ziglop", .{localappdata});
+                return std.fmt.allocPrint(allocator, "{s}/taplop", .{localappdata});
             }
             const userprofile = env.userprofile orelse return error.EnvironmentVariableMissing;
             return std.fmt.allocPrint(
                 allocator,
-                "{s}/AppData/Local/ziglop",
+                "{s}/AppData/Local/taplop",
                 .{userprofile},
             );
         },
@@ -72,19 +72,19 @@ pub fn resolvePersistentPath(
         else => {
             if (env.xdg_data_home) |xdg_data_home| {
                 if (xdg_data_home.len > 0 and xdg_data_home[0] == '/') {
-                    return std.fmt.allocPrint(allocator, "{s}/ziglop", .{xdg_data_home});
+                    return std.fmt.allocPrint(allocator, "{s}/taplop", .{xdg_data_home});
                 }
             }
             const home = env.home orelse return error.EnvironmentVariableMissing;
-            return std.fmt.allocPrint(allocator, "{s}/.local/share/ziglop", .{home});
+            return std.fmt.allocPrint(allocator, "{s}/.local/share/taplop", .{home});
         },
     }
 }
 
-test "resolvePersistentPath: the ZIGLOP_DATA override wins over every default" {
+test "resolvePersistentPath: the TAPLOP_DATA override wins over every default" {
     const allocator = std.testing.allocator;
     const resolved = try resolvePersistentPath(allocator, .linux, .{
-        .ziglop_data = "/scratch/drive",
+        .taplop_data = "/scratch/drive",
         .xdg_data_home = "/xdg",
         .home = "/home/someone",
     });
@@ -98,7 +98,7 @@ test "resolvePersistentPath: linux honors an absolute XDG_DATA_HOME without HOME
         .xdg_data_home = "/data/home",
     });
     defer allocator.free(resolved);
-    try std.testing.expectEqualStrings("/data/home/ziglop", resolved);
+    try std.testing.expectEqualStrings("/data/home/taplop", resolved);
 }
 
 test "resolvePersistentPath: linux ignores empty or relative XDG_DATA_HOME (spec: unset)" {
@@ -109,7 +109,7 @@ test "resolvePersistentPath: linux ignores empty or relative XDG_DATA_HOME (spec
             .home = "/home/someone",
         });
         defer allocator.free(resolved);
-        try std.testing.expectEqualStrings("/home/someone/.local/share/ziglop", resolved);
+        try std.testing.expectEqualStrings("/home/someone/.local/share/taplop", resolved);
     }
 }
 
@@ -119,7 +119,7 @@ test "resolvePersistentPath: linux defaults into the XDG data dir under HOME" {
         .home = "/home/someone",
     });
     defer allocator.free(resolved);
-    try std.testing.expectEqualStrings("/home/someone/.local/share/ziglop", resolved);
+    try std.testing.expectEqualStrings("/home/someone/.local/share/taplop", resolved);
 }
 
 test "resolvePersistentPath: macos uses Application Support" {
@@ -129,7 +129,7 @@ test "resolvePersistentPath: macos uses Application Support" {
     });
     defer allocator.free(resolved);
     try std.testing.expectEqualStrings(
-        "/Users/someone/Library/Application Support/ziglop",
+        "/Users/someone/Library/Application Support/taplop",
         resolved,
     );
 }
@@ -140,13 +140,13 @@ test "resolvePersistentPath: windows uses LOCALAPPDATA, falls back to USERPROFIL
         .localappdata = "C:/Users/someone/AppData/Local",
     });
     defer allocator.free(local);
-    try std.testing.expectEqualStrings("C:/Users/someone/AppData/Local/ziglop", local);
+    try std.testing.expectEqualStrings("C:/Users/someone/AppData/Local/taplop", local);
 
     const fallback = try resolvePersistentPath(allocator, .windows, .{
         .userprofile = "C:/Users/someone",
     });
     defer allocator.free(fallback);
-    try std.testing.expectEqualStrings("C:/Users/someone/AppData/Local/ziglop", fallback);
+    try std.testing.expectEqualStrings("C:/Users/someone/AppData/Local/taplop", fallback);
 }
 
 test "resolvePersistentPath: errors when no rule has its variables" {

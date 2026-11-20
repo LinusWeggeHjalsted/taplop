@@ -58,7 +58,7 @@ pub fn main() !void {
     var counts: ReportCounts = .{};
 
     try report.print(allocator,
-        \\# Ziglop sound asset overview
+        \\# taplop sound asset overview
         \\
         \\Auto-generated from the engine's enums - every wired sound is listed,
         \\and new skills/actions appear here automatically. Regenerate with
@@ -287,7 +287,7 @@ fn foundExtension(
 
 /// The per-OS persistent data directory: the SHARED resolution site
 /// (persistent_path.zig - the same fn native.zig rides, so the default
-/// exists once), fed from the environment. The tool reads `$ZIGLOP_DATA`
+/// exists once), fed from the environment. The tool reads `$TAPLOP_DATA`
 /// or the platform default. libc is linked (see build.zig), so
 /// `std.c.getenv` is available - the native.zig discipline.
 fn resolvePersistentPath(allocator: std.mem.Allocator) ![]u8 {
@@ -295,7 +295,7 @@ fn resolvePersistentPath(allocator: std.mem.Allocator) ![]u8 {
         allocator,
         @import("builtin").target.os.tag,
         .{
-            .ziglop_data = getenvSlice("ZIGLOP_DATA"),
+            .taplop_data = getenvSlice("TAPLOP_DATA"),
             .home = getenvSlice("HOME"),
             .xdg_data_home = getenvSlice("XDG_DATA_HOME"),
             .localappdata = getenvSlice("LOCALAPPDATA"),

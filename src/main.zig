@@ -479,7 +479,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
 
     // Import Game (web only - the comptime gate makes the native build free):
     // consume the game-import marker whenever it lands (the upload JS writes
-    // the picked ziglop.zip + the marker between frames), overlay the
+    // the picked taplop.zip + the marker between frames), overlay the
     // archive onto the persistent dir, and set the pending re-boot flag. The
     // flag is consumed by the WEB DRIVER after this frame returns - a
     // mid-frame re-boot would be a use-after-free of the old history, which

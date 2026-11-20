@@ -95,7 +95,7 @@ pub fn buildMainMenu(
     button_count += 1;
     buttons[button_count] = .{ .label = "Load Save", .action = .toggle_load_save_menu };
     button_count += 1;
-    // Import Game (web only - the on_web signal): uploads a ziglop.zip OVER
+    // Import Game (web only - the on_web signal): uploads a taplop.zip OVER
     // the game folder - the web build's cross-session RESTORE path (browser
     // storage never persists sessions; a downloaded archive is the only
     // durable home, Export Game writes it). The overlay lands via the
@@ -106,7 +106,7 @@ pub fn buildMainMenu(
             .label = "Import Game",
             .action = .import_game,
             .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(
-                "Uploads a ziglop.zip over your game folder (replaces the current session)",
+                "Uploads a taplop.zip over your game folder (replaces the current session)",
             ))}) },
         };
         button_count += 1;

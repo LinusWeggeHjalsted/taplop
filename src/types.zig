@@ -265,14 +265,14 @@ pub const Action = enum {
     zoom_reset,
     // Options menu commands (context-specific: hub vs level).
     save_game,
-    // Export the FULL game folder (the persistent dir) as a ziglop.zip
+    // Export the FULL game folder (the persistent dir) as a taplop.zip
     // browser download (the options menu's Export Game button - web only,
     // button-only). A pure side effect (the dump_event_log class): a game
     // in progress pushes the autosave write first (the `export_game`
     // orchestrator arm), then the input path zips + downloads. See
     // game_zip.zig + DESIGN → File System & IO → Web storage model.
     export_game,
-    // Import a ziglop.zip OVER the persistent dir (the main menu's Import
+    // Import a taplop.zip OVER the persistent dir (the main menu's Import
     // Game button - web only, button-only). A pure input-path side effect
     // (the reset-to-defaults class - no event, nothing recorded: the
     // import REPLACES the session via the frame-boundary re-boot, so

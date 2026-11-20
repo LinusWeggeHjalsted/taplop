@@ -309,7 +309,7 @@ pub fn buildOptionsMenu(
     }
 
     // Export Game (web only - the persistent-dir-path-null signal, the
-    // same web case the Export Save tooltip uses): downloads ziglop.zip,
+    // same web case the Export Save tooltip uses): downloads taplop.zip,
     // the FULL game folder (settings, saves, custom missions) - the web
     // build's cross-session backup path (browser storage never persists
     // sessions). Present in EVERY variant (the options menu is the only
@@ -322,7 +322,7 @@ pub fn buildOptionsMenu(
             .label = "Export Game",
             .action = .export_game,
             .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(
-                "Downloads ziglop.zip - your full game folder (settings, saves, custom missions)",
+                "Downloads taplop.zip - your full game folder (settings, saves, custom missions)",
             ))}) },
         };
         button_count += 1;
@@ -536,7 +536,7 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
     // Native (a persistent dir path is known): "Saves to <dir>/saves/".
     {
         var elements: UiElementList = .empty;
-        try buildOptionsMenu(&elements, allocator, metrics, screen, .level, null, false, button_color, "/home/tester/.ziglop");
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .level, null, false, button_color, "/home/tester/.taplop");
         const button = (for (elements.items) |element| switch (element) {
             .button => |b| if (b.action == .save_game) break b,
             else => {},
@@ -544,7 +544,7 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
         const tooltip = button.tooltip orelse @panic("Export Save button has no tooltip");
         try std.testing.expectEqual(@as(usize, 1), tooltip.body.len);
         try std.testing.expectEqual(@as(usize, 1), tooltip.body[0].len);
-        try std.testing.expectEqualStrings("Saves to /home/tester/.ziglop/saves/", tooltip.body[0][0].text);
+        try std.testing.expectEqualStrings("Saves to /home/tester/.taplop/saves/", tooltip.body[0][0].text);
     }
 
     // Web (null path): the export is a browser download.
@@ -577,7 +577,7 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
     // and no close button, per the no-Continue convention.
     {
         var elements: UiElementList = .empty;
-        try buildOptionsMenu(&elements, allocator, metrics, screen, .editor, null, false, button_color, "/home/tester/.ziglop");
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .editor, null, false, button_color, "/home/tester/.taplop");
         for (elements.items) |element| switch (element) {
             .button => |b| try std.testing.expect(b.action != .save_game),
             else => {},
@@ -595,7 +595,7 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
         // The tooltip names the keybind + the destination dir.
         const save_tooltip = save_mission_button.?.tooltip orelse @panic("Save Mission button has no tooltip");
         const save_tooltip_text = save_tooltip.body[0][0].text;
-        try std.testing.expectEqualStrings("Ctrl+S - saves to /home/tester/.ziglop/missions/", save_tooltip_text);
+        try std.testing.expectEqualStrings("Ctrl+S - saves to /home/tester/.taplop/missions/", save_tooltip_text);
 
         // The New Mission button (ctrl+N): the fresh-mission open from
         // inside the editor, with the keybind tooltip.
@@ -622,7 +622,7 @@ test "buildOptionsMenu: Export Game on every variant, web only (null persistent 
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
     const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
 
-    // Web (null path): present on EVERY variant with the ziglop.zip
+    // Web (null path): present on EVERY variant with the taplop.zip
     // tooltip + label - the options menu is the only menu surface
     // reachable mid-level, so in-session backups are always possible.
     for ([_]state.Screen{ .main_menu, .level, .hub, .editor }) |variant| {
@@ -635,7 +635,7 @@ test "buildOptionsMenu: Export Game on every variant, web only (null persistent 
         const tooltip = button.tooltip orelse @panic("Export Game button has no tooltip");
         try std.testing.expectEqual(@as(usize, 1), tooltip.body.len);
         try std.testing.expectEqualStrings(
-            "Downloads ziglop.zip - your full game folder (settings, saves, custom missions)",
+            "Downloads taplop.zip - your full game folder (settings, saves, custom missions)",
             tooltip.body[0][0].text,
         );
         var label_seen = false;
@@ -652,7 +652,7 @@ test "buildOptionsMenu: Export Game on every variant, web only (null persistent 
     // game folder.
     for ([_]state.Screen{ .main_menu, .level, .hub, .editor }) |variant| {
         var elements: UiElementList = .empty;
-        try buildOptionsMenu(&elements, allocator, metrics, screen, variant, null, false, button_color, "/home/tester/.ziglop");
+        try buildOptionsMenu(&elements, allocator, metrics, screen, variant, null, false, button_color, "/home/tester/.taplop");
         for (elements.items) |element| switch (element) {
             .button => |b| try std.testing.expect(b.action != .export_game),
             else => {},

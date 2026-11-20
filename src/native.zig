@@ -3,9 +3,9 @@
 //! only directory importing raylib); the
 //! shared game logic in main.zig stays raylib-free. It sets up the allocator,
 //! IO, the persistent data directory (per-OS default - `$XDG_DATA_HOME`
-//! or `$HOME/.local/share/ziglop` on Linux, `$HOME/Library/Application
-//! Support/ziglop` on macOS - overridable
-//! via --data-dir or $ZIGLOP_DATA), and the FileSource, then hands control to
+//! or `$HOME/.local/share/taplop` on Linux, `$HOME/Library/Application
+//! Support/taplop` on macOS - overridable
+//! via --data-dir or $TAPLOP_DATA), and the FileSource, then hands control to
 //! main.run with a RaylibBackend. Optional flags: `--replay <path>` loads a
 //! session-log bundle (a directory containing session_log.txt + content/ -
 //! see session_log_bundle.zig) and reconstructs the session before the loop
@@ -61,9 +61,9 @@ pub fn main(init: std.process.Init.Minimal) void {
 
     // Resolve and open the persistent data dir. Resolution order:
     //   1. --data-dir <path> command-line flag (explicit, per-invocation)
-    //   2. $ZIGLOP_DATA env var (ambient, applies to every run)
+    //   2. $TAPLOP_DATA env var (ambient, applies to every run)
     //   3. per-OS default (the XDG data dir on Linux,
-    //      $HOME/Library/Application Support/ziglop on macOS - the mac
+    //      $HOME/Library/Application Support/taplop on macOS - the mac
     //      player-visible convention; see DESIGN → File System & IO)
     // Created if missing. All writable artifacts (saves, logs, replays) live
     // here, and shipped-content reads check here first for player mods.
@@ -74,7 +74,7 @@ pub fn main(init: std.process.Init.Minimal) void {
     // for user-facing messages (the Export Save tooltip). Process-lifetime
     // allocation, never freed.
     const persistent_dir_path = resolvePersistentPath(allocator, data_dir_override) catch
-        @panic("could not resolve persistent data path: pass --data-dir, or set $ZIGLOP_DATA, $XDG_DATA_HOME, or $HOME");
+        @panic("could not resolve persistent data path: pass --data-dir, or set $TAPLOP_DATA, $XDG_DATA_HOME, or $HOME");
     const persistent_dir = openPersistentDir(io, persistent_dir_path) catch
         @panic("failed to open persistent data directory");
     defer persistent_dir.close(io);
@@ -87,7 +87,7 @@ pub fn main(init: std.process.Init.Minimal) void {
         allocator,
         @divTrunc(types.reference_width, 2),
         @divTrunc(types.reference_height, 2),
-        "Ziglop",
+        "taplop",
         &file_source,
     );
     defer backend.deinit();
@@ -193,7 +193,7 @@ fn consoleReaderThread(queue: *console.ConsoleQueue) void {
 ///
 /// A leading `~/` (or a lone `~`) in the value is expanded to `$HOME` -
 /// bash doesn't perform tilde expansion after `=` in command arguments, so
-/// `--replay=~/.local/share/ziglop/...` would otherwise arrive with a
+/// `--replay=~/.local/share/taplop/...` would otherwise arrive with a
 /// literal `~`.
 fn parseStringFlag(
     args: std.process.Args,
@@ -268,7 +268,7 @@ fn openPersistentDir(
 
 /// Build the persistent data dir path in priority order:
 ///   1. --data-dir flag value (already resolved by the caller)
-///   2. $ZIGLOP_DATA (override for dev / portable installs / tests)
+///   2. $TAPLOP_DATA (override for dev / portable installs / tests)
 ///   3. per-OS default (the shared resolution site - persistent_path.zig;
 ///      it also serves the dev report tools, so the default exists once)
 /// The env snapshot is eager (all five reads are cheap) so the shared
@@ -286,7 +286,7 @@ fn resolvePersistentPath(
         allocator,
         builtin.target.os.tag,
         .{
-            .ziglop_data = getenvSlice("ZIGLOP_DATA"),
+            .taplop_data = getenvSlice("TAPLOP_DATA"),
             .home = getenvSlice("HOME"),
             .xdg_data_home = getenvSlice("XDG_DATA_HOME"),
             .localappdata = getenvSlice("LOCALAPPDATA"),

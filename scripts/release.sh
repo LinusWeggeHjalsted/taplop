@@ -17,13 +17,13 @@
 # Trust the exit code; the final line is RELEASE OK / RELEASE FAIL.
 #
 # Usage:
-#   scripts/release.sh              # native (zig-out/bin/ziglop)
+#   scripts/release.sh              # native (zig-out/bin/taplop)
 #   scripts/release.sh native
-#   scripts/release.sh web          # zig-out/web/ziglop.html
-#   scripts/release.sh mac          # zig-out/bin/ziglop + ziglop.app/
+#   scripts/release.sh web          # zig-out/web/taplop.html
+#   scripts/release.sh mac          # zig-out/bin/taplop + taplop.app/
 #   scripts/release.sh all           # web, native, mac (mac LAST - see note)
 #
-# NOTE (mac): the mac cross-build installs to the SAME zig-out/bin/ziglop
+# NOTE (mac): the mac cross-build installs to the SAME zig-out/bin/taplop
 # path as native, replacing the linux binary - which is why `all` builds
 # mac last, after the native artifact has been verified. MAC COMPILES !=
 # MAC RUNS: the stamp check is a build check, not a runtime one (TODO ->
@@ -125,13 +125,13 @@ build_and_verify() {
     shift
     build_one "$name" "$@"
     case "$name" in
-        native) verify_stamp native zig-out/bin/ziglop ;;
-        mac)    verify_stamp mac zig-out/bin/ziglop
-                if [ -d zig-out/ziglop.app ]; then
-                    printf 'bundle:    zig-out/ziglop.app/\n'
+        native) verify_stamp native zig-out/bin/taplop ;;
+        mac)    verify_stamp mac zig-out/bin/taplop
+                if [ -d zig-out/taplop.app ]; then
+                    printf 'bundle:    zig-out/taplop.app/\n'
                 fi ;;
-        web)    verify_stamp web zig-out/web/ziglop.wasm
-                printf 'page:      zig-out/web/ziglop.html\n' ;;
+        web)    verify_stamp web zig-out/web/taplop.wasm
+                printf 'page:      zig-out/web/taplop.html\n' ;;
     esac
 }
 
@@ -140,7 +140,7 @@ case "$target" in
     web)    build_and_verify web "${forwarded[@]+"${forwarded[@]}"}" ;;
     mac)    build_and_verify mac -Dtarget=aarch64-macos "${forwarded[@]+"${forwarded[@]}"}" ;;
     all)
-        # Mac last: it replaces zig-out/bin/ziglop (see header note).
+        # Mac last: it replaces zig-out/bin/taplop (see header note).
         build_and_verify web "${forwarded[@]+"${forwarded[@]}"}"
         build_and_verify native "${forwarded[@]+"${forwarded[@]}"}"
         build_and_verify mac -Dtarget=aarch64-macos "${forwarded[@]+"${forwarded[@]}"}"

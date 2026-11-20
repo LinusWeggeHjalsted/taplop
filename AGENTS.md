@@ -1,6 +1,6 @@
-# Ziglop
+# taplop
 
-Zig rewrite of a Unity tactical grid game (original at https://github.com/LinusWeggeHjalsted/taplop).
+Zig rewrite of a Unity tactical grid game (original at https://github.com/LinusWeggeHjalsted/taplop-unity).
 
 ## Documentation
 
@@ -265,7 +265,7 @@ session + the ButtonPayload migration):
   a real content change. Revert test artifacts before committing, or commit
   them with a `test:` prefix.
 - Web build: a `wasm32-emscripten` exe reusing the SAME raylib backend +
-  gameLoop as native (route B). `zig build web` produces zig-out/web/ziglop.html;
+  gameLoop as native (route B). `zig build web` produces zig-out/web/taplop.html;
   `zig build emrun` serves + opens it. `scripts/web.sh` wraps both with
   emsdk-noise filtering (like `scripts/test.sh` does for tests) - prefer it
   over the raw commands. The old `wasm32-freestanding` + JS-renderer target
@@ -278,7 +278,7 @@ session + the ButtonPayload migration):
   the shipped artifact carries no `-dirty`/`-unofficial` suffix. Extra
   args forward to the build (`--release=fast` for an optimized artifact;
   none given prints a reminder). Mac installs to the same
-  zig-out/bin/ziglop path as native, so `all` builds mac LAST.
+  zig-out/bin/taplop path as native, so `all` builds mac LAST.
 - WEB COMPILES ≠ WEB RUNS: `scripts/web.sh` only compiles. Runtime breakage
   (GLSL shaders, allocator traps, init-order) is invisible until someone
   opens the page - the web build once sat broken for 136 commits this way
@@ -287,7 +287,7 @@ session + the ButtonPayload migration):
   platform seam (`src/raylib/`, `web.zig`, build.zig wiring, anything
   shader- or allocation-adjacent), spend the 30 seconds: `scripts/web.sh
   emrun` and confirm the main menu loads. Runtime web bugs can be debugged
-  WITHOUT a browser: `node zig-out/web/ziglop.js` runs the emcc output
+  WITHOUT a browser: `node zig-out/web/taplop.js` runs the emcc output
   headlessly - `std.debug.print` works there, so early-boot code paths
   (anything before GL init) can be probed like a native CLI. That
   technique diagnosed the 136-commit black screen entirely outside a
@@ -301,22 +301,22 @@ session + the ButtonPayload migration):
   explicitly (the dev diag's glGetString needs it - an earlier
   upload-fix's glFinish was also cited here but that fix was falsified
   and reverted; raylib itself goes through its glad loader).
-  Produces `zig-out/bin/ziglop` PLUS the double-clickable
-  `zig-out/ziglop.app/` bundle (minimal Info.plist, no icon yet, unsigned -
-  a browser-downloaded copy needs `xattr -cr ziglop.app` once; codesigning
+  Produces `zig-out/bin/taplop` PLUS the double-clickable
+  `zig-out/taplop.app/` bundle (minimal Info.plist, no icon yet, unsigned -
+  a browser-downloaded copy needs `xattr -cr taplop.app` once; codesigning
   needs a mac host). **MAC COMPILES ≠ MAC RUNS** (the same lesson as web):
   the binary is only validated when someone opens it on real hardware -
   the runtime checklist lives in TODO (macOS native port). Persistent dir
-  on mac: `~/Library/Application Support/ziglop/` - see DESIGN → File
+  on mac: `~/Library/Application Support/taplop/` - see DESIGN → File
   System & IO → Persistent path.
 - Windows build: `zig build -Dtarget=x86_64-windows-gnu` cross-compiles from
   the Linux box (Zig's bundled MinGW - no Windows toolchain needed),
-  producing zig-out/bin/ziglop.exe (+ .pdb) alongside the native exe.
+  producing zig-out/bin/taplop.exe (+ .pdb) alongside the native exe.
   The supported floor is Windows 10+, 64-bit (the stack would likely run
   on 7 SP1 - GLFW 3.5's own floor - but that is an unstated bonus, not a
   claim; the reasoning: DONE.md, "windows port: the cross-build + the
   wine smoke"). WINDOWS COMPILES ≠ WINDOWS RUNS (the mac lesson, third
-  platform): `printf 'help\nquit\n' | wine zig-out/bin/ziglop.exe`
+  platform): `printf 'help\nquit\n' | wine zig-out/bin/taplop.exe`
   smoke-tests boot + the console channel + GL-under-Mesa from the Linux
   box, but real validation is the Win10 checklist (TODO → Platform Layer
   → Windows port). The exe is CONSOLE-subsystem: double-clicking opens a
@@ -327,9 +327,9 @@ session + the ButtonPayload migration):
   suite - no test can see a prompt, a boot hint, or output interleaving.
   Behavioral changes to the channel (or anything stdout-adjacent) get the
   30-second smoke runs against the REAL binary: piped
-  (`printf 'help\nquit\n' | ./zig-out/bin/ziglop` - commands must work,
+  (`printf 'help\nquit\n' | ./zig-out/bin/taplop` - commands must work,
   prompts must NOT print) and interactive via a pty
-  (`printf '<cmds>\n' | script -qec ./zig-out/bin/ziglop /dev/null` -
+  (`printf '<cmds>\n' | script -qec ./zig-out/bin/taplop /dev/null` -
   boot hint + prompts must print; the pty also exercises the TTY gate,
   which a plain pipe can't). Case study: the console prompt's first
   commit shipped an ungated boot prompt with 824 tests passing; the
@@ -373,7 +373,7 @@ WEB COMPILES ≠ RUNS). `zig build` first.
   the second exe spins in window init forever). `timeout` is the hang
   guard, but a hung boot tells you nothing - check for a live instance
   before diagnosing the build.
-- `printf '<commands>\nquit\n' | timeout 60 ./zig-out/bin/ziglop` - the
+- `printf '<commands>\nquit\n' | timeout 60 ./zig-out/bin/taplop` - the
   native window opens + renders real frames (a human can watch); commands
   drain one per frame; `timeout` is the hang guard. Prompts + the boot
   hint print only on a TTY (piped runs are silent). `help` prints the
@@ -384,8 +384,8 @@ WEB COMPILES ≠ RUNS). `zig build` first.
   report, then click (the 4-5c lesson: a restructure moved the "+" cell).
 - A drive that can trigger a popup must still EXIT - check the exit
   code, not just the output (the hung-run lesson).
-- Piped runs write REAL FILES into `~/.local/share/ziglop/` (the persistent
-  dir; `$XDG_DATA_HOME/ziglop` when set).
+- Piped runs write REAL FILES into `~/.local/share/taplop/` (the persistent
+  dir; `$XDG_DATA_HOME/taplop` when set).
   Clean up your own drive artifacts only (check mtime - the author's
   campaigns live there too).
 

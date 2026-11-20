@@ -164,7 +164,7 @@ pub const Diagnostics = struct {
     pub fn recordBoot(self: *Diagnostics, values: BootValues) void {
         if (!self.shouldRecordBoot()) return;
         self.boot_logged = true;
-        self.appendUnchecked("ziglop diagnostics\n", .{});
+        self.appendUnchecked("taplop diagnostics\n", .{});
         self.appendUnchecked("game_version {s}\n", .{@import("build_info").game_version});
         self.appendUnchecked("target {s}-{s}\n", .{
             @tagName(@import("builtin").target.os.tag),

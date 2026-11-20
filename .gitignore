@@ -10,7 +10,7 @@ src/generated_test_root.zig
 
 # Crash session-log bundles: the panic handler writes
 # crashes/crash_<timestamp>/ bundle dirs via the session FileSource. In
-# production this lands in ~/.ziglop/crashes/; in the test build the test
+# production this lands in ~/.local/share/taplop/crashes/; in the test build the test
 # FileSource uses cwd as its persistent dir, so a test panic drops the dir
 # at the repo root (scripts/test.sh cleans it after a passing run).
 crashes/
@@ -23,7 +23,7 @@ zig-cache/
 saves/
 
 # Session event-log dumps (ctrl+L) now write to the persistent data dir
-# (~/.ziglop/logs/), not the working directory - no longer gitignore-
+# (~/.local/share/taplop/logs/), not the working directory - no longer gitignore-
 # relevant; kept for safety in case any old dumps linger in the tree.
 session_log_*.txt
 

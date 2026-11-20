@@ -3,18 +3,19 @@
 //! The game ships as a single-file executable: all `data/` + `assets/` content
 //! is embedded at build time (see `generated_assets.zig`, emitted by build.zig).
 //! Writable artifacts (saves, session logs) live in a persistent data
-//! directory (`~/.ziglop/` by default). Both content reads and artifact
+//! directory (`~/.local/share/taplop/` on Linux - see persistent_path.zig).
+//! Both content reads and artifact
 //! reads/writes funnel through this one session-resident `FileSource` so the
 //! game never depends on the current working directory.
 //!
 //! Read order (first hit wins):
 //!   1. in-memory VFS - uploaded zips / fetched custom missions (transient;
 //!      not wired)
-//!   2. persistent dir - `~/.ziglop/<path>`
+//!   2. persistent dir - `~/.local/share/taplop/<path>`
 //!   3. embedded map - `data/**` + `assets/**` baked into the exe
 //!
 //! Because the persistent dir is checked before the embedded map, a player can
-//! drop a file at `~/.ziglop/<shipped-path>` to shadow shipped content - a
+//! drop a file at `~/.local/share/taplop/<shipped-path>` to shadow shipped content - a
 //! modding seam by side effect (accepted as-is; see DESIGN → File System & IO). Writes
 //! target the persistent dir only and reject `data/`/`assets/` prefixes so the
 //! game itself can never shadow its own shipped content.
@@ -476,7 +477,7 @@ pub fn customStemForContentPath(content_path: []const u8, file_stem: []const u8,
 
 pub const FileSource = struct {
     io: std.Io,
-    // The persistent data directory (~/.ziglop/). All writes land here, and
+    // The persistent data directory (~/.local/share/taplop/). All writes land here, and
     // reads of shipped paths check here first (player overrides / custom
     // content) before falling back to the embedded map.
     persistent_dir: std.Io.Dir,
@@ -1540,7 +1541,7 @@ extern fn emscripten_run_script(script: [*:0]const u8) void;
 /// model). Single source of truth for
 /// the mount (web.zig) and for absolute FS paths in JS seams like
 /// `triggerBrowserDownload`.
-pub const persistent_mount_path = "/ziglop";
+pub const persistent_mount_path = "/taplop";
 
 /// Marker file (persistent-dir root) written by the web import JS after the
 /// picked save file has landed in saves/. Zig polls it while the load-save
@@ -1564,14 +1565,14 @@ pub const game_export_temp_path = ".game_export.zip";
 
 /// Import Game's archive staging file (persistent-dir root, dot-prefixed
 /// like the export staging temp; see game_zip.zig). The web game-import JS
-/// writes the picked ziglop.zip here under this FIXED name, then the import
+/// writes the picked taplop.zip here under this FIXED name, then the import
 /// marker so the Zig-side poll picks it up. The persistent-dir listing
 /// EXCLUDES it - a leftover must not ride in a later export. Deleted by the
 /// import on every exit (the original stays in the player's Downloads).
 pub const game_import_temp_path = ".game_import.zip";
 
 /// Marker file (persistent-dir root) written by the web game-import JS
-/// after the picked ziglop.zip has landed at `game_import_temp_path`. Zig
+/// after the picked taplop.zip has landed at `game_import_temp_path`. Zig
 /// polls it every frame on web (an import re-boots the session - see
 /// DESIGN → File System & IO → Web storage model); finding it means "an
 /// Import Game upload completed - overlay this zip onto the persistent
@@ -1593,7 +1594,7 @@ pub const campaign_import_marker_path = ".campaign_import_marker";
 /// emscripten in-memory FS as BINARY (no `{encoding:'utf8'}` - emscripten's
 /// utf8 read has C-string semantics: it stops at the FIRST NUL byte, which
 /// truncated every downloaded ZIP to its first 5 bytes (`PK\x03\x04\x14`,
-/// the header up to the first NUL - the shipped ziglop.zip + mission
+/// the header up to the first NUL - the shipped taplop.zip + mission
 /// exports; a binary read is correct for every file, text included) and
 /// blobbed as octet-stream). On native this is a no-op (comptime-dead
 /// branch), so the extern is never linked outside web builds. `allocator`
@@ -1726,7 +1727,7 @@ pub fn triggerBrowserCampaignUpload() void {
     }
 }
 
-/// On web, open a browser file picker for Import Game: the picked ziglop.zip
+/// On web, open a browser file picker for Import Game: the picked taplop.zip
 /// (the player's own Export Game archive, or an OS-made zip of an extracted
 /// folder) is written at the FIXED staging path (`game_import_temp_path` -
 /// the fixed name is what the listing excludes by exact name, and there is

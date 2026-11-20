@@ -158,7 +158,7 @@ pub fn main() !void {
     var counts: ReportCounts = .{};
 
     try report.print(allocator,
-        \\# Ziglop art asset overview
+        \\# taplop art asset overview
         \\
         \\Auto-generated from the engine's enums, the source tree's sprite-id
         \\literals, and the shipped content's `sprite` references - every
@@ -517,7 +517,7 @@ fn stripPrefixSuffix(path: []const u8, prefix: []const u8, suffix: []const u8) ?
 
 /// The per-OS persistent data directory: the SHARED resolution site
 /// (persistent_path.zig - the same fn native.zig rides, so the default
-/// exists once), fed from the environment. The tool reads `$ZIGLOP_DATA`
+/// exists once), fed from the environment. The tool reads `$TAPLOP_DATA`
 /// or the platform default. libc is linked (see build.zig), so
 /// `std.c.getenv` is available - the native.zig discipline.
 fn resolvePersistentPath(allocator: std.mem.Allocator) ![]u8 {
@@ -525,7 +525,7 @@ fn resolvePersistentPath(allocator: std.mem.Allocator) ![]u8 {
         allocator,
         @import("builtin").target.os.tag,
         .{
-            .ziglop_data = getenvSlice("ZIGLOP_DATA"),
+            .taplop_data = getenvSlice("TAPLOP_DATA"),
             .home = getenvSlice("HOME"),
             .xdg_data_home = getenvSlice("XDG_DATA_HOME"),
             .localappdata = getenvSlice("LOCALAPPDATA"),

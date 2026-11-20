@@ -137,7 +137,7 @@ pub fn main() !void {
     var report: std.ArrayList(u8) = .empty;
 
     try report.print(allocator,
-        \\# Ziglop gradient contrast report
+        \\# taplop gradient contrast report
         \\
         \\Auto-generated from `{s}` through the game's own parser + loader -
         \\regenerate with `scripts/gradient_report.sh` (the sound_report.md

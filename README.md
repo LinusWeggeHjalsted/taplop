@@ -1,6 +1,6 @@
 taplop is a tactical turnbased gridbased rpg working towards full official release
 
-Zig rewrite of the Unity original at https://github.com/LinusWeggeHjalsted/taplop
+Zig rewrite of the Unity original at https://github.com/LinusWeggeHjalsted/taplop-unity
 
 ## Licenses
 this game is multi-licensed:
@@ -49,7 +49,7 @@ don't mix into real saves:
 
 ```sh
 zig build run -- --data-dir ./scratch
-# or: ZIGLOP_DATA=./scratch zig build run
+# or: TAPLOP_DATA=./scratch zig build run
 ```
 
 ## Web build
@@ -59,7 +59,7 @@ the web build targets `wasm32-emscripten` and needs the
 build dependency - no manual install):
 
 ```sh
-scripts/web.sh            # zig build web  -> zig-out/web/ziglop.html (clean output)
+scripts/web.sh            # zig build web  -> zig-out/web/taplop.html (clean output)
 scripts/web.sh emrun      # serve + open it in a browser
 # (raw: scripts/web.sh --raw passes through unfiltered)
 ```

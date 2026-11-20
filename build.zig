@@ -154,7 +154,7 @@ pub fn build(b: *std.Build) !void {
     const raylib_artifact = raylib_dep.artifact("raylib");
 
     const exe = b.addExecutable(.{
-        .name = "ziglop",
+        .name = "taplop",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/native.zig"),
             .target = target,
@@ -227,23 +227,23 @@ pub fn build(b: *std.Build) !void {
     b.installArtifact(exe);
 
     // macOS app bundle: `zig build -Dtarget=aarch64-macos` installs, next to
-    // the bare zig-out/bin/ziglop, a double-clickable zig-out/ziglop.app/
-    // with the exe at Contents/MacOS/ziglop and a minimal Info.plist. No icon
+    // the bare zig-out/bin/taplop, a double-clickable zig-out/taplop.app/
+    // with the exe at Contents/MacOS/taplop and a minimal Info.plist. No icon
     // yet (no suitable art; macOS falls back to the generic app icon) and no
     // codesigning - that needs a mac host; an unsigned bundle runs locally,
-    // a browser-downloaded copy needs `xattr -cr ziglop.app` once.
+    // a browser-downloaded copy needs `xattr -cr taplop.app` once.
     if (target.result.os.tag == .macos) {
         const app_contents = b.addWriteFiles();
         _ = app_contents.add("Info.plist", appBundleInfoPlist());
         const install_plist = b.addInstallDirectory(.{
             .source_dir = app_contents.getDirectory(),
             .install_dir = .prefix,
-            .install_subdir = "ziglop.app/Contents",
+            .install_subdir = "taplop.app/Contents",
         });
         const install_bundle_exe = b.addInstallFileWithDir(
             exe.getEmittedBin(),
-            .{ .custom = "ziglop.app/Contents/MacOS" },
-            "ziglop",
+            .{ .custom = "taplop.app/Contents/MacOS" },
+            "taplop",
         );
         install_plist.step.dependOn(&install_bundle_exe.step);
         b.getInstallStep().dependOn(&install_plist.step);
@@ -261,7 +261,7 @@ pub fn build(b: *std.Build) !void {
     // emcc (the emcc shims the raylib C library's build script ships and
     // raylib-zig re-exports - zemscripten was dropped upstream when raylib
     // absorbed the shims). Opt-in: `zig build web` produces
-    // zig-out/web/ziglop.html. See DESIGN → Platform Seam (raylib) + File
+    // zig-out/web/taplop.html. See DESIGN → Platform Seam (raylib) + File
     // System & IO.
     const emsdk = @import("raylib_zig").emsdk;
 
@@ -300,7 +300,7 @@ pub fn build(b: *std.Build) !void {
     const raylib_web_artifact = raylib_web_dep.artifact("raylib");
 
     const wasm = b.addLibrary(.{
-        .name = "ziglop",
+        .name = "taplop",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/web.zig"),
             .target = web_target,
@@ -346,7 +346,7 @@ pub fn build(b: *std.Build) !void {
         emcc_settings.put("STACK_OVERFLOW_CHECK", "0") catch @panic("emcc settings OOM");
     }
     // The game uses the emscripten filesystem: an in-memory (MEMFS) mount at
-    // /ziglop for the persistent dir (web.zig - the session-scoped storage
+    // /taplop for the persistent dir (web.zig - the session-scoped storage
     // model; NO IDBFS, browser storage is never touched - see DESIGN → File
     // System & IO → Web storage model), and embedded assets fall back through
     // FileSource.readFile to the persistent dir. FORCE_FILESYSTEM enables the
@@ -382,7 +382,7 @@ pub fn build(b: *std.Build) !void {
         .settings = emcc_settings,
         .shell_file_path = shell_path,
         .install_dir = web_install_dir,
-        .out_file_name = "ziglop.html",
+        .out_file_name = "taplop.html",
     });
     // No explicit activateEmsdkStep here: the raylib C library's own build
     // script makes its emscripten artifact depend on the emsdk activate step,
@@ -396,7 +396,7 @@ pub fn build(b: *std.Build) !void {
     // `zig build emrun` - serve the web build locally and open it in a browser.
     const emrun_step = try emsdk.emrunStep(
         b,
-        b.graph.path(.install_prefix, "ziglop.html"),
+        b.graph.path(.install_prefix, "taplop.html"),
         &.{},
     );
     emrun_step.dependOn(emcc_step);
@@ -590,13 +590,13 @@ fn appBundleInfoPlist() []const u8 {
     \\    <key>CFBundleDevelopmentRegion</key>
     \\    <string>en</string>
     \\    <key>CFBundleExecutable</key>
-    \\    <string>ziglop</string>
+    \\    <string>taplop</string>
     \\    <key>CFBundleIdentifier</key>
-    \\    <string>com.linusweggehjalsted.ziglop</string>
+    \\    <string>com.linusweggehjalsted.taplop</string>
     \\    <key>CFBundleInfoDictionaryVersion</key>
     \\    <string>6.0</string>
     \\    <key>CFBundleName</key>
-    \\    <string>Ziglop</string>
+    \\    <string>taplop</string>
     \\    <key>CFBundlePackageType</key>
     \\    <string>APPL</string>
     \\    <key>CFBundleShortVersionString</key>

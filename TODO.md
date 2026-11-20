@@ -1,4 +1,4 @@
-# Ziglop - TODO
+# taplop - TODO
 
 File roles + the open-question → DESIGN → DONE lifecycle are in
 AGENTS.md → Documentation. This file holds **active + near-term + deferred
@@ -557,8 +557,8 @@ Open:
         deprecated OpenGL 4.1); retina/high-DPI window: letterbox + pointer
         mapping stay in sync (reference-space input math vs pixel
         framebuffer); audio device opens + sfx/music play; a save round-trip
-        into `~/Library/Application Support/ziglop/` (spaces in the path!);
-        crash-dump write works; `--data-dir` flag + `$ZIGLOP_DATA` override
+        into `~/Library/Application Support/taplop/` (spaces in the path!);
+        crash-dump write works; `--data-dir` flag + `$TAPLOP_DATA` override
         still work.
   - **CI candidate** - post-GitHub-migration, GitHub Actions macOS runners
         (free for public repos) give build + runtime validation without
@@ -587,10 +587,10 @@ Open:
         subsystem, expected); main menu renders with readable SDF text
         (the outline shader on the Windows GL driver); window resize:
         letterbox + pointer mapping stay in sync; audio device opens +
-        sfx/music play; a save round-trip into `%LOCALAPPDATA%\ziglop`
+        sfx/music play; a save round-trip into `%LOCALAPPDATA%\taplop`
         (plain Explorer-visible path); crash-dump write works;
-        `--data-dir` flag + `$ZIGLOP_DATA` override still work; the
-        console channel piped (`ziglop.exe < cmds.txt` - commands work,
+        `--data-dir` flag + `$TAPLOP_DATA` override still work; the
+        console channel piped (`taplop.exe < cmds.txt` - commands work,
         prompts silent) and via a real console (interactive).
   - **Distribution-time decisions (deferred to the demo milestone):**
         the console-vs-GUI subsystem choice (console today - a terminal
@@ -774,39 +774,36 @@ designed:
 
 ## Rename to taplop + migrate to GitHub
 
-The game's name is taplop (friends already call it that); "ziglop" is a
-development codename that never should be player-facing. Rename + migrate
-as ONE task at the playable-demo milestone (the data-dir rename is free
-pre-release - no real players with saves yet - and the web build's
-URL/filename starts mattering exactly when GitHub Pages hosting does).
-Do it as a dedicated focused session, not interleaved with feature work;
-do the whole sweep or don't start (a half-renamed project is worse than
-either clean state).
+The game's name is taplop (friends already call it that); "ziglop" was a
+development codename that never should be player-facing. The rename is
+IN PROGRESS: the code sweep is done, what remains is the push + the Pages
+subpath fix. Finish it as a focused session, not interleaved with feature
+work (a half-renamed project is worse than either clean state; the data-dir
+rename was free pre-release - no real players with saves yet).
 
-The project is currently on sr.ht; there is no GitHub repo yet. Migrate
-to GitHub as part of this task so GitHub never knows "ziglop" existed.
-
-Steps:
-1. Free the name: rename the Unity repo on GitHub `taplop` → `taplop-unity`
-   (Settings → Rename; GitHub auto-redirects old URLs, so existing links
-   keep working - stars/watchers/history all follow).
-2. Migrate: create a new GitHub repo named `taplop`, push the sr.ht history
-   up (`git remote add origin <github-url>` + push, or `git push --mirror`
-   for everything). Keep sr.ht as a mirror or archive it (don't delete -
+Status:
+1. DONE - the Unity repo renamed on GitHub `taplop` → `taplop-unity`
+   (GitHub auto-redirects old URLs, so existing links keep working -
+   stars/watchers/history all follow).
+2. DONE - the new empty GitHub repo created
+   (`https://github.com/LinusWeggeHjalsted/taplop.git`); the sr.ht history
+   is NOT pushed yet. Keep sr.ht as a mirror or archive it (don't delete -
    avoid surprise 404s).
-3. Code sweep, one commit on top of the migrated history:
+3. DONE - the code sweep, one commit on top of the sr.ht history:
    - `build.zig.zon` package name
-   - exe name (`build.zig`)
-   - web build output (`ziglop.html` → `taplop.html` or `index.html`)
-   - persistent data dir `~/.local/share/ziglop/` → `~/.local/share/taplop/`
-     (`$XDG_DATA_HOME/<name>` on Linux, `%LOCALAPPDATA%/<name>` on Windows;
-     the one player-facing
-     surface that's annoying to migrate later - free now, costly post-release)
-   - doc references: the `https://github.com/LinusWeggeHjalsted/taplop`
-     URLs in AGENTS.md + DONE.md → `taplop-unity` (those currently point at
-     the Unity project, which is now at `taplop-unity` after step 1)
-   - any remaining internal "ziglop" strings
-4. GitHub Pages: project sites serve at
+   - exe name (`build.zig`) + web output (`taplop.html`)
+   - persistent data dir `~/.local/share/taplop/` (`$XDG_DATA_HOME/<name>`
+     on Linux, `%LOCALAPPDATA%/<name>` on Windows,
+     `~/Library/Application Support/<name>` on macOS) + `$TAPLOP_DATA`
+   - doc references: the Unity-repo URLs in AGENTS.md + DONE.md →
+     `taplop-unity`
+   - every remaining internal "ziglop" string (window titles, the web
+     MEMFS mount, `taplop.zip`, report headers, scripts)
+4. REMAINING - push the sr.ht history up to GitHub (`git remote add
+   origin <github-url>` + push `master`, or `git push --mirror` for
+   everything). Decide the fate of the stale fully-merged `tmp-hello`
+   branch first - a mirror push carries it.
+5. REMAINING - GitHub Pages: project sites serve at
    `linusweggehjalsted.github.io/taplop/` (a SUBPATH, not repo root).
    raylib/emscripten web builds default to assuming root, so the HTML needs
    relative asset paths or a `<base>` tag / build-time base-path config.

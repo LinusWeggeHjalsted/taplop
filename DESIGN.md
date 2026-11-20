@@ -1,4 +1,4 @@
-# Ziglop - DESIGN
+# taplop - DESIGN
 
 Settled subsystem design: architecture, invariants, the "why X is shaped this
 way." Read on demand when you need the design behind something already built -
@@ -263,7 +263,7 @@ fallback + hover-rim path only.
   window/persistent-dir, then calls `main.run` with a `RaylibBackend`. Drives
   the shared `frame()` via a blocking while-loop (the native driver).
 - `src/web.zig` is the web (emscripten) exe root: mirrors native but mounts
-  the IN-MEMORY persistent dir (MEMFS at /ziglop - browser storage is
+  the IN-MEMORY persistent dir (MEMFS at /taplop - browser storage is
   never touched; see File System & IO → Web storage model) and drives
   `frame()` via `emscripten_set_main_loop_arg` (the browser schedules rAFs;
   no sleep/yield, no asyncify). The web build itself lives in
@@ -2417,18 +2417,18 @@ Per-OS defaults, resolved in `persistent_path.zig` (the ONE shared
 site - native.zig + the dev report tools ride the same fn, so the default
 cannot drift between them; env acquisition stays at the libc-linked
 callers, keeping the module pure/headless-testable):
-- **Linux**: `$XDG_DATA_HOME/ziglop`, defaulting to `~/.local/share/ziglop/`
+- **Linux**: `$XDG_DATA_HOME/taplop`, defaulting to `~/.local/share/taplop/`
   - the XDG base-directory spec. An earlier design deliberately used a
   `$HOME` dotfile for player-discoverability over convention; SETTLED the
   other way (the author's call): experienced Linux players expect XDG and
   redirect it via `$XDG_DATA_HOME`, and `%appdata`-style conventions beat
   dotfiles for the audience that cares. The spec's degenerate-value rule
   is honored (empty or relative `$XDG_DATA_HOME` means unset).
-- **macOS**: `~/Library/Application Support/ziglop/` - the platform convention
+- **macOS**: `~/Library/Application Support/taplop/` - the platform convention
   for player-visible save data (Finder's Go→Folder knows it; the dotfile
   would be hidden in Finder).
-- **Windows**: `%LOCALAPPDATA%\ziglop` (`C:/Users/<name>/AppData/Local/
-  ziglop`), falling back to `%USERPROFILE%/AppData/Local` - the arm is
+- **Windows**: `%LOCALAPPDATA%\taplop` (`C:/Users/<name>/AppData/Local/
+  taplop`), falling back to `%USERPROFILE%/AppData/Local` - the arm is
   DECIDED and dormant until the Windows build exists (the same switch gains
   a live target then). Local over Roaming: the data never needs to follow
   the user between machines, so roaming sync is pure downside; AppData is
@@ -2446,7 +2446,7 @@ it, so the entry is gone as far as the game is concerned, but the player
 can restore it by hand; see `FileSource.moveEntryToDeleted`). Deleting the
 project OPEN in an editor is fine - the state is in memory and a resave
 recreates the folder (writeFile mkdir -p's its parents). Overridable via
-`--data-dir` flag / `$ZIGLOP_DATA` env var (dev, portable installs, tests);
+`--data-dir` flag / `$TAPLOP_DATA` env var (dev, portable installs, tests);
 the flag wins over the env var, which wins over the default. For dev work,
 prefer `zig build run -- --data-dir <scratch-dir>` so session logs and
 autosaves don't mix into your real persistent play data. `settings.txt`
@@ -2454,12 +2454,12 @@ rides in the same dir as everything else (the one-dir model; splitting
 config into `$XDG_CONFIG_HOME` was considered and rejected - complexity
 for zero player benefit; revisit only if players ask). Web (emscripten) is
 WIRED: web.zig mounts the IN-MEMORY
-persistent dir (MEMFS at /ziglop - browser storage is never touched;
+persistent dir (MEMFS at /taplop - browser storage is never touched;
 see Web storage model) and builds FileSource on that dir - same
 read/write code path as native, just a different dir source.
-The dir name (`ziglop`) rides the planned ziglop→taplop rename sweep - free
-pre-release (no real players with saves yet); the rename adds one site per
-platform default + the `$ZIGLOP_DATA` env var name.
+The dir name is `taplop` (the pre-release rename from the `ziglop`
+codename - free while no real players had saves; one site per platform
+default + the `$TAPLOP_DATA` env var name).
 
 ### Web storage model (session-scoped in-memory storage + Import/Export Game)
 The PILLAR (the project's Goal): the game is fully playable offline, and
@@ -2493,7 +2493,7 @@ database at all - not even to delete one. Because the mount is synchronous
 MEMFS, the old two-phase boot gate is deleted - main() runs the full session
 setup inline (history in DONE.md).
 - **Import Game** (main menu, web only): a file picker uploads a full
-game-folder zip (`ziglop.zip`), OVERLAID onto the persistent dir: same-path
+game-folder zip (`taplop.zip`), OVERLAID onto the persistent dir: same-path
 files are overwritten by the zip (restore wins), files the zip doesn't
 mention are kept (this session's new work survives - e.g. a custom mission
 made this session). UNTRUSTED-ZIP RULES (the shared policy with the mission
@@ -2565,7 +2565,7 @@ possible): a game in progress pushes the autosave write FIRST (the
 `end_hub`/`end_level` `write_save` push - mid-level progress is IN the
 export, not just the files already on disk), then zips the FULL persistent
 dir (the "game folder": settings, saves including backups, custom missions,
-logs) as `ziglop.zip` and triggers a browser download
+logs) as `taplop.zip` and triggers a browser download
 (`triggerBrowserDownload`). The download is the only guaranteed-safe home
 for web data - the bytes leave the browser entirely. (The file name
 migrates with the game rename.)
@@ -2583,7 +2583,7 @@ usage.`.
 share nothing at all (no database, no boot-clear races).
 - **Migration: none.** At the time of the change there were zero web users
 and the dev's own leftover was disposable: a brief interim build carried a
-fire-and-forget `indexedDB.deleteDatabase('/ziglop')` call that wiped it on
+fire-and-forget `indexedDB.deleteDatabase('/taplop')` call that wiped it on
 first boot, then the line was removed - nothing touches a database at all
 now, not even to delete one (history in DONE.md).
 
@@ -2714,7 +2714,7 @@ main menu. Design points:
 Because the read order checks the persistent dir BEFORE the embedded map, a
 player can drop a file at `<persistent-dir>/<shipped-path>` to shadow shipped
 content, or add new paths (e.g.
-`~/.local/share/ziglop/assets/weapons/my_new_sword.png` on Linux)
+`~/.local/share/taplop/assets/weapons/my_new_sword.png` on Linux)
 for new sprites/campaigns. Audio shadows may be `.wav` or `.ogg` (see
 Audio → File formats). This is a side effect of the unified-source
 layering, NOT a designed modding feature: no policy on which paths are
