@@ -1110,19 +1110,9 @@ fn itemStatLabel(stat: types.ItemStatField) []const u8 {
     };
 }
 
-/// The item content's standalone stat label (capitalized first letter -
-/// the enemy content's "Max health" convention).
-fn itemStatFieldLabel(stat: types.ItemStatField) []const u8 {
-    return switch (stat) {
-        .weapon_damage => "Damage",
-        .spell_damage => "Spell damage",
-        .health_bonus => "Health bonus",
-        .defense_bonus => "Defense bonus",
-        .damage_bonus => "Damage bonus",
-        .pickup_radius_bonus => "Pickup radius",
-        .speed_bonus => "Speed bonus",
-    };
-}
+/// The item content's standalone stat label - the types-level definition
+/// (shared with the vendor panel; one label source).
+const itemStatFieldLabel = types.itemStatFieldLabel;
 
 /// One gear slot's entries: the slot row + the equipped item's Name +
 /// stat field rows (nothing extra while the slot is empty).

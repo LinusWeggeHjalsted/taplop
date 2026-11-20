@@ -397,6 +397,9 @@ pub const AnytimeInput = struct {
 pub const InGameInput = struct {
     toggle_inventory: bool = false,
     toggle_gear: bool = false,
+    /// The vendor panel's close button (the applyAction fold of
+    /// `.toggle_gear_upgrading` - button-only, no keybind).
+    toggle_gear_upgrading: bool = false,
     toggle_skills: bool = false,
     toggle_entity_inspect: bool = false,
     toggle_world_map: bool = false,
@@ -696,7 +699,13 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .select_editor_utility_skill => player_input.anytime.options_action = action,
         .toggle_inventory => player_input.anytime.in_game.toggle_inventory = true,
         .toggle_gear => player_input.anytime.in_game.toggle_gear = true,
+        .toggle_gear_upgrading => player_input.anytime.in_game.toggle_gear_upgrading = true,
         .toggle_skills => player_input.anytime.in_game.toggle_skills = true,
+        // The vendor panel's click dispatches ride the options_action
+        // channel (their identity rides the Button payload).
+        .select_vendor_item,
+        .purchase_upgrade,
+        => player_input.anytime.options_action = action,
         .toggle_entity_inspect => player_input.anytime.in_game.toggle_entity_inspect = true,
         .toggle_world_map => player_input.anytime.in_game.toggle_world_map = true,
         .swap_weapons => player_input.anytime.in_game.swap_weapons = true,

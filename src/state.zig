@@ -973,7 +973,7 @@ const default_color_theme_definitions: ColorThemeDefinitions = .{
 /// The inert default for `InitOptions.salvage_definitions`: empty splits
 /// (nothing salvageable). The history deinit skips zero-length splits, so
 /// the comptime-empty slices need no ownership.
-const default_salvage_definitions: SalvageDefinitions = .{
+pub const default_salvage_definitions: SalvageDefinitions = .{
     .weapon = @splat(.{ .splits = &.{} }),
     .amulet = .{ .splits = &.{} },
     .coat = .{ .splits = &.{} },
@@ -3156,7 +3156,7 @@ pub const GameStateHistory = struct {
         if (!self.current_state.ui_surfaces.isMiddlePanelOpen(.gear_upgrading)) return false;
         const hub = self.current_state.hub orelse return false;
         const item: types.Item = switch (purchase.item) {
-            .gear => |gear_slot| types.gearSlotItem(&hub.player, gear_slot) orelse return false,
+            .gear => |gear_slot| hub.player.gearSlotItem(gear_slot) orelse return false,
             .inventory => |slot_index| blk: {
                 if (slot_index >= types.inventory_slot_count) return false;
                 break :blk hub.player.inventory.slots[slot_index] orelse return false;

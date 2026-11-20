@@ -888,7 +888,7 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   theme / footprint editor) + the official sprite tables
 - `src/ui/bottom_bar.zig` - the in-game bottom bar
 - `src/ui/panels.zig` - in-game middle panels (inventory/gear/skills/
-  entity inspect) + slot-content support
+  entity inspect/vendor) + slot-content support
 - `src/ui/screens.zig` - error popup, top bar, mission complete/fail
 - `src/ui/options_menu.zig` + `src/ui/main_menu.zig` - the options-menu
   overlay + the title screen (one surface per file, the siblings'

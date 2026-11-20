@@ -17,14 +17,10 @@ pub const Interaction = struct {
     npc_index: u32,
 };
 
-/// One vendor purchase: the referenced item + the stat being raised (see
-/// DESIGN → Gear Upgrading → The surface). Shared by the
-/// `player_upgrade_item` orchestrator and the `upgrade_item` machinery so
-/// the two can't drift.
-pub const UpgradePurchase = struct {
-    item: UpgradeItemRef,
-    stat: ItemStatField,
-};
+/// One vendor purchase: the referenced item + the stat being raised
+/// (defined in types.zig - shared with the panel buttons' payload; see
+/// DESIGN → Gear Upgrading → The surface).
+pub const UpgradePurchase = types.UpgradePurchase;
 
 const GearSlot = types.GearSlot;
 const ItemStatField = types.ItemStatField;

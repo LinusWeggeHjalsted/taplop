@@ -306,11 +306,6 @@ design pass, replacing the generated tail table - the α solve,
 drops-as-pre-bought-rungs, the vendor panel + display settles).
 Implementation underway; slices in dependency order:
 
-- [ ] panel builder (`gear_upgrading` middle panel, two-column: item list
-      = every item with a nonempty `itemStatSet`, gear slots then
-      inventory, no skill tomes; per-stat rows with cost + button) +
-      selection UiState. Display details: DESIGN → Gear Upgrading →
-      The surface.
 - [ ] audit report script (the sound_report.sh pattern): demand curve per
       wallet vs W(m), α re-solve + emit, end-state identity error -
       audits with zero boss drops today, re-audits when the drop table

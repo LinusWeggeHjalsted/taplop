@@ -4377,6 +4377,24 @@ pub fn handleAnytimeInput(
                     .surface = .load_save_menu,
                 } });
             },
+            // A vendor-panel item-list row: make it the selected item.
+            // A pure class-2 UiState write - the selection never rides the
+            // timeline (see DESIGN → UI Framework → UI state
+            // classification). The row's ref rides the click payload.
+            .select_vendor_item => {
+                if (!history.current_state.ui_surfaces.isMiddlePanelOpen(.gear_upgrading)) return;
+                const item = payloadAs(.vendor_item, clicked_payload) orelse return;
+                history.session.ui_state.vendor_selected_item = item;
+            },
+            // A vendor-panel upgrade button: push the purchase
+            // orchestrator. The payload carries the RESOLVED item ref +
+            // stat (the button was rendered for them), so the recorded
+            // event replays without the session-side selection.
+            .purchase_upgrade => {
+                if (!history.current_state.ui_surfaces.isMiddlePanelOpen(.gear_upgrading)) return;
+                const purchase = payloadAs(.vendor_purchase, clicked_payload) orelse return;
+                pushPlayerActionAndDrain(history, .{ .player_upgrade_item = purchase });
+            },
             // A save row was clicked: load that save. The row index rides
             // the `.save_row` payload (set by the button-release dispatch in
             // main.zig) and refers to the list the CLICKED BUTTON was
@@ -4582,6 +4600,15 @@ pub fn handleAnytimeInput(
             } });
         }
 
+        // The vendor panel's close button. HUB-ONLY, mirroring the toggle
+        // legality (a level press renders nothing - the no-op-before-
+        // recording discipline, the entity_inspect precedent above).
+        if (in_game.toggle_gear_upgrading and history.current_state.screen == .hub) {
+            pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                .surface = .gear_upgrading,
+            } });
+        }
+
         // Level-only (the right-click gesture's own gate - the panel reads
         // current_state.level, which hub screens never have): a hub press
         // is a no-op BEFORE recording, not a recorded illegal toggle (the
@@ -4712,6 +4739,18 @@ pub fn handleAnytimeInput(
             history.session.ui_state.skills_scroll_offset -= delta_rows;
             if (history.session.ui_state.skills_scroll_offset < 0) {
                 history.session.ui_state.skills_scroll_offset = 0;
+            }
+        } else if (ui.buttonAt(ui_elements, pointer_position)) |hovered_button| {
+            // The vendor panel's item list: rows only render while the
+            // panel is open, so a hit implies the panel. Lower clamp here;
+            // `buildVendorPanel` clamps the upper bound in place
+            // (authoritative - it knows the row count).
+            if (hovered_button.action == .select_vendor_item) {
+                const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
+                history.session.ui_state.vendor_list_scroll_offset -= delta_rows;
+                if (history.session.ui_state.vendor_list_scroll_offset < 0) {
+                    history.session.ui_state.vendor_list_scroll_offset = 0;
+                }
             }
         } else if (editor_palette_group) |group_index| {
             // Editor palette window scroll (horizontal): one wheel notch =

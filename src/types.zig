@@ -200,6 +200,21 @@ pub const Action = enum {
     escape,
     toggle_inventory,
     toggle_gear,
+    /// The vendor panel's close button. Deliberately UNKEYBOARDABLE (no
+    /// binding context - see actionBindingContextsSwitch): the panel opens
+    /// only by clicking the upgrade-vendor NPC (DESIGN → Gear Upgrading →
+    /// The surface); this action exists for the close button's click
+    /// dispatch, not the keybind vocabulary.
+    toggle_gear_upgrading,
+    /// A vendor-panel item-list row was clicked (make it the selected
+    /// item). The row's `UpgradeItemRef` rides the click payload
+    /// (`ButtonPayload.vendor_item`); a pure UiState selection write.
+    select_vendor_item,
+    /// A vendor-panel upgrade button was clicked (buy one point of the
+    /// stat on the named item). The resolved `UpgradePurchase` rides the
+    /// click payload (`ButtonPayload.vendor_purchase`); pushes
+    /// `player_upgrade_item`.
+    purchase_upgrade,
     toggle_skills,
     toggle_entity_inspect,
     toggle_world_map,
@@ -1433,6 +1448,14 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         // guards on isSurfaceOpen(.tips)).
         .cycle_tips,
         => .{ .menu = true, .game = true },
+        // The vendor panel's clicks - button-only BY DESIGN (empty set:
+        // no binding context, so the settings keybinds UI never offers
+        // them). The panel is NPC-click-only (DESIGN → Gear Upgrading →
+        // The surface).
+        .toggle_gear_upgrading,
+        .select_vendor_item,
+        .purchase_upgrade,
+        => .{},
         // Exit to Main Menu: the level/hub options menu and the editor's
         // (where it ends an editor run + closes the editor).
         .exit_to_menu,
@@ -1540,6 +1563,10 @@ pub const ButtonPayload = union(enum) {
     setting: SettingRef,
     /// A load-save browser row (index into the browser's session list).
     save_row: u32,
+    /// A vendor-panel item-list row (make it the selected item).
+    vendor_item: UpgradeItemRef,
+    /// A vendor-panel upgrade button (buy one stat point on the item).
+    vendor_purchase: UpgradePurchase,
     /// An editor palette group (the header's expand/collapse or the
     /// group's "+" add-new cell).
     editor_group: usize,
@@ -1717,6 +1744,8 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .view_campaign_row => .campaign_row,
         .travel_to_map_hub => .map_hub,
         .start_mission_from_map_edge => .map_edge,
+        .select_vendor_item => .vendor_item,
+        .purchase_upgrade => .vendor_purchase,
 
         // Payload-less actions: every action below carries no button
         // identity beyond its own name. Grouped, not elided - an `else =>
@@ -1727,6 +1756,7 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .escape,
         .toggle_inventory,
         .toggle_gear,
+        .toggle_gear_upgrading,
         .toggle_skills,
         .toggle_entity_inspect,
         .toggle_world_map,
@@ -2115,6 +2145,15 @@ pub const UpgradeItemRef = union(enum) {
     inventory: u32,
 };
 
+/// One vendor purchase: the referenced item + the stat being raised (see
+/// DESIGN → Gear Upgrading → The surface). Shared by the
+/// `player_upgrade_item` orchestrator, the `upgrade_item` machinery, and
+/// the panel buttons' payload (`ButtonPayload.vendor_purchase`).
+pub const UpgradePurchase = struct {
+    item: UpgradeItemRef,
+    stat: ItemStatField,
+};
+
 /// The slot's display name (the inspector's entry labels, and the "New X"
 /// default item names). pub: shared by the ui builder + the input handlers'
 /// default-item construction.
@@ -2288,6 +2327,21 @@ pub const UpgradeModel = struct {
     /// hand-maintained constant).
     starter_stat_values: [item_stat_count]u32 = @splat(0),
 };
+
+/// The standalone display label for an item stat (capitalized first
+/// letter). pub: shared by the editor inspector's item content + the
+/// vendor panel's per-stat rows (one label definition).
+pub fn itemStatFieldLabel(stat: ItemStatField) []const u8 {
+    return switch (stat) {
+        .weapon_damage => "Damage",
+        .spell_damage => "Spell damage",
+        .health_bonus => "Health bonus",
+        .defense_bonus => "Defense bonus",
+        .damage_bonus => "Damage bonus",
+        .pickup_radius_bonus => "Pickup radius",
+        .speed_bonus => "Speed bonus",
+    };
+}
 
 /// The item's display name (every item kind carries one).
 pub fn itemName(item: Item) []const u8 {
@@ -2857,22 +2911,6 @@ test "Materials.add saturates at u32 max" {
     try std.testing.expectEqual(@as(u32, 3), materials.leather);
     try std.testing.expectEqual(@as(u32, 0), materials.cloth);
     try std.testing.expectEqual(@as(u32, 0), materials.knowledge);
-}
-
-/// The item equipped in `gear_slot` on the entity, or null when the slot
-/// is empty. The ONE read-side definition of "what sits in this slot" -
-/// shared by the equip/unequip machinery, the upgrade legality + handler,
-/// and the panel builders (the write-side stays in the handlers).
-pub fn gearSlotItem(player: *const Entity, gear_slot: GearSlot) ?Item {
-    return switch (gear_slot) {
-        .main_hand => if (player.main_hand_weapon) |weapon| .{ .weapon = weapon } else null,
-        .off_hand => if (player.off_hand_weapon) |weapon| .{ .weapon = weapon } else null,
-        .amulet => if (player.amulet) |amulet| .{ .amulet = amulet } else null,
-        .coat => if (player.coat) |coat| .{ .coat = coat } else null,
-        .gloves => if (player.gloves) |gloves| .{ .gloves = gloves } else null,
-        .pants => if (player.pants) |pants| .{ .pants = pants } else null,
-        .boots => if (player.boots) |boots| .{ .boots = boots } else null,
-    };
 }
 
 pub const SalvageSplit = struct {

@@ -67,6 +67,13 @@ pub const RenderContext = struct {
     /// the dim state of the global top bar's undo/redo buttons.
     can_undo: bool,
     can_redo: bool,
+    /// The upgrade-economy model + salvage definitions (history-resident
+    /// config, threaded by `frame()`): the vendor panel's price source.
+    /// Defaults are the inert shapes (the zero model prices every rung at
+    /// 0; empty splits price at 0) so test call sites can pass `.{}` and
+    /// skip them; every real caller threads the history's values.
+    upgrade_model: types.UpgradeModel = .{},
+    salvage_definitions: types.SalvageDefinitions = state.default_salvage_definitions,
 };
 
 pub fn view(
@@ -383,6 +390,8 @@ pub fn view(
             current_state,
             active_theme,
             weapon_type_definitions,
+            render.upgrade_model,
+            render.salvage_definitions,
         ) catch @panic("failed to build middle panels");
 
         // Range/radius outline: when the pointer hovers a skill button,
@@ -1245,10 +1254,13 @@ fn middlePanelWidth(
             if (level.entities[entity_index].current_health == 0) break :blk null;
             break :blk ui.entity_inspect_panel_width;
         },
-        // The vendor panel's builder lands with the panel slice (TODO →
-        // Gear Upgrading): a null width means an open panel reserves no
-        // space, and the build arm below is never reached.
-        .gear_upgrading => null,
+        // The vendor panel is HUB-ONLY (the vendor NPC lives there; the
+        // surface-screen census pins the belt - force-opened elsewhere it
+        // renders nothing).
+        .gear_upgrading => if (current_state.screen == .hub)
+            ui.vendorPanelWidth(font_metrics)
+        else
+            null,
     };
 }
 
@@ -1291,6 +1303,8 @@ fn buildMiddlePanels(
     current_state: *const GameState,
     active_theme: types.ActiveColorTheme,
     weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
+    upgrade_model: types.UpgradeModel,
+    salvage_definitions: types.SalvageDefinitions,
 ) !void {
     const section = middleSectionRect();
     var cursor_x: i32 = 0;
@@ -1382,9 +1396,25 @@ fn buildMiddlePanels(
                     weapon_type_definitions,
                 );
             },
-            // Unreachable while middlePanelWidth returns null for this
-            // panel; the builder lands with the panel slice.
-            .gear_upgrading => {},
+            .gear_upgrading => {
+                // `middlePanelWidth` returned non-null above, so this is
+                // the hub (the panel's screen belt).
+                const hub = current_state.hub.?;
+                try ui.buildVendorPanel(
+                    elements,
+                    allocator,
+                    font_metrics,
+                    bounds,
+                    hub.player,
+                    current_state.player_data.learned_skills,
+                    current_state.player_data.materials,
+                    upgrade_model,
+                    salvage_definitions,
+                    active_theme,
+                    session.ui_state.vendor_selected_item,
+                    &session.ui_state.vendor_list_scroll_offset,
+                );
+            },
         }
         cursor_x += panel_width + ui.ui_gap;
     }
@@ -6913,6 +6943,9 @@ test "surface-screen census: surfaceToggleLegal mirrors the view's emission cont
         .{ .surface = .editor_browser, .actions = &.{.toggle_editor_browser} },
         .{ .surface = .campaign_browser, .actions = &.{.toggle_campaign_browser} },
         .{ .surface = .inventory, .actions = &.{.toggle_inventory} },
+        // The vendor panel's own close button is its probe (it renders
+        // on the hub; NPC-click opens it, no keybind/button exists).
+        .{ .surface = .gear_upgrading, .actions = &.{.toggle_gear_upgrading} },
         .{ .surface = .gear, .actions = &.{.toggle_gear} },
         .{ .surface = .skills, .actions = &.{.toggle_skills} },
         .{ .surface = .entity_inspect, .actions = &.{.toggle_entity_inspect} },
@@ -6940,13 +6973,15 @@ test "surface-screen census: surfaceToggleLegal mirrors the view's emission cont
                 render_state.ui_surfaces.inspected_entity_index = 0;
             }
             if (probe.surface == .inventory or probe.surface == .gear or
-                probe.surface == .skills or probe.surface == .entity_inspect)
+                probe.surface == .skills or probe.surface == .entity_inspect or
+                probe.surface == .gear_upgrading)
             {
                 const panel: types.MiddlePanelId = switch (probe.surface) {
                     .inventory => .inventory,
                     .gear => .gear,
                     .skills => .skills,
                     .entity_inspect => .entity_inspect,
+                    .gear_upgrading => .gear_upgrading,
                     else => unreachable,
                 };
                 render_state.ui_surfaces.openMiddlePanel(panel);

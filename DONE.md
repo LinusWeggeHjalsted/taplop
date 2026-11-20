@@ -412,6 +412,7 @@ working rules).
 - [Gear upgrading: slice 1 - the wealth-gap price model + config threading](#gear-upgrading-slice-1---the-wealth-gap-price-model--config-threading)
 - [Gear upgrading: slice 2 - the purchase events + legality](#gear-upgrading-slice-2---the-purchase-events--legality)
 - [Gear upgrading: slice 3 - the vendor interaction wiring](#gear-upgrading-slice-3---the-vendor-interaction-wiring)
+- [Gear upgrading: slice 4 - the vendor panel](#gear-upgrading-slice-4---the-vendor-panel)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24244,3 +24245,64 @@ the real recorded path (its own undo step; replay-legal by construction).
 
 The remaining Gear Upgrading slices: the panel builder (the UI details
 land with the author's input) + the audit report script.
+
+## Gear upgrading: slice 4 - the vendor panel
+
+The gear-upgrading feature is now PLAYER-VISIBLE end to end. The panel
+(`buildVendorPanel`, `ui/panels.zig` - the fifth in-game middle panel)
+follows the author's UI settles:
+
+- Header + close button via the shared `emitPanelHeader` ("Gear
+  Upgrading" / `.toggle_gear_upgrading`).
+- Width sized for the WORST CASE in the left-flush stack: inventory +
+  gear + vendor + 2 gaps exactly equal the reference width
+  (`vendorPanelWidth(font_metrics)` - runtime-measured like the gear
+  panel's width); two EQUAL columns.
+- Left column: one panel-button row per upgradeable item (tinted
+  nine_slice + spriteless Button + icon leftmost + name), the selected
+  row's stroked-rect highlight, equipped gear first (GearSlot order)
+  then inventory slots, skill tomes excluded by construction,
+  wheel-scrollable (windowed; the builder clamps authoritatively).
+- Right column: the selected item's icon + name, then one row per stat -
+  label, current/max, the cost as per-wallet icon + count (RED via the
+  `negative_color` comparison family when unaffordable), a "+1"
+  purchase button carrying the resolved `UpgradePurchase` (absent when
+  unaffordable - no recorded no-ops; "MAX" when maxed). Rows carry the
+  standard item tooltip.
+
+Wiring: three button-only Actions (`toggle_gear_upgrading` /
+  `select_vendor_item` / `purchase_upgrade`, deliberately UNKEYBOARDABLE -
+  empty binding-context sets, the settings keybinds UI never offers
+  them), `ButtonPayload.vendor_item` / `.vendor_purchase`, the
+  select/purchase consumption arms, and the selection + scroll on UiState
+  (class 2 - direct writes, never events). `UpgradePurchase` moved to
+  types.zig (the payload needs it; events.zig aliases). The config
+  threading: `RenderContext` gained defaulted `upgrade_model` +
+  `salvage_definitions` fields (frame() passes the history's; test call
+  sites keep `.{}` - no ripple, the init-ripple lesson applied at the
+  second seam). The surface-screen census gained the panel's probe
+  (its own close button), so the hub-only belt is machine-pinned.
+
+Cleanup found mid-slice: the slice-2 "gearSlotItem moved to types.zig"
+had DUPLICATED a pre-existing Entity method (types.zig's
+`Entity.gearSlotItem`) - collapsed to the one method across
+handlers/player.zig + the legality + the panel; `itemStatFieldLabel`
+made the same move (types-level, the inspector + panel share one
+label source).
+
+RUNTIME VERIFICATION (the console-drive discipline - CONSOLE COMPILES ≠
+RUNS): a scripted drive against the real binary (a scratch
+$ZIGLOP_DATA dir, a crafted autosave with 50 wood + 50 metal):
+resume → hub → `report level` names the vendor's tile + click center →
+click → the panel renders (7 starter-item rows + the close button +
+the affordable purchase button) → row click selects (dump
+`vendor_selected_item` = `.gear off_hand`) → purchase click: the
+entity's sword 3 → 4, wallets 50/50 → 48 wood + 43 metal (exactly the
+2+7 worked-example price), PlayerData's sword copy UNTOUCHED at 3 (the
+sync convention) → close button → `open_middle_panels` all null. The
+whole flow runs through the real recorded paths.
+
+The one remaining Gear Upgrading slice: the audit report script
+(the α re-solve + the demand-curve report). The visual tuning (row
+heights, fonts, icon sizes, column proportions) is the author's
+playtest pass - all knobs are local constants in buildVendorPanel.

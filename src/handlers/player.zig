@@ -63,8 +63,6 @@ pub fn salvageRegionOccupiedSlots(
     return occupied.items;
 }
 
-const gearSlotItem = types.gearSlotItem;
-
 /// Whether `item` can go into `gear_slot`. Shared by the equip/unequip
 /// machinery here and the input-side drag no-op gate (input_gestures.zig)
 /// so "fits" has one definition and the two can't drift.
@@ -369,7 +367,7 @@ pub fn handlePlayerEvent(
         .upgrade_item => |upgrade| {
             const player = getPlayerEntity(current, 0);
             const item: types.Item = switch (upgrade.item) {
-                .gear => |gear_slot| types.gearSlotItem(player, gear_slot) orelse return,
+                .gear => |gear_slot| player.gearSlotItem(gear_slot) orelse return,
                 .inventory => |slot_index| blk: {
                     if (slot_index >= types.inventory_slot_count) return;
                     break :blk player.inventory.slots[slot_index] orelse return;
@@ -430,12 +428,12 @@ pub fn handlePlayerEvent(
             // overwrites the slot, so its skill cooldowns can be
             // inherited by the incoming weapon. See DESIGN → Architecture.
             const old_weapon: ?types.Weapon = switch (equip.gear_slot) {
-                .main_hand, .off_hand => if (gearSlotItem(player, equip.gear_slot)) |old_item| old_item.weapon else null,
+                .main_hand, .off_hand => if (player.gearSlotItem(equip.gear_slot)) |old_item| old_item.weapon else null,
                 else => null,
             };
 
             // Old gear (if any) drops back into the inventory slot.
-            slot.* = gearSlotItem(player, equip.gear_slot);
+            slot.* = player.gearSlotItem(equip.gear_slot);
             setGearSlot(player, equip.gear_slot, item);
 
             applyGearChangeSideEffects(current, equip.gear_slot, allocator);
@@ -451,7 +449,7 @@ pub fn handlePlayerEvent(
         },
         .unequip_item => |unequip| {
             const player = getPlayerEntity(current, 0);
-            const piece = gearSlotItem(player, unequip.gear_slot) orelse return;
+            const piece = player.gearSlotItem(unequip.gear_slot) orelse return;
             const slot = &player.inventory.slots[unequip.inventory_slot_index];
 
             if (slot.*) |existing| {

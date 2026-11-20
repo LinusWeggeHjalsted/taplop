@@ -952,6 +952,8 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
                 .sprite_bounds = sprite_bounds,
                 .can_undo = history.canUndo(),
                 .can_redo = history.canRedo(),
+                .upgrade_model = history.upgrade_model,
+                .salvage_definitions = history.salvage_definitions,
             },
         );
         backend.render(frame_state.previous_view_state.?, platform_input.viewport);

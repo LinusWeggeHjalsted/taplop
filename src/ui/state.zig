@@ -128,6 +128,18 @@ pub const UiState = struct {
     /// learned-skill count). Off the undo timeline like the other scrolls.
     skills_scroll_offset: i32 = 0,
 
+    /// The vendor panel's selected item (a gear slot or an inventory slot).
+    /// Null = the default selection (the first upgradeable item; stale
+    /// selections also fall back to it). Class-2 view state - direct writes
+    /// at the click site, never an event. See DESIGN → Gear Upgrading →
+    /// The surface.
+    vendor_selected_item: ?types.UpgradeItemRef = null,
+    /// The vendor panel's item-list scroll: the first visible row. Wheel
+    /// over the list scrolls one row per notch; `buildVendorPanel` clamps
+    /// in place (authoritative - it knows the row count). Off the undo
+    /// timeline like the other scrolls.
+    vendor_list_scroll_offset: i32 = 0,
+
     /// Editor palette group scroll offsets, in TOOL CELLS - one wheel notch
     /// = one cell. Index 0 = Entities, 1 = Decorations, 2 = Items.
     /// A group shows at most `editor_palette_max_tools` type cells; scrolling

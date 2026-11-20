@@ -46,6 +46,11 @@ const buildSkillTooltip = tooltip.buildSkillTooltip;
 const EquippedGear = tooltip.EquippedGear;
 const positive_color = tooltip.positive_color;
 const negative_color = tooltip.negative_color;
+const default_tint = ui_element.default_tint;
+const panel_button_height = ui_element.panel_button_height;
+const middle_panel_header_font_size = ui_element.middle_panel_header_font_size;
+const functions = @import("../functions.zig");
+const upgrade_mod = @import("../upgrade.zig");
 const spanRow = tooltip.spanRow;
 const emitCenteredNumber = emit.emitCenteredNumber;
 const emitCornerNumber = emit.emitCornerNumber;
@@ -504,6 +509,356 @@ pub fn buildGearPanel(
 ///   3. Gear mirror - weapons (main/off hand) top-left, amulet→coat→gloves→
 ///      pants→boots stacked below the main-hand, combat-stat column flush
 ///      against the gear stack's right edge (under the off-hand). All 128×128 (`inventory_slot_size`).
+/// The vendor panel's width: sized for the WORST CASE in the left-flush
+/// stack - the inventory + gear panels open to this panel's left, its
+/// right edge exactly at the screen's (the author's width settle - see
+/// DESIGN → Gear Upgrading → The surface). Equal columns split what's
+/// left.
+pub fn vendorPanelWidth(font_metrics: FontMetrics) i32 {
+    return types.reference_width -
+        ui_element.inventory_panel_width -
+        gearPanelWidth(font_metrics) -
+        2 * ui_gap;
+}
+
+/// One upgradeable item the vendor panel lists: the slot it lives in +
+/// the item itself.
+const VendorItem = struct {
+    ref: types.UpgradeItemRef,
+    item: types.Item,
+};
+
+/// The hub vendor's shop (DESIGN → Gear Upgrading → The surface). Two
+/// EQUAL columns: the ITEM LIST - one panel button per upgradeable item
+/// (icon leftmost, name to the right, the selected row highlighted;
+/// equipped gear first in slot order, then inventory slots; skill tomes
+/// carry no stats and drop out by construction) - and the UPGRADE VIEW
+/// for the selected item: one row per stat, with the label, current/max,
+/// the cost in material icons (RED when unaffordable), and a purchase
+/// button (absent when unaffordable - no recorded no-ops - with "MAX" in
+/// its place when maxed).
+pub fn buildVendorPanel(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    bounds: Rectangle,
+    player: Entity,
+    learned_skills: []const types.SkillId,
+    materials: types.Materials,
+    upgrade_model: types.UpgradeModel,
+    salvage_definitions: types.SalvageDefinitions,
+    active_theme: types.ActiveColorTheme,
+    selection: ?types.UpgradeItemRef,
+    scroll_offset: *i32,
+) !void {
+    // Solid panel background - blocks input through the panel area.
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = bounds.position(),
+        .width = bounds.width,
+        .height = bounds.height,
+    } });
+    const content = try emitPanelHeader(elements, allocator, bounds, "Gear Upgrading", .toggle_gear_upgrading);
+
+    const p = active_theme.player_gradient.colors;
+    const button_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const item_color = p[@min(@as(u32, 1), types.gradient_color_count - 1)];
+
+    // The upgradeable items: equipped gear first (GearSlot enum order:
+    // main_hand, off_hand, amulet, coat, gloves, pants, boots), then
+    // inventory slots in index order. Skill tomes carry no stats
+    // (`itemStatSet` is empty) and drop out by construction.
+    var items: std.ArrayList(VendorItem) = .empty;
+    defer items.deinit(allocator);
+    inline for (@typeInfo(types.GearSlot).@"enum".field_names, 0..) |_, slot_index| {
+        const slot: GearSlot = @fromBackingInt(@intCast(slot_index));
+        if (gearSlotItem(player, slot)) |item| {
+            if (types.itemStatSet(item).len > 0) {
+                try items.append(allocator, .{ .ref = .{ .gear = slot }, .item = item });
+            }
+        }
+    }
+    for (player.inventory.slots, 0..) |maybe_item, slot_index| {
+        const item = maybe_item orelse continue;
+        if (types.itemStatSet(item).len > 0) {
+            try items.append(allocator, .{ .ref = .{ .inventory = @intCast(slot_index) }, .item = item });
+        }
+    }
+
+    // The two equal columns (a ui_gap edge, a ui_gap divider, a ui_gap
+    // edge).
+    const column_width = @divFloor(content.width - 3 * ui_gap, 2);
+    const list_column = Rectangle{
+        .x = content.x + ui_gap,
+        .y = content.y + ui_gap,
+        .width = column_width,
+        .height = content.height - 2 * ui_gap,
+    };
+    const upgrade_column = Rectangle{
+        .x = content.x + 2 * ui_gap + column_width,
+        .y = content.y + ui_gap,
+        .width = column_width,
+        .height = content.height - 2 * ui_gap,
+    };
+
+    // Empty state: nothing to sell upgrades for (the browser empty-text
+    // convention).
+    if (items.items.len == 0) {
+        try elements.append(allocator, .{ .text_label = .{
+            .text = "No upgradeable items",
+            .screen_position = list_column.position(),
+            .font_size = gear_stat_font_size,
+            .blocks_input = false,
+        } });
+        return;
+    }
+
+    // The selection: the stored selection if it still addresses a listed
+    // item, else the first item (the default - DESIGN → Gear Upgrading →
+    // The surface). Payload unions carry no slices, so `eql` is safe here.
+    var selected_index: usize = 0;
+    if (selection) |selected| {
+        for (items.items, 0..) |entry, index| {
+            if (std.meta.eql(entry.ref, selected)) {
+                selected_index = index;
+                break;
+            }
+        }
+    }
+
+    // ---- Left column: the item list (windowed, wheel-scrollable). ----
+    const row_pitch = panel_button_height + ui_gap;
+    const visible_rows: usize = @intCast(@max(0, @divFloor(list_column.height, row_pitch)));
+    const max_scroll_row: i32 = @intCast(items.items.len -| @min(items.items.len, visible_rows));
+    if (scroll_offset.* < 0) scroll_offset.* = 0;
+    if (scroll_offset.* > max_scroll_row) scroll_offset.* = max_scroll_row;
+    const first: usize = @intCast(scroll_offset.*);
+    const last_exclusive = @min(items.items.len, first + visible_rows);
+    for (first..last_exclusive) |index| {
+        const entry = items.items[index];
+        const cell = Rectangle{
+            .x = list_column.x,
+            .y = list_column.y + @as(i32, @intCast(index - first)) * row_pitch,
+            .width = list_column.width,
+            .height = panel_button_height,
+        };
+        // Panel-button row: tinted nine_slice + spriteless Button (the
+        // stroked-rect highlight marks the selected row) + item tooltip.
+        try elements.append(allocator, .{ .nine_slice_panel = .{
+            .sprite_id = "ui/panel",
+            .screen_position = cell.position(),
+            .width = cell.width,
+            .height = cell.height,
+            .color = button_color,
+        } });
+        try elements.append(allocator, .{ .button = .{
+            .screen_position = cell.position(),
+            .width = cell.width,
+            .height = cell.height,
+            .action = .select_vendor_item,
+            .payload = .{ .vendor_item = entry.ref },
+            .highlighted = index == selected_index,
+            .tooltip = try buildItemTooltip(allocator, entry.item, learned_skills, null),
+        } });
+        // The item's icon, leftmost + vertically centered.
+        try elements.append(allocator, .{ .image = .{
+            .sprite_id = itemIconSpriteId(entry.item),
+            .screen_position = .{
+                .x = cell.x + ui_gap,
+                .y = cell.y + @divFloor(panel_button_height - inventory_slot_size, 2),
+            },
+            .width = inventory_slot_size,
+            .height = inventory_slot_size,
+            .color = item_color,
+            .blocks_input = false,
+        } });
+        // The item's name, to the right of the icon, vertically centered
+        // on the glyph cell.
+        try elements.append(allocator, .{ .text_label = .{
+            .text = types.itemName(entry.item),
+            .screen_position = .{
+                .x = cell.x + ui_gap + inventory_slot_size + ui_gap,
+                .y = cell.y + @divFloor(panel_button_height - gear_stat_font_size, 2),
+            },
+            .font_size = gear_stat_font_size,
+            .blocks_input = false,
+        } });
+    }
+
+    // ---- Right column: the selected item's upgrade view. ----
+    const selected = items.items[selected_index];
+    // Header: the item's icon + name.
+    try elements.append(allocator, .{ .image = .{
+        .sprite_id = itemIconSpriteId(selected.item),
+        .screen_position = .{
+            .x = upgrade_column.x,
+            .y = upgrade_column.y,
+        },
+        .width = inventory_slot_size,
+        .height = inventory_slot_size,
+        .color = item_color,
+        .blocks_input = false,
+    } });
+    try elements.append(allocator, .{ .text_label = .{
+        .text = types.itemName(selected.item),
+        .screen_position = .{
+            .x = upgrade_column.x + inventory_slot_size + ui_gap,
+            .y = upgrade_column.y + @divFloor(inventory_slot_size - middle_panel_header_font_size, 2),
+        },
+        .font_size = middle_panel_header_font_size,
+        .blocks_input = false,
+    } });
+
+    // Per-stat rows: label, current/max, the cost, the purchase button.
+    const stat_row_top = upgrade_column.y + inventory_slot_size + ui_gap;
+    const stat_row_pitch = panel_button_height + ui_gap;
+    const label_zone_width = blk: {
+        var widest: i32 = 0;
+        inline for (@typeInfo(types.ItemStatField).@"enum".field_names) |stat_name| {
+            const label_width = font_metrics.measureSpanWidth(
+                text(types.itemStatFieldLabel(@field(types.ItemStatField, stat_name))),
+                gear_stat_font_size,
+            );
+            if (label_width > widest) widest = label_width;
+        }
+        break :blk widest;
+    };
+    const purchase_button_size = panel_button_height;
+    var stat_row_y = stat_row_top;
+    for (types.itemStatSet(selected.item)) |stat| {
+        const current = types.itemStatValue(selected.item, stat).?;
+        const maximum = types.itemStatMax(stat);
+        const maxed = current >= maximum;
+        const cost = upgrade_mod.rungCostSplit(upgrade_model, stat, functions.getSalvageDefinition(selected.item, salvage_definitions), current);
+        const affordable = upgrade_mod.canAffordMaterials(materials, cost);
+        const row_height = panel_button_height;
+
+        // The stat label, left-aligned.
+        try elements.append(allocator, .{ .text_label = .{
+            .text = types.itemStatFieldLabel(stat),
+            .screen_position = .{
+                .x = upgrade_column.x,
+                .y = stat_row_y + @divFloor(row_height - gear_stat_font_size, 2),
+            },
+            .font_size = gear_stat_font_size,
+            .blocks_input = false,
+        } });
+
+        // The purchase button (or "MAX"), flush right. Absent when
+        // unaffordable - no recorded no-ops (the button appears when the
+        // wallets can cover the rung).
+        if (!maxed and affordable) {
+            const button_cell = Rectangle{
+                .x = upgrade_column.x + upgrade_column.width - purchase_button_size,
+                .y = stat_row_y,
+                .width = purchase_button_size,
+                .height = row_height,
+            };
+            try elements.append(allocator, .{ .nine_slice_panel = .{
+                .sprite_id = "ui/panel",
+                .screen_position = button_cell.position(),
+                .width = button_cell.width,
+                .height = button_cell.height,
+                .color = button_color,
+            } });
+            try elements.append(allocator, .{ .button = .{
+                .screen_position = button_cell.position(),
+                .width = button_cell.width,
+                .height = button_cell.height,
+                .action = .purchase_upgrade,
+                .payload = .{ .vendor_purchase = .{
+                    .item = selected.ref,
+                    .stat = stat,
+                } },
+                .tooltip = .{ .header = try spanRow(allocator, text(
+                    "Buy one point of this stat at the vendor's price",
+                )) },
+            } });
+            const plus_text = "+1";
+            const plus_width = font_metrics.measureSpanWidth(text(plus_text), material_count_font_size);
+            try elements.append(allocator, .{ .text_label = .{
+                .text = plus_text,
+                .screen_position = .{
+                    .x = button_cell.x + @divFloor(button_cell.width - plus_width, 2),
+                    .y = button_cell.y + @divFloor(button_cell.height - material_count_font_size, 2),
+                },
+                .font_size = material_count_font_size,
+                .blocks_input = false,
+            } });
+        } else if (maxed) {
+            const max_text = "MAX";
+            const max_width = font_metrics.measureSpanWidth(text(max_text), gear_stat_font_size);
+            try elements.append(allocator, .{ .text_label = .{
+                .text = max_text,
+                .screen_position = .{
+                    .x = upgrade_column.x + upgrade_column.width - purchase_button_size + @divFloor(purchase_button_size - max_width, 2),
+                    .y = stat_row_y + @divFloor(row_height - gear_stat_font_size, 2),
+                },
+                .font_size = gear_stat_font_size,
+                .blocks_input = false,
+            } });
+        }
+
+        // The cost: one small icon + count per drawn wallet, right-aligned
+        // before the button zone. Red when unaffordable (the tooltip
+        // comparison color family - `ui.negative_color`).
+        const cost_zone_right = upgrade_column.x + upgrade_column.width -
+            purchase_button_size - ui_gap;
+        var cost_x = cost_zone_right;
+        for (emit.material_kinds, 0..) |kind, kind_index| {
+            const parts = emit.materialCount(cost, kind_index);
+            if (parts == 0) continue;
+            const count_text = try std.fmt.allocPrint(allocator, "{d}", .{parts});
+            const count_width = font_metrics.measureSpanWidth(text(count_text), material_count_font_size);
+            const icon_size: i32 = 96;
+            cost_x -= count_width;
+            try elements.append(allocator, .{ .text_label = .{
+                .text = count_text,
+                .screen_position = .{
+                    .x = cost_x,
+                    .y = stat_row_y + @divFloor(row_height - material_count_font_size, 2),
+                },
+                .font_size = material_count_font_size,
+                .color = if (affordable) default_tint else negative_color,
+                .blocks_input = false,
+            } });
+            cost_x -= icon_size;
+            try elements.append(allocator, .{ .image = .{
+                .sprite_id = kind.sprite_id,
+                .screen_position = .{
+                    .x = cost_x,
+                    .y = stat_row_y + @divFloor(row_height - icon_size, 2),
+                },
+                .width = icon_size,
+                .height = icon_size,
+                .color = p[@min(kind.color_index, types.gradient_color_count - 1)],
+                .blocks_input = false,
+            } });
+            cost_x -= ui_gap;
+        }
+
+        // The current/max value, right-aligned before the cost zone (or
+        // the button zone when the cost is free).
+        const value_text = try std.fmt.allocPrint(allocator, "{d} / {d}", .{ current, maximum });
+        const value_width = font_metrics.measureSpanWidth(text(value_text), gear_stat_font_size);
+        const value_x = @min(
+            upgrade_column.x + label_zone_width + ui_gap,
+            cost_x - ui_gap - value_width,
+        );
+        try elements.append(allocator, .{ .text_label = .{
+            .text = value_text,
+            .screen_position = .{
+                .x = value_x,
+                .y = stat_row_y + @divFloor(row_height - gear_stat_font_size, 2),
+            },
+            .font_size = gear_stat_font_size,
+            .blocks_input = false,
+        } });
+
+        stat_row_y += stat_row_pitch;
+    }
+}
+
 pub fn buildEntityInspectPanel(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -1894,4 +2249,384 @@ test "buildEntityInspectPanel: active effects emit 128px icons" {
         else => {},
     };
     try std.testing.expectEqual(@as(usize, 2), effect_icon_count);
+}
+
+// ───────────────────────── buildVendorPanel ─────────────────────────
+
+/// The test model: the shipped constants (upgrade.zig's worked-example
+/// tests pin the same numbers' exactness; here they only need to be
+/// self-consistent with the derived expectations).
+const vendor_test_model: types.UpgradeModel = .{
+    .materials_per_mission_per_wallet = 27,
+    .b_line_mission_count = 3,
+    .campaign_mission_count = 66,
+    .alpha_thousandths = blk: {
+        var values: [types.item_stat_count]u32 = @splat(0);
+        values[@backingInt(types.ItemStatField.weapon_damage)] = 300;
+        values[@backingInt(types.ItemStatField.spell_damage)] = 600;
+        values[@backingInt(types.ItemStatField.health_bonus)] = 54;
+        values[@backingInt(types.ItemStatField.defense_bonus)] = 54;
+        values[@backingInt(types.ItemStatField.damage_bonus)] = 54;
+        values[@backingInt(types.ItemStatField.pickup_radius_bonus)] = 54;
+        values[@backingInt(types.ItemStatField.speed_bonus)] = 54;
+        break :blk values;
+    },
+    .starter_stat_values = blk: {
+        var values: [types.item_stat_count]u32 = @splat(0);
+        values[@backingInt(types.ItemStatField.weapon_damage)] = 3;
+        values[@backingInt(types.ItemStatField.spell_damage)] = 3;
+        values[@backingInt(types.ItemStatField.health_bonus)] = 1;
+        break :blk values;
+    },
+};
+
+/// The salvage definitions the vendor tests read: the shipped sword +
+/// boots splits, everything else empty.
+const vendor_test_salvage: types.SalvageDefinitions = .{
+    .weapon = @splat(.{ .splits = &.{
+        .{ .material = .wood, .parts = 1 },
+        .{ .material = .metal, .parts = 3 },
+    } }),
+    .boots = .{ .splits = &.{
+        .{ .material = .cloth, .parts = 1 },
+        .{ .material = .leather, .parts = 1 },
+    } },
+    .amulet = .{ .splits = &.{} },
+    .coat = .{ .splits = &.{} },
+    .gloves = .{ .splits = &.{} },
+    .pants = .{ .splits = &.{} },
+    .skill_tome = .{ .splits = &.{} },
+};
+
+const vendor_test_theme: types.ActiveColorTheme = .{
+    .lightest = .{ .r = 9, .g = 9, .b = 9 },
+    .darkest = .{ .r = 0, .g = 0, .b = 0 },
+    .world_gradient = .{ .colors = @splat(.{ .r = 0, .g = 0, .b = 0 }) },
+    .enemy_gradient = .{ .colors = @splat(.{ .r = 0, .g = 0, .b = 0 }) },
+    .player_gradient = .{ .colors = @splat(.{ .r = 0, .g = 0, .b = 0 }) },
+};
+
+const vendor_test_metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+
+const VendorRowButton = struct {
+    payload: types.UpgradeItemRef,
+    highlighted: bool,
+};
+
+/// The item-list row buttons, in emission order.
+fn vendorRowButtons(
+    allocator: std.mem.Allocator,
+    elements: []const ui_element.UiElement,
+) ![]VendorRowButton {
+    var rows: std.ArrayList(VendorRowButton) = .empty;
+    for (elements) |element| {
+        switch (element) {
+            .button => |button| if (button.action == .select_vendor_item) {
+                try rows.append(allocator, .{
+                    .payload = button.payload.?.vendor_item,
+                    .highlighted = button.highlighted,
+                });
+            },
+            else => {},
+        }
+    }
+    return rows.toOwnedSlice(allocator);
+}
+
+test "buildVendorPanel: equipped-first item rows, default selection highlighted, tomes excluded" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // A sword + coat equipped; an axe carried at inventory slot 3; a skill
+    // tome at slot 4 (carries no stats - excluded by construction).
+    var player = Entity{
+        .main_hand_weapon = .{ .name = "sword", .weapon_type = .sword, .weapon_damage = 3 },
+        .coat = .{ .name = "coat", .defense_bonus = 0, .health_bonus = 1 },
+    };
+    player.inventory.slots[3] = .{ .weapon = .{ .name = "axe", .weapon_type = .axe, .weapon_damage = 3 } };
+    player.inventory.slots[4] = .{ .skill_tome = .{ .skill = .heal } };
+
+    const bounds = Rectangle{
+        .x = 0,
+        .y = 0,
+        .width = vendorPanelWidth(vendor_test_metrics),
+        .height = middle_panel_height,
+    };
+    var elements: UiElementList = .empty;
+    var scroll: i32 = 0;
+    try buildVendorPanel(
+        &elements,
+        allocator,
+        vendor_test_metrics,
+        bounds,
+        player,
+        &.{},
+        .{ .wood = 50, .metal = 50 },
+        vendor_test_model,
+        vendor_test_salvage,
+        vendor_test_theme,
+        null,
+        &scroll,
+    );
+
+    // Three rows - the sword (equipped first), the coat, the carried axe -
+    // and the default selection (null) highlights the first.
+    const rows = try vendorRowButtons(allocator, elements.items);
+    try std.testing.expectEqual(@as(usize, 3), rows.len);
+    try std.testing.expectEqual(types.UpgradeItemRef{ .gear = .main_hand }, rows[0].payload);
+    try std.testing.expectEqual(types.UpgradeItemRef{ .gear = .coat }, rows[1].payload);
+    try std.testing.expectEqual(types.UpgradeItemRef{ .inventory = 3 }, rows[2].payload);
+    try std.testing.expect(rows[0].highlighted);
+    try std.testing.expect(!rows[1].highlighted);
+    try std.testing.expect(!rows[2].highlighted);
+
+    // An explicit selection moves the highlight; a stale ref (an empty
+    // gear slot) falls back to the default.
+    elements = .empty;
+    try buildVendorPanel(
+        &elements,
+        allocator,
+        vendor_test_metrics,
+        bounds,
+        player,
+        &.{},
+        .{ .wood = 50, .metal = 50 },
+        vendor_test_model,
+        vendor_test_salvage,
+        vendor_test_theme,
+        .{ .inventory = 3 },
+        &scroll,
+    );
+    const reselected = try vendorRowButtons(allocator, elements.items);
+    try std.testing.expect(reselected[2].highlighted);
+    try std.testing.expect(!reselected[0].highlighted);
+
+    elements = .empty;
+    try buildVendorPanel(
+        &elements,
+        allocator,
+        vendor_test_metrics,
+        bounds,
+        player,
+        &.{},
+        .{ .wood = 50, .metal = 50 },
+        vendor_test_model,
+        vendor_test_salvage,
+        vendor_test_theme,
+        .{ .gear = .amulet },
+        &scroll,
+    );
+    const stale = try vendorRowButtons(allocator, elements.items);
+    try std.testing.expect(stale[0].highlighted);
+}
+
+test "buildVendorPanel: purchase button when affordable, red cost without a button when not, MAX when maxed" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // A sword (damage 3, priced in wood+metal) + maxed-speed boots.
+    const player = Entity{
+        .main_hand_weapon = .{ .name = "sword", .weapon_type = .sword, .weapon_damage = 3 },
+        .boots = .{ .name = "boots", .speed_bonus = types.max_boots_speed, .health_bonus = 1 },
+    };
+    const bounds = Rectangle{
+        .x = 0,
+        .y = 0,
+        .width = vendorPanelWidth(vendor_test_metrics),
+        .height = middle_panel_height,
+    };
+
+    // The sword's first rung, derived from the same price fns the builder
+    // reads (upgrade.zig's worked-example tests pin its exact split).
+    const cost = upgrade_mod.rungCostSplit(
+        vendor_test_model,
+        .weapon_damage,
+        vendor_test_salvage.weapon[0],
+        3,
+    );
+    var wallets = cost;
+    wallets.add(.{ .wood = 50, .metal = 50 });
+
+    var elements: UiElementList = .empty;
+    var scroll: i32 = 0;
+    try buildVendorPanel(
+        &elements,
+        allocator,
+        vendor_test_metrics,
+        bounds,
+        player,
+        &.{},
+        wallets,
+        vendor_test_model,
+        vendor_test_salvage,
+        vendor_test_theme,
+        .{ .gear = .main_hand },
+        &scroll,
+    );
+
+    // The selected sword's stat row: a purchase button carrying the
+    // resolved purchase; no MAX text for it.
+    var purchase_buttons: usize = 0;
+    var max_labels: usize = 0;
+    for (elements.items) |element| {
+        switch (element) {
+            .button => |button| if (button.action == .purchase_upgrade) {
+                purchase_buttons += 1;
+                try std.testing.expectEqual(types.UpgradePurchase{
+                    .item = .{ .gear = .main_hand },
+                    .stat = .weapon_damage,
+                }, button.payload.?.vendor_purchase);
+            },
+            .text_label => |label| if (std.mem.eql(u8, label.text, "MAX")) {
+                max_labels += 1;
+            },
+            else => {},
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 1), purchase_buttons);
+    try std.testing.expectEqual(@as(usize, 0), max_labels);
+
+    // The maxed boots: selected directly - the speed row shows MAX, no
+    // purchase button for it.
+    elements = .empty;
+    try buildVendorPanel(
+        &elements,
+        allocator,
+        vendor_test_metrics,
+        bounds,
+        player,
+        &.{},
+        wallets,
+        vendor_test_model,
+        vendor_test_salvage,
+        vendor_test_theme,
+        .{ .gear = .boots },
+        &scroll,
+    );
+    purchase_buttons = 0;
+    max_labels = 0;
+    for (elements.items) |element| {
+        switch (element) {
+            .button => |button| if (button.action == .purchase_upgrade) {
+                purchase_buttons += 1;
+            },
+            .text_label => |label| if (std.mem.eql(u8, label.text, "MAX")) {
+                max_labels += 1;
+            },
+            else => {},
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 0), purchase_buttons);
+    // The boots' speed row is MAX (its health row is purchasable - not MAX).
+    try std.testing.expectEqual(@as(usize, 1), max_labels);
+
+    // Unaffordable: no purchase button, and the cost labels render in the
+    // negative (red) comparison color.
+    elements = .empty;
+    try buildVendorPanel(
+        &elements,
+        allocator,
+        vendor_test_metrics,
+        bounds,
+        player,
+        &.{},
+        .{},
+        vendor_test_model,
+        vendor_test_salvage,
+        vendor_test_theme,
+        .{ .gear = .main_hand },
+        &scroll,
+    );
+    purchase_buttons = 0;
+    var red_cost_labels: usize = 0;
+    for (elements.items) |element| {
+        switch (element) {
+            .button => |button| if (button.action == .purchase_upgrade) {
+                purchase_buttons += 1;
+            },
+            .text_label => |label| {
+                if (std.meta.eql(label.color, tooltip.negative_color)) red_cost_labels += 1;
+            },
+            else => {},
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 0), purchase_buttons);
+    try std.testing.expectEqual(@as(usize, 2), red_cost_labels);
+}
+
+test "buildVendorPanel: the item list windows and clamps its scroll" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // 40 carried weapons - more than the visible window (the height budget
+    // fits 8 rows of the panel-button pitch).
+    var player = Entity{};
+    for (0..40) |slot_index| {
+        player.inventory.slots[slot_index] = .{ .weapon = .{
+            .name = "carried",
+            .weapon_type = .sword,
+            .weapon_damage = 3,
+        } };
+    }
+    const bounds = Rectangle{
+        .x = 0,
+        .y = 0,
+        .width = vendorPanelWidth(vendor_test_metrics),
+        .height = middle_panel_height,
+    };
+
+    // An absurd scroll clamps to the max (the builder is authoritative).
+    var elements: UiElementList = .empty;
+    var scroll: i32 = 999;
+    try buildVendorPanel(
+        &elements,
+        allocator,
+        vendor_test_metrics,
+        bounds,
+        player,
+        &.{},
+        .{},
+        vendor_test_model,
+        vendor_test_salvage,
+        vendor_test_theme,
+        null,
+        &scroll,
+    );
+    // Only the VISIBLE window's rows are emitted (the browser row model).
+    const visible_rows: usize = @intCast(@divFloor(
+        bounds.height - middle_panel_header_height - 2 * ui_gap,
+        panel_button_height + ui_gap,
+    ));
+    const rows = try vendorRowButtons(allocator, elements.items);
+    try std.testing.expectEqual(visible_rows, rows.len);
+    try std.testing.expectEqual(
+        @as(i32, @intCast(40 -| visible_rows)),
+        scroll,
+    );
+
+    // The windowed emission starts at the clamped offset (the last rows).
+    var seen_first: ?u32 = null;
+    for (elements.items) |element| {
+        switch (element) {
+            .button => |button| if (button.action == .select_vendor_item) {
+                const ref = button.payload.?.vendor_item;
+                if (seen_first == null) seen_first = ref.inventory;
+            },
+            else => {},
+        }
+    }
+    try std.testing.expectEqual(@as(u32, @intCast(40 -| visible_rows)), seen_first.?);
+}
+
+test "vendorPanelWidth: inventory + gear + vendor + gaps exactly fill the reference width" {
+    // The author's worst-case width settle: all three panels open, the
+    // stack's right edge exactly at the screen's.
+    const width = vendorPanelWidth(vendor_test_metrics);
+    try std.testing.expectEqual(
+        types.reference_width,
+        width + ui_element.inventory_panel_width + gearPanelWidth(vendor_test_metrics) + 2 * ui_gap,
+    );
 }
