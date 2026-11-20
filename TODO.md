@@ -312,6 +312,11 @@ Implementation underway; slices in dependency order:
       lands (replaces the retired generated tail-price table; UNBLOCKED).
 - [ ] tuning follow-ups: re-measure R when enemy-gear richness or
       utility-skill density changes; playtest the drip feel (the α dials).
+      OPEN (the polish-pass playtest): the armor α is still the retired
+      shape's 54 thousandths - the growth curve fixed the per-rung SHAPE
+      (defense 2 → 5 → 9) but defense rung 1 remains 2 parts (the
+      cheap-drip doctrine). Raise the armor α (54 → ~150 puts defense at
+      6 → 14 → 25) or leave it to the audit-solve session's re-solve.
 
 ## Post-game Rewards & Cosmetics
 
