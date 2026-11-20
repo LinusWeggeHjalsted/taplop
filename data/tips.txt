@@ -2,26 +2,26 @@ Metadata
 file_format_version 1
 
 Tips
-tip Each turn is split into a move step and an attack step - click to move during the move step, and use skills during the attack step
+tip Each turn is split into a move step and an attack step - click to move during the move step, and use skills during the attack step.
 
-tip There are 5 skill types: weapon skill, spell, cantrip, enchantment, and curse - weapon skills and spells end the turn when used, the rest can be used without ending the turn
+tip There are 5 skill types: weapon skill, spell, cantrip, enchantment, and curse - weapon skills and spells end the turn when used, the rest can be used without ending the turn.
 
-tip Equipped weapons determine the first three skills: the main hand weapon type determines the first and second skills, and the off hand weapon type determines the third skill - the last 5 skills are freely selectable utility skills
+tip Equipped weapons determine the first three skills: the main hand weapon type determines the first and second skills, and the off hand weapon type determines the third skill - the last 5 skills are freely selectable utility skills.
 
-tip All weapons can be wielded in both hands, and you can swap hands at any time to have access to more skills
+tip All weapons can be wielded in both hands, and you can swap hands at any time to have access to more skills.
 
-tip Moving and using skills increments momentum, and momentum converts to additional outgoing damage calculated as the floor of the base 2 logarithm of the momentum value (so 2 momentum gives +1 damage, 7 gives +2, and 17 gives +4)
+tip Moving and using skills increments momentum, and momentum converts to additional outgoing damage calculated as the floor of the base 2 logarithm of the momentum value (so 2 momentum gives +1 damage, 7 gives +2, and 17 gives +4).
 
-tip Damage is calculated in the following way, where weapon_damage is from the corresponding equipped weapon's damage for weapon skills, or amulet damage for utility skills: (weapon_damage + gloves_damage + converted_momentum) * skill_multiplier - defender_defense
+tip Damage is calculated in the following way, where weapon_damage is from the corresponding equipped weapon's damage for weapon skills, or amulet damage for utility skills: (weapon_damage + gloves_damage + converted_momentum) * skill_multiplier - defender_defense.
 
-tip You can right click enemies to inspect their stats and loadout
+tip You can right click enemies to inspect their stats and loadout.
 
-tip Enemies are entities in the same way the player is - they have gear, skills, they use the same turn structure, and they can pick up items
+tip Enemies are entities in the same way the player is - they have gear, skills, they use the same turn structure, and they can pick up items.
 
-tip A defeated enemy drops all its inventory and gear as well as a skill tome for each equipped utility skill
+tip A defeated enemy drops all its inventory and gear as well as a skill tome for each equipped utility skill.
 
-tip You can learn new utility skills by activating a skill tome from your inventory
+tip You can learn new utility skills by activating a skill tome from your inventory.
 
-tip In the inventory you can convert items into materials by shift clicking - you can hold shift and drag to salvage a whole region of the inventory grid
+tip In the inventory you can convert items into materials by shift clicking - you can hold shift and drag to salvage a whole region of the inventory grid.
 
-tip When completing a mission, a clone is saved that will harvest materials from that mission when completing any later mission, where the harvested materials are determined by the converted material count per turn of items picked up during the clone's mission
+tip When completing a mission, a clone is saved that will harvest materials from that mission when completing any later mission, where the harvested materials are determined by the converted material count per turn of items picked up during the clone's mission.
