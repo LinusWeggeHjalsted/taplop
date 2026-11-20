@@ -73,11 +73,18 @@ pub fn frontierMission(
 }
 
 /// The per-rung cost of v → v+1 in parts: α_thousandths · K ·
-/// (W(m(v+1)) − W(m(v))), round-half-up to an integer (DESIGN → Gear
-/// Upgrading → The cost ladder). K is the number of entries in the
-/// salvage split; an item kind with no split prices at 0 (the degenerate
-/// empty-salvage case). u128 intermediates - the loader's bounds on R /
-/// the mission counts / α keep every product far inside it.
+/// (W(m(v+1)) − W(m(v))) · growth^(v − s_stat), round-half-up to an
+/// integer (DESIGN → Gear Upgrading → The cost ladder). The wealth gap
+/// alone prices the mid segment LINEARLY in v (the quadratic W cancels
+/// against the linearly-spaced frontier); the growth factor compounds
+/// each successive rung exponentially (1250 thousandths = ×1.25),
+/// keyed on (v − s_stat) so the first rung above starter gear is
+/// unmultiplied. K is the number of entries in the salvage split; an item
+/// kind with no split prices at 0 (the degenerate empty-salvage case).
+/// The compounding uses SATURATING multiplies - the growth bound (≤2000)
+/// at the top of a 10-stat ladder (9 compounds) stays inside u128, and a
+/// degenerate hand-built model saturates to an unaffordable price rather
+/// than overflowing.
 pub fn rungCostTotalParts(
     model: UpgradeModel,
     stat: ItemStatField,
@@ -98,9 +105,21 @@ pub fn rungCostTotalParts(
 
     const alpha: u128 = model.alpha_thousandths[@backingInt(stat)];
     const wallets: u128 = salvage.splits.len;
-    const raw_numerator: u128 =
-        alpha * wallets * model.materials_per_mission_per_wallet * gap_numerator;
-    const raw_denominator: u128 = 1000 * gap_denominator;
+
+    // The growth factor g^k as an exact rational (g_thousandths^k over
+    // 1000^k), compounded with saturating multiplies.
+    const exponent: u32 = current_value -| model.starter_stat_values[@backingInt(stat)];
+    var growth_numerator: u128 = 1;
+    var growth_denominator: u128 = 1;
+    var compoundings: u32 = 0;
+    while (compoundings < exponent) : (compoundings += 1) {
+        growth_numerator *|= model.rung_growth_thousandths;
+        growth_denominator *|= 1000;
+    }
+
+    const raw_numerator: u128 = alpha *| wallets *|
+        model.materials_per_mission_per_wallet *| growth_numerator *| gap_numerator;
+    const raw_denominator: u128 = 1000 *| gap_denominator *| growth_denominator;
 
     // Round-half-up of raw_numerator / raw_denominator.
     const total: u128 = (2 * raw_numerator + raw_denominator) / (2 * raw_denominator);
@@ -232,6 +251,7 @@ const test_model: UpgradeModel = .{
     .materials_per_mission_per_wallet = 27,
     .b_line_mission_count = 3,
     .campaign_mission_count = 66,
+    .rung_growth_thousandths = 1250,
     .alpha_thousandths = blk: {
         var values: [types.item_stat_count]u32 = @splat(0);
         values[@backingInt(ItemStatField.weapon_damage)] = 300;
@@ -291,8 +311,9 @@ test "upgrade frontier: the three anchors are exact and the tail landings match 
 }
 
 test "upgrade prices: the sword worked example matches DESIGN (escalates with the income curve)" {
-    // The DESIGN worked-example table: 3→4 ≈ 9 parts (2 wood + 7 metal),
-    // 6→7 ≈ 31, 7→8 ≈ 2.0k, 9→10 ≈ 22k - all exact here.
+    // The DESIGN worked-example table (growth ×1.25 per rung, keyed on
+    // v − s): 3→4 = 9 parts (2 wood + 7 metal, the unmultiplied first
+    // rung), then 4→5 = 20, 5→6 = 37, 6→7 = 60 - each rung compounds.
     try std.testing.expectEqual(
         @as(u64, 9),
         rungCostTotalParts(test_model, .weapon_damage, sword_salvage, 3),
@@ -302,20 +323,20 @@ test "upgrade prices: the sword worked example matches DESIGN (escalates with th
         rungCostSplit(test_model, .weapon_damage, sword_salvage, 3),
     );
     try std.testing.expectEqual(
-        @as(u64, 31),
+        @as(u64, 20),
+        rungCostTotalParts(test_model, .weapon_damage, sword_salvage, 4),
+    );
+    try std.testing.expectEqual(
+        types.Materials{ .wood = 5, .metal = 15 },
+        rungCostSplit(test_model, .weapon_damage, sword_salvage, 4),
+    );
+    try std.testing.expectEqual(
+        @as(u64, 37),
+        rungCostTotalParts(test_model, .weapon_damage, sword_salvage, 5),
+    );
+    try std.testing.expectEqual(
+        @as(u64, 60),
         rungCostTotalParts(test_model, .weapon_damage, sword_salvage, 6),
-    );
-    try std.testing.expectEqual(
-        types.Materials{ .wood = 8, .metal = 23 },
-        rungCostSplit(test_model, .weapon_damage, sword_salvage, 6),
-    );
-    try std.testing.expectEqual(
-        @as(u64, 2018),
-        rungCostTotalParts(test_model, .weapon_damage, sword_salvage, 7),
-    );
-    try std.testing.expectEqual(
-        @as(u64, 22004),
-        rungCostTotalParts(test_model, .weapon_damage, sword_salvage, 9),
     );
 
     // Strict escalation across the whole ladder (the W-quadratic property).
@@ -357,13 +378,14 @@ test "upgrade prices: the spell ladder concentrates on knowledge; speed ties bre
         rungCostSplit(test_model, .speed_bonus, boots_salvage, 0),
     );
     // Speed 1→2 spans the widest window in the game (m = 2 → 66): the
-    // biggest cloth+leather purchase (59,616 wealth gap at α = 54).
+    // biggest cloth+leather purchase (59,616 wealth gap at α = 54,
+    // compounded once by the growth factor).
     try std.testing.expectEqual(
-        @as(u64, 6439),
+        @as(u64, 8048),
         rungCostTotalParts(test_model, .speed_bonus, boots_salvage, 1),
     );
     try std.testing.expectEqual(
-        types.Materials{ .leather = 3220, .cloth = 3219 },
+        types.Materials{ .leather = 4024, .cloth = 4024 },
         rungCostSplit(test_model, .speed_bonus, boots_salvage, 1),
     );
 }
@@ -380,8 +402,10 @@ test "upgrade prices: an empty salvage split prices at zero; affordability is wa
     );
 
     const cost = rungCostSplit(test_model, .weapon_damage, sword_salvage, 6);
-    try std.testing.expect(canAffordMaterials(.{ .wood = 8, .metal = 23 }, cost));
-    try std.testing.expect(!canAffordMaterials(.{ .wood = 8, .metal = 22 }, cost));
+    // The growth-compounded rung splits 15 wood + 45 metal.
+    try std.testing.expectEqual(types.Materials{ .wood = 15, .metal = 45 }, cost);
+    try std.testing.expect(canAffordMaterials(cost, cost));
+    try std.testing.expect(!canAffordMaterials(.{ .wood = 15, .metal = 44 }, cost));
 }
 
 test "upgrade starter stats: derived from equipped gear, max convention, inventory excluded" {

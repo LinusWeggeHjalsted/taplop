@@ -4512,14 +4512,16 @@ anchored at the standard starting stats, so the first point above
 starter gear costs ~one early paycheck:
 
 ```
-cost(stat, v → v+1) = α_stat · K · ( W(m(f(v+1))) − W(m(f(v))) )   [parts]
+cost(stat, v → v+1) = α_stat · K · ( W(m(f(v+1))) − W(m(f(v))) ) · g^(v − s_stat)   [parts]
 f(v) = v / itemStatMax(stat)          the endpoint's tier fraction
+g     = rung_growth_thousandths/1000  the per-rung growth factor (v2)
 ```
 
 `m(f)` is the tier frontier - the mission at which fraction f of max
 is the on-pace tier. Piecewise-linear, one rule for every stat (no
-per-stat tables), all three anchors exact (the b-line + campaign
-mission counts come from `data/upgrade_model.txt`):
+per-stat tables), all three anchors exact (R, the growth factor, and
+the b-line + campaign mission counts come from
+`data/upgrade_model.txt`):
 
 ```
 m(f) = b_line · (f − f_s) / (0.75 − f_s)                    f ≤ 0.75
@@ -4529,12 +4531,16 @@ m(f) = b_line + (campaign − b_line) · (f − 0.75) / 0.25     f ≥ 0.75
 with f_s = s_stat / max the starter's fraction. The tail landings
 reproduce the original analysis exactly: a 10-stat's value-8 rung
 completes at m = 15.6 ≈ 16, value-9 at ≈ 41, value-10 at m = 66. The
-mid segment prices near-linearly in v (the W-gap across evenly spaced
-frontier points is R·spacing·(v − s) plus a small constant), which is
-what the retired linear ladder (`α·K·R·(1 + (v − s)·d)`) approximated;
-the two shapes track within about one rung's growth across the
-mid-game, so the anchors and identities are unaffected by the
-unification. All arithmetic is exact integer/rational (no floats - the
+mid segment prices LINEARLY in v on the wealth gap alone (the W-gap
+across evenly spaced frontier points is R·spacing·(v − s) plus a small
+constant - the quadratic W cancels against the linearly-spaced
+frontier), which is what the retired linear ladder
+(`α·K·R·(1 + (v − s)·d)`) approximated. The GROWTH FACTOR is the
+answer to that flatness: it compounds each successive rung
+exponentially in v (the shipped g = 1.25 = ×1.25 per rung), keyed on
+(v − s_stat) so the first rung above starter gear is unmultiplied and
+the early-paycheck anchor holds. All arithmetic is exact
+integer/rational with saturating compounding (no floats - the
 gameplay-integers rule); prices are exact integers by the rounding rule
 below.
 
@@ -4564,14 +4570,16 @@ below.
   at the b-line).
 
 Worked example - a sword at the shipped provisional α (300 thousandths,
-K = 2, split 1 wood : 3 metal), showing the escalation character:
+K = 2, split 1 wood : 3 metal, growth ×1.25), showing the escalation
+character (each successive rung compounds):
 
 | sword rung | price (provisional α) |
 |---|---|
-| 3→4 | ≈ 9 parts (2 wood + 7 metal) |
-| 6→7 (the b-line) | ≈ 31 parts |
-| 7→8 (first tail rung) | ≈ 2.0k parts |
-| 9→10 (final rung) | ≈ 22k parts - multiple plateau paychecks |
+| 3→4 | 9 parts (2 wood + 7 metal) - the unmultiplied first rung |
+| 4→5 | 20 parts (5 + 15) |
+| 6→7 (the b-line) | 60 parts (15 + 45) |
+| 7→8 (first tail rung) | 4928 parts |
+| 9→10 (final rung) | 83,939 parts - multiple plateau paychecks |
 
 - **Ladders are keyed by stat, shared across item kinds** - health_bonus
   prices identically on coat/gloves/pants/boots; weapon_damage prices
@@ -4642,14 +4650,21 @@ power - starter + drops + purchases - however the points got there.
   no keybind, no bottom-bar button. A `dream_guide` NPC click stays
   unfired until its consumer (the dreams browser) lands - a recorded
   no-op undo step is worse than a silent tile.
-- The panel is a middle panel, two columns: an ITEM LIST of all
-  upgradeable items (equipped or in inventory - every item with a
-  nonempty `itemStatSet`; skill tomes excluded by construction; ordered
-  gear slots first, then inventory slots, each in slot order), and the
-  UPGRADE VIEW for the selected item - per stat: current value / max,
-  cost in materials (no wallet counts displayed; the cost renders red
-  when unaffordable), an upgrade button (disabled when unaffordable,
-  "MAX" when maxed). Default selection: the first upgradeable item.
+- The panel is a middle panel, two equal columns (the width sized for
+  the worst case in the left-flush stack: inventory + gear + vendor + 2
+  gaps exactly fill the reference width). The ITEM LIST: one panel-button
+  row per upgradeable item (icon leftmost, name to the right, the
+  selected row's stroked-rect highlight; equipped gear first in slot
+  order, then inventory slots; skill tomes excluded by construction),
+  with "Gear" / "Inventory" SECTION HEADER strips (theme-darkest, only
+  for nonempty sections) so equipped vs carried reads at a glance, and a
+  visible scrollbar when the list scrolls (the shared browser emitter).
+  The UPGRADE VIEW for the selected item: per stat an info line (label,
+  current value / max, the cost in material icons - red when
+  unaffordable, no wallet counts displayed) with the full-column-width
+  purchase button BELOW it, labeled "Upgrade {stat}" (absent when
+  unaffordable - no recorded no-ops; "MAX" when maxed). Default
+  selection: the first upgradeable item.
 - Panel open/close is class-1 surface state - the `UiSurfaceState`
   convention (see UI Framework → UI state classification): a
   `toggle_ui_surface` event on the undo timeline, pushed by the

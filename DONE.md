@@ -413,6 +413,7 @@ working rules).
 - [Gear upgrading: slice 2 - the purchase events + legality](#gear-upgrading-slice-2---the-purchase-events--legality)
 - [Gear upgrading: slice 3 - the vendor interaction wiring](#gear-upgrading-slice-3---the-vendor-interaction-wiring)
 - [Gear upgrading: slice 4 - the vendor panel](#gear-upgrading-slice-4---the-vendor-panel)
+- [Gear upgrading: the polish pass (growth curve + panel layout)](#gear-upgrading-the-polish-pass-growth-curve--panel-layout)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24306,3 +24307,45 @@ The one remaining Gear Upgrading slice: the audit report script
 (the α re-solve + the demand-curve report). The visual tuning (row
 heights, fonts, icon sizes, column proportions) is the author's
 playtest pass - all knobs are local constants in buildVendorPanel.
+
+## Gear upgrading: the polish pass (growth curve + panel layout)
+
+The author's first playtest feedback, five items:
+
+- **The cost curve grows exponentially now.** The wealth-gap formula
+  prices the mid segment LINEARLY in v (the quadratic W cancels against
+  the linearly-spaced frontier - the diagnosed reason the coat's defense
+  read 1+1 → 2+2, practically free). The new `rung_growth_thousandths`
+  config key (upgrade_model.txt v2; shipped 1250 = ×1.25 per rung)
+  compounds each successive rung: `cost = α·K·wealth_gap·g^(v−s_stat)`,
+  keyed on (v − s_stat) so the FIRST rung above starter stays
+  unmultiplied and the early-paycheck anchor holds. Saturating u128
+  compounding - a degenerate hand-built model prices unaffordable
+  rather than overflowing. Defense now reads 2 → 5 → 9 (was 2 → 4 → 6);
+  the sword 9 → 20 → 37 → 60 through the mid segment. Pinned in the
+  upgrade tests + verified in the live drive: two consecutive purchases
+  spent 2+7 then 5+15 (the exact ×1.25 compound). The defense ABSOLUTE
+  cheapness remains the armor α dial (the cheap-drip doctrine) - raised
+  with the author if wanted, and the audit script's re-solve owns the
+  absolutes anyway.
+- **The left column gained section headers** - "Gear" / "Inventory"
+  strips (theme-darkest, only for nonempty sections) so equipped vs
+  carried reads at a glance; the scroll window runs over the unified
+  header+item entry list (uniform row pitch keeps it row-based). The
+  first pass at the Inventory header never fired (a broken
+  first-index-track in the entries loop) - caught by inspection while
+  extending the tests, fixed with explicit emitted flags.
+- **A visible scrollbar** - the shared `emitScrollbar` (the browser
+  gutter convention: rows shrink by the gutter when one draws).
+- **The purchase button moved BELOW the stat line, full column width**,
+  labeled "Upgrade {stat}" (e.g. "Upgrade Speed bonus" for boots);
+  "MAX" renders in its place on a maxed stat (a darkest strip, no
+  button); unaffordable emits no button at all (the no-op discipline).
+  The freed info line gives the material cost the whole column edge.
+- DESIGN's formula block + worked table amended with the growth term
+  and the exact compounded numbers; the surface section records the
+  new display settles.
+
+1107 tests pass; the live console drive (scratch dir + crafted
+autosave) confirmed the button geometry, the two-purchase compounding,
+and the close path.

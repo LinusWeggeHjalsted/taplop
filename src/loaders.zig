@@ -6561,6 +6561,12 @@ pub fn loadUpgradeModel(
     );
     // The frontier's tail segment must not run backwards.
     if (model.campaign_mission_count < model.b_line_mission_count) return error.InvalidData;
+    model.rung_growth_thousandths = try requiredBoundedU32(
+        income_pairs,
+        "rung_growth_thousandths",
+        1000,
+        types.max_upgrade_rung_growth_thousandths,
+    );
 
     // Alpha: exactly one entry group, one pair per stat (key = the
     // ItemStatField name - the parser's key list derives from the same
@@ -6587,12 +6593,13 @@ test "upgrade model: loads the shipped constants exactly" {
     const allocator = std.testing.allocator;
     const raw_text =
         \\Metadata
-        \\file_format_version 1
+        \\file_format_version 2
         \\
         \\IncomeModel
         \\materials_per_mission_per_wallet 27
         \\b_line_mission_count 3
         \\campaign_mission_count 66
+        \\rung_growth_thousandths 1250
         \\
         \\Alpha
         \\weapon_damage 300
@@ -6609,6 +6616,7 @@ test "upgrade model: loads the shipped constants exactly" {
     try std.testing.expectEqual(@as(u32, 27), model.materials_per_mission_per_wallet);
     try std.testing.expectEqual(@as(u32, 3), model.b_line_mission_count);
     try std.testing.expectEqual(@as(u32, 66), model.campaign_mission_count);
+    try std.testing.expectEqual(@as(u32, 1250), model.rung_growth_thousandths);
     try std.testing.expectEqual(@as(u32, 300), model.alpha_thousandths[@backingInt(types.ItemStatField.weapon_damage)]);
     try std.testing.expectEqual(@as(u32, 54), model.alpha_thousandths[@backingInt(types.ItemStatField.speed_bonus)]);
 }
@@ -6617,12 +6625,13 @@ test "upgrade model: rejects a missing stat weight, an out-of-range constant, an
     const allocator = std.testing.allocator;
     const raw_missing_stat =
         \\Metadata
-        \\file_format_version 1
+        \\file_format_version 2
         \\
         \\IncomeModel
         \\materials_per_mission_per_wallet 27
         \\b_line_mission_count 3
         \\campaign_mission_count 66
+        \\rung_growth_thousandths 1250
         \\
         \\Alpha
         \\weapon_damage 300
@@ -6639,12 +6648,13 @@ test "upgrade model: rejects a missing stat weight, an out-of-range constant, an
     }
     const raw_out_of_range =
         \\Metadata
-        \\file_format_version 1
+        \\file_format_version 2
         \\
         \\IncomeModel
         \\materials_per_mission_per_wallet 999999
         \\b_line_mission_count 3
         \\campaign_mission_count 66
+        \\rung_growth_thousandths 1250
         \\
         \\Alpha
         \\weapon_damage 300
@@ -6662,12 +6672,13 @@ test "upgrade model: rejects a missing stat weight, an out-of-range constant, an
     }
     const raw_backwards_frontier =
         \\Metadata
-        \\file_format_version 1
+        \\file_format_version 2
         \\
         \\IncomeModel
         \\materials_per_mission_per_wallet 27
         \\b_line_mission_count 66
         \\campaign_mission_count 3
+        \\rung_growth_thousandths 1250
         \\
         \\Alpha
         \\weapon_damage 300
@@ -6680,6 +6691,31 @@ test "upgrade model: rejects a missing stat weight, an out-of-range constant, an
     ;
     {
         const sections = try parseConfigFile(raw_backwards_frontier, allocator, &parser.upgrade_model_sections);
+        defer freeParsedSections(sections, allocator);
+        try std.testing.expectError(error.InvalidData, loadUpgradeModel(sections, allocator));
+    }
+    // A growth factor below 1 would cheapen successive rungs - rejected.
+    const raw_sub_one_growth =
+        \\Metadata
+        \\file_format_version 2
+        \\
+        \\IncomeModel
+        \\materials_per_mission_per_wallet 27
+        \\b_line_mission_count 3
+        \\campaign_mission_count 66
+        \\rung_growth_thousandths 999
+        \\
+        \\Alpha
+        \\weapon_damage 300
+        \\spell_damage 600
+        \\health_bonus 54
+        \\defense_bonus 54
+        \\damage_bonus 54
+        \\pickup_radius_bonus 54
+        \\speed_bonus 54
+    ;
+    {
+        const sections = try parseConfigFile(raw_sub_one_growth, allocator, &parser.upgrade_model_sections);
         defer freeParsedSections(sections, allocator);
         try std.testing.expectError(error.InvalidData, loadUpgradeModel(sections, allocator));
     }

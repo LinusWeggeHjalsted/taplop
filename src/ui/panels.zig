@@ -40,6 +40,7 @@ const inventory_slot_size = ui_element.inventory_slot_size;
 const skills_panel_width = ui_element.skills_panel_width;
 const skills_panel_columns = ui_element.skills_panel_columns;
 const scrollbar_width = ui_element.scrollbar_width;
+const scrollbar_gap = ui_element.scrollbar_gap;
 const entity_inspect_panel_width = ui_element.entity_inspect_panel_width;
 const buildItemTooltip = tooltip.buildItemTooltip;
 const buildSkillTooltip = tooltip.buildSkillTooltip;
@@ -528,6 +529,14 @@ const VendorItem = struct {
     item: types.Item,
 };
 
+/// One row of the vendor panel's item list: a section header ("Gear" /
+/// "Inventory") or an item row. Headers only appear for nonempty
+/// sections, and the scroll window runs over the unified list.
+const VendorEntry = union(enum) {
+    header: []const u8,
+    item: VendorItem,
+};
+
 /// The hub vendor's shop (DESIGN → Gear Upgrading → The surface). Two
 /// EQUAL columns: the ITEM LIST - one panel button per upgradeable item
 /// (icon leftmost, name to the right, the selected row highlighted;
@@ -627,62 +636,129 @@ pub fn buildVendorPanel(
     }
 
     // ---- Left column: the item list (windowed, wheel-scrollable). ----
+    // The unified entry list: a "Gear" header when equipped items exist,
+    // then the equipped rows; an "Inventory" header when carried items
+    // exist, then the inventory rows. Uniform row pitch (headers take a
+    // full pitch) keeps the scroll window arithmetic row-based.
+    var entries: std.ArrayList(VendorEntry) = .empty;
+    defer entries.deinit(allocator);
+    var gear_header_emitted = false;
+    var inventory_header_emitted = false;
+    for (items.items) |entry| {
+        if (entry.ref == .inventory) {
+            if (!inventory_header_emitted) {
+                try entries.append(allocator, .{ .header = "Inventory" });
+                inventory_header_emitted = true;
+            }
+        } else if (!gear_header_emitted) {
+            try entries.append(allocator, .{ .header = "Gear" });
+            gear_header_emitted = true;
+        }
+        try entries.append(allocator, .{ .item = entry });
+    }
+
     const row_pitch = panel_button_height + ui_gap;
     const visible_rows: usize = @intCast(@max(0, @divFloor(list_column.height, row_pitch)));
-    const max_scroll_row: i32 = @intCast(items.items.len -| @min(items.items.len, visible_rows));
+    const total_rows = entries.items.len;
+    const max_scroll_row: i32 = @intCast(total_rows -| @min(total_rows, visible_rows));
     if (scroll_offset.* < 0) scroll_offset.* = 0;
     if (scroll_offset.* > max_scroll_row) scroll_offset.* = max_scroll_row;
+    const scrolls = total_rows > visible_rows;
+    // Rows widen right up to the scrollbar gutter when one is drawn.
+    const rows_width = if (scrolls)
+        list_column.width - scrollbar_width - scrollbar_gap
+    else
+        list_column.width;
     const first: usize = @intCast(scroll_offset.*);
-    const last_exclusive = @min(items.items.len, first + visible_rows);
+    const last_exclusive = @min(total_rows, first + visible_rows);
     for (first..last_exclusive) |index| {
-        const entry = items.items[index];
+        const entry = entries.items[index];
         const cell = Rectangle{
             .x = list_column.x,
             .y = list_column.y + @as(i32, @intCast(index - first)) * row_pitch,
-            .width = list_column.width,
+            .width = rows_width,
             .height = panel_button_height,
         };
-        // Panel-button row: tinted nine_slice + spriteless Button (the
-        // stroked-rect highlight marks the selected row) + item tooltip.
-        try elements.append(allocator, .{ .nine_slice_panel = .{
-            .sprite_id = "ui/panel",
-            .screen_position = cell.position(),
-            .width = cell.width,
-            .height = cell.height,
-            .color = button_color,
-        } });
-        try elements.append(allocator, .{ .button = .{
-            .screen_position = cell.position(),
-            .width = cell.width,
-            .height = cell.height,
-            .action = .select_vendor_item,
-            .payload = .{ .vendor_item = entry.ref },
-            .highlighted = index == selected_index,
-            .tooltip = try buildItemTooltip(allocator, entry.item, learned_skills, null),
-        } });
-        // The item's icon, leftmost + vertically centered.
-        try elements.append(allocator, .{ .image = .{
-            .sprite_id = itemIconSpriteId(entry.item),
-            .screen_position = .{
-                .x = cell.x + ui_gap,
-                .y = cell.y + @divFloor(panel_button_height - inventory_slot_size, 2),
+        switch (entry) {
+            .header => |label| {
+                // A section separator strip: the theme-darkest background
+                // (the background-panel convention) so equipped and
+                // carried items read as distinct sections.
+                try elements.append(allocator, .{ .nine_slice_panel = .{
+                    .sprite_id = "ui/panel",
+                    .screen_position = cell.position(),
+                    .width = cell.width,
+                    .height = cell.height,
+                    .color = active_theme.darkest,
+                } });
+                try elements.append(allocator, .{ .text_label = .{
+                    .text = label,
+                    .screen_position = .{
+                        .x = cell.x + ui_gap,
+                        .y = cell.y + @divFloor(panel_button_height - gear_stat_font_size, 2),
+                    },
+                    .font_size = gear_stat_font_size,
+                    .blocks_input = false,
+                } });
             },
-            .width = inventory_slot_size,
-            .height = inventory_slot_size,
-            .color = item_color,
-            .blocks_input = false,
-        } });
-        // The item's name, to the right of the icon, vertically centered
-        // on the glyph cell.
-        try elements.append(allocator, .{ .text_label = .{
-            .text = types.itemName(entry.item),
-            .screen_position = .{
-                .x = cell.x + ui_gap + inventory_slot_size + ui_gap,
-                .y = cell.y + @divFloor(panel_button_height - gear_stat_font_size, 2),
+            .item => |row_item| {
+                // Panel-button row: tinted nine_slice + spriteless Button
+                // (the stroked-rect highlight marks the selected row) +
+                // item tooltip.
+                try elements.append(allocator, .{ .nine_slice_panel = .{
+                    .sprite_id = "ui/panel",
+                    .screen_position = cell.position(),
+                    .width = cell.width,
+                    .height = cell.height,
+                    .color = button_color,
+                } });
+                try elements.append(allocator, .{ .button = .{
+                    .screen_position = cell.position(),
+                    .width = cell.width,
+                    .height = cell.height,
+                    .action = .select_vendor_item,
+                    .payload = .{ .vendor_item = row_item.ref },
+                    .highlighted = std.meta.eql(row_item.ref, items.items[selected_index].ref),
+                    .tooltip = try buildItemTooltip(allocator, row_item.item, learned_skills, null),
+                } });
+                // The item's icon, leftmost + vertically centered.
+                try elements.append(allocator, .{ .image = .{
+                    .sprite_id = itemIconSpriteId(row_item.item),
+                    .screen_position = .{
+                        .x = cell.x + ui_gap,
+                        .y = cell.y + @divFloor(panel_button_height - inventory_slot_size, 2),
+                    },
+                    .width = inventory_slot_size,
+                    .height = inventory_slot_size,
+                    .color = item_color,
+                    .blocks_input = false,
+                } });
+                // The item's name, to the right of the icon, vertically
+                // centered on the glyph cell.
+                try elements.append(allocator, .{ .text_label = .{
+                    .text = types.itemName(row_item.item),
+                    .screen_position = .{
+                        .x = cell.x + ui_gap + inventory_slot_size + ui_gap,
+                        .y = cell.y + @divFloor(panel_button_height - gear_stat_font_size, 2),
+                    },
+                    .font_size = gear_stat_font_size,
+                    .blocks_input = false,
+                } });
             },
-            .font_size = gear_stat_font_size,
-            .blocks_input = false,
-        } });
+        }
+    }
+    // The scrollbar (the shared emitter - the browser gutter convention).
+    if (scrolls) {
+        try emit.emitScrollbar(
+            elements,
+            allocator,
+            list_column.x + list_column.width - scrollbar_width,
+            list_column.y,
+            list_column.height,
+            visible_rows,
+            total_rows,
+            scroll_offset.*,
+        );
     }
 
     // ---- Right column: the selected item's upgrade view. ----
@@ -709,9 +785,12 @@ pub fn buildVendorPanel(
         .blocks_input = false,
     } });
 
-    // Per-stat rows: label, current/max, the cost, the purchase button.
-    const stat_row_top = upgrade_column.y + inventory_slot_size + ui_gap;
-    const stat_row_pitch = panel_button_height + ui_gap;
+    // Per-stat blocks: an info line (label, current/max, the cost with
+    // the whole line's width to breathe) with the full-width purchase
+    // button BELOW it ("Upgrade {stat}"), or "MAX" in its place.
+    const stat_block_top = upgrade_column.y + inventory_slot_size + ui_gap;
+    const info_line_height: i32 = 128;
+    const stat_block_pitch = info_line_height + ui_gap + panel_button_height + ui_gap;
     const label_zone_width = blk: {
         var widest: i32 = 0;
         inline for (@typeInfo(types.ItemStatField).@"enum".field_names) |stat_name| {
@@ -723,37 +802,87 @@ pub fn buildVendorPanel(
         }
         break :blk widest;
     };
-    const purchase_button_size = panel_button_height;
-    var stat_row_y = stat_row_top;
+    var block_y = stat_block_top;
     for (types.itemStatSet(selected.item)) |stat| {
         const current = types.itemStatValue(selected.item, stat).?;
         const maximum = types.itemStatMax(stat);
         const maxed = current >= maximum;
         const cost = upgrade_mod.rungCostSplit(upgrade_model, stat, functions.getSalvageDefinition(selected.item, salvage_definitions), current);
         const affordable = upgrade_mod.canAffordMaterials(materials, cost);
-        const row_height = panel_button_height;
 
-        // The stat label, left-aligned.
+        // The info line: the stat label left, the current/max value after
+        // it, the cost right-aligned at the column's edge.
         try elements.append(allocator, .{ .text_label = .{
             .text = types.itemStatFieldLabel(stat),
             .screen_position = .{
                 .x = upgrade_column.x,
-                .y = stat_row_y + @divFloor(row_height - gear_stat_font_size, 2),
+                .y = block_y + @divFloor(info_line_height - gear_stat_font_size, 2),
+            },
+            .font_size = gear_stat_font_size,
+            .blocks_input = false,
+        } });
+        const value_text = try std.fmt.allocPrint(allocator, "{d} / {d}", .{ current, maximum });
+        try elements.append(allocator, .{ .text_label = .{
+            .text = value_text,
+            .screen_position = .{
+                .x = upgrade_column.x + label_zone_width + ui_gap,
+                .y = block_y + @divFloor(info_line_height - gear_stat_font_size, 2),
             },
             .font_size = gear_stat_font_size,
             .blocks_input = false,
         } });
 
-        // The purchase button (or "MAX"), flush right. Absent when
-        // unaffordable - no recorded no-ops (the button appears when the
-        // wallets can cover the rung).
+        // The cost: one small icon + count per drawn wallet, right-aligned
+        // at the column edge. Red when unaffordable (the tooltip
+        // comparison color family - `ui.negative_color`).
+        var cost_x = upgrade_column.x + upgrade_column.width;
+        for (emit.material_kinds, 0..) |kind, kind_index| {
+            const parts = emit.materialCount(cost, kind_index);
+            if (parts == 0) continue;
+            const count_text = try std.fmt.allocPrint(allocator, "{d}", .{parts});
+            const count_width = font_metrics.measureSpanWidth(text(count_text), material_count_font_size);
+            const icon_size: i32 = 96;
+            cost_x -= count_width;
+            try elements.append(allocator, .{ .text_label = .{
+                .text = count_text,
+                .screen_position = .{
+                    .x = cost_x,
+                    .y = block_y + @divFloor(info_line_height - material_count_font_size, 2),
+                },
+                .font_size = material_count_font_size,
+                .color = if (affordable) default_tint else negative_color,
+                .blocks_input = false,
+            } });
+            cost_x -= icon_size;
+            try elements.append(allocator, .{ .image = .{
+                .sprite_id = kind.sprite_id,
+                .screen_position = .{
+                    .x = cost_x,
+                    .y = block_y + @divFloor(info_line_height - icon_size, 2),
+                },
+                .width = icon_size,
+                .height = icon_size,
+                .color = p[@min(kind.color_index, types.gradient_color_count - 1)],
+                .blocks_input = false,
+            } });
+            cost_x -= ui_gap;
+        }
+
+        // The purchase strip, full column width, below the info line.
+        // Absent when unaffordable - no recorded no-ops (the button
+        // appears when the wallets cover the rung).
+        const button_cell = Rectangle{
+            .x = upgrade_column.x,
+            .y = block_y + info_line_height + ui_gap,
+            .width = upgrade_column.width,
+            .height = panel_button_height,
+        };
         if (!maxed and affordable) {
-            const button_cell = Rectangle{
-                .x = upgrade_column.x + upgrade_column.width - purchase_button_size,
-                .y = stat_row_y,
-                .width = purchase_button_size,
-                .height = row_height,
-            };
+            const button_label = try std.fmt.allocPrint(
+                allocator,
+                "Upgrade {s}",
+                .{types.itemStatFieldLabel(stat)},
+            );
             try elements.append(allocator, .{ .nine_slice_panel = .{
                 .sprite_id = "ui/panel",
                 .screen_position = button_cell.position(),
@@ -774,88 +903,38 @@ pub fn buildVendorPanel(
                     "Buy one point of this stat at the vendor's price",
                 )) },
             } });
-            const plus_text = "+1";
-            const plus_width = font_metrics.measureSpanWidth(text(plus_text), material_count_font_size);
+            const label_width = font_metrics.measureSpanWidth(text(button_label), gear_stat_font_size);
             try elements.append(allocator, .{ .text_label = .{
-                .text = plus_text,
+                .text = button_label,
                 .screen_position = .{
-                    .x = button_cell.x + @divFloor(button_cell.width - plus_width, 2),
-                    .y = button_cell.y + @divFloor(button_cell.height - material_count_font_size, 2),
+                    .x = button_cell.x + @divFloor(button_cell.width - label_width, 2),
+                    .y = button_cell.y + @divFloor(button_cell.height - gear_stat_font_size, 2),
                 },
-                .font_size = material_count_font_size,
+                .font_size = gear_stat_font_size,
                 .blocks_input = false,
             } });
         } else if (maxed) {
+            try elements.append(allocator, .{ .nine_slice_panel = .{
+                .sprite_id = "ui/panel",
+                .screen_position = button_cell.position(),
+                .width = button_cell.width,
+                .height = button_cell.height,
+                .color = active_theme.darkest,
+            } });
             const max_text = "MAX";
             const max_width = font_metrics.measureSpanWidth(text(max_text), gear_stat_font_size);
             try elements.append(allocator, .{ .text_label = .{
                 .text = max_text,
                 .screen_position = .{
-                    .x = upgrade_column.x + upgrade_column.width - purchase_button_size + @divFloor(purchase_button_size - max_width, 2),
-                    .y = stat_row_y + @divFloor(row_height - gear_stat_font_size, 2),
+                    .x = button_cell.x + @divFloor(button_cell.width - max_width, 2),
+                    .y = button_cell.y + @divFloor(button_cell.height - gear_stat_font_size, 2),
                 },
                 .font_size = gear_stat_font_size,
                 .blocks_input = false,
             } });
         }
 
-        // The cost: one small icon + count per drawn wallet, right-aligned
-        // before the button zone. Red when unaffordable (the tooltip
-        // comparison color family - `ui.negative_color`).
-        const cost_zone_right = upgrade_column.x + upgrade_column.width -
-            purchase_button_size - ui_gap;
-        var cost_x = cost_zone_right;
-        for (emit.material_kinds, 0..) |kind, kind_index| {
-            const parts = emit.materialCount(cost, kind_index);
-            if (parts == 0) continue;
-            const count_text = try std.fmt.allocPrint(allocator, "{d}", .{parts});
-            const count_width = font_metrics.measureSpanWidth(text(count_text), material_count_font_size);
-            const icon_size: i32 = 96;
-            cost_x -= count_width;
-            try elements.append(allocator, .{ .text_label = .{
-                .text = count_text,
-                .screen_position = .{
-                    .x = cost_x,
-                    .y = stat_row_y + @divFloor(row_height - material_count_font_size, 2),
-                },
-                .font_size = material_count_font_size,
-                .color = if (affordable) default_tint else negative_color,
-                .blocks_input = false,
-            } });
-            cost_x -= icon_size;
-            try elements.append(allocator, .{ .image = .{
-                .sprite_id = kind.sprite_id,
-                .screen_position = .{
-                    .x = cost_x,
-                    .y = stat_row_y + @divFloor(row_height - icon_size, 2),
-                },
-                .width = icon_size,
-                .height = icon_size,
-                .color = p[@min(kind.color_index, types.gradient_color_count - 1)],
-                .blocks_input = false,
-            } });
-            cost_x -= ui_gap;
-        }
-
-        // The current/max value, right-aligned before the cost zone (or
-        // the button zone when the cost is free).
-        const value_text = try std.fmt.allocPrint(allocator, "{d} / {d}", .{ current, maximum });
-        const value_width = font_metrics.measureSpanWidth(text(value_text), gear_stat_font_size);
-        const value_x = @min(
-            upgrade_column.x + label_zone_width + ui_gap,
-            cost_x - ui_gap - value_width,
-        );
-        try elements.append(allocator, .{ .text_label = .{
-            .text = value_text,
-            .screen_position = .{
-                .x = value_x,
-                .y = stat_row_y + @divFloor(row_height - gear_stat_font_size, 2),
-            },
-            .font_size = gear_stat_font_size,
-            .blocks_input = false,
-        } });
-
-        stat_row_y += stat_row_pitch;
+        block_y += stat_block_pitch;
     }
 }
 
@@ -2374,6 +2453,33 @@ test "buildVendorPanel: equipped-first item rows, default selection highlighted,
     // and the default selection (null) highlights the first.
     const rows = try vendorRowButtons(allocator, elements.items);
     try std.testing.expectEqual(@as(usize, 3), rows.len);
+    // The section headers: "Gear" ahead of the equipped pair, "Inventory"
+    // ahead of the carried axe (theme-darkest strips, no button).
+    var header_labels: [2][]const u8 = undefined;
+    var header_count: usize = 0;
+    for (elements.items) |element| {
+        switch (element) {
+            .text_label => |label| {
+                if (std.mem.eql(u8, label.text, "Gear") or std.mem.eql(u8, label.text, "Inventory")) {
+                    header_labels[header_count] = label.text;
+                    header_count += 1;
+                }
+            },
+            else => {},
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 2), header_count);
+    try std.testing.expectEqualStrings("Gear", header_labels[0]);
+    try std.testing.expectEqualStrings("Inventory", header_labels[1]);
+    // Few rows - no scrollbar.
+    var scrollbar_rects: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .solid_rect => |rect| {
+            if (rect.width == scrollbar_width) scrollbar_rects += 1;
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(usize, 0), scrollbar_rects);
     try std.testing.expectEqual(types.UpgradeItemRef{ .gear = .main_hand }, rows[0].payload);
     try std.testing.expectEqual(types.UpgradeItemRef{ .gear = .coat }, rows[1].payload);
     try std.testing.expectEqual(types.UpgradeItemRef{ .inventory = 3 }, rows[2].payload);
@@ -2467,9 +2573,11 @@ test "buildVendorPanel: purchase button when affordable, red cost without a butt
     );
 
     // The selected sword's stat row: a purchase button carrying the
-    // resolved purchase; no MAX text for it.
+    // resolved purchase (full column width, labeled "Upgrade Damage"),
+    // no MAX text for it.
     var purchase_buttons: usize = 0;
     var max_labels: usize = 0;
+    var upgrade_damage_labels: usize = 0;
     for (elements.items) |element| {
         switch (element) {
             .button => |button| if (button.action == .purchase_upgrade) {
@@ -2479,14 +2587,16 @@ test "buildVendorPanel: purchase button when affordable, red cost without a butt
                     .stat = .weapon_damage,
                 }, button.payload.?.vendor_purchase);
             },
-            .text_label => |label| if (std.mem.eql(u8, label.text, "MAX")) {
-                max_labels += 1;
+            .text_label => |label| {
+                if (std.mem.eql(u8, label.text, "MAX")) max_labels += 1;
+                if (std.mem.eql(u8, label.text, "Upgrade Damage")) upgrade_damage_labels += 1;
             },
             else => {},
         }
     }
     try std.testing.expectEqual(@as(usize, 1), purchase_buttons);
     try std.testing.expectEqual(@as(usize, 0), max_labels);
+    try std.testing.expectEqual(@as(usize, 1), upgrade_damage_labels);
 
     // The maxed boots: selected directly - the speed row shows MAX, no
     // purchase button for it.
@@ -2602,12 +2712,26 @@ test "buildVendorPanel: the item list windows and clamps its scroll" {
     ));
     const rows = try vendorRowButtons(allocator, elements.items);
     try std.testing.expectEqual(visible_rows, rows.len);
+    // The entry list carries one "Inventory" header ahead of the 40 items.
+    const total_entries: usize = 40 + 1;
     try std.testing.expectEqual(
-        @as(i32, @intCast(40 -| visible_rows)),
+        @as(i32, @intCast(total_entries -| visible_rows)),
         scroll,
     );
 
-    // The windowed emission starts at the clamped offset (the last rows).
+    // The scrollbar renders when the list scrolls (a track + a thumb,
+    // both scrollbar_width wide).
+    var scrollbar_rects: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .solid_rect => |rect| {
+            if (rect.width == scrollbar_width) scrollbar_rects += 1;
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(usize, 2), scrollbar_rects);
+
+    // The windowed emission starts at the clamped offset (the last rows);
+    // the first visible ITEM sits one entry past the header.
     var seen_first: ?u32 = null;
     for (elements.items) |element| {
         switch (element) {
@@ -2618,7 +2742,10 @@ test "buildVendorPanel: the item list windows and clamps its scroll" {
             else => {},
         }
     }
-    try std.testing.expectEqual(@as(u32, @intCast(40 -| visible_rows)), seen_first.?);
+    try std.testing.expectEqual(
+        @as(u32, @intCast(total_entries -| visible_rows - 1)),
+        seen_first.?,
+    );
 }
 
 test "vendorPanelWidth: inventory + gear + vendor + gaps exactly fill the reference width" {

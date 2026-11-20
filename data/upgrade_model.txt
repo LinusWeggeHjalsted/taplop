@@ -1,10 +1,11 @@
 Metadata
-file_format_version 1
+file_format_version 2
 
 IncomeModel
 materials_per_mission_per_wallet 27
 b_line_mission_count 3
 campaign_mission_count 66
+rung_growth_thousandths 1250
 
 Alpha
 weapon_damage 300

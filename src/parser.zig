@@ -89,8 +89,9 @@ pub const editor_defaults_file_format_version: u32 = 1;
 /// a single `tip <prose>` pair (the UI wraps; prose stays one line here).
 pub const tips_file_format_version: u32 = 1;
 /// The upgrade-economy model file (data/upgrade_model.txt). v1: the
-/// initial format - Metadata + IncomeModel + Alpha.
-pub const upgrade_model_file_format_version: u32 = 1;
+/// initial format - Metadata + IncomeModel + Alpha. v2: IncomeModel gains
+/// `rung_growth_thousandths` (the per-rung price growth factor).
+pub const upgrade_model_file_format_version: u32 = 2;
 
 const Color = types.Color;
 
@@ -864,6 +865,7 @@ const upgrade_income_keys = [_][]const u8{
     "materials_per_mission_per_wallet",
     "b_line_mission_count",
     "campaign_mission_count",
+    "rung_growth_thousandths",
 };
 
 const upgrade_alpha_keys: [types.item_stat_count][]const u8 = blk: {

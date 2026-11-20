@@ -2272,6 +2272,10 @@ pub const max_boots_speed: u32 = 2;
 pub const max_upgrade_income_rate: u32 = 1000;
 pub const max_upgrade_mission_count: u32 = 10000;
 pub const max_upgrade_alpha_thousandths: u32 = 10000;
+/// The per-rung growth factor's bound: 1000 (no growth) .. 2000 (doubling
+/// each rung). The price arithmetic compounds it saturating, so the bound
+/// is a sanity clamp, not an overflow guard.
+pub const max_upgrade_rung_growth_thousandths: u32 = 2000;
 
 /// One of the entity's unbounded base stats (the inspector's numeric
 /// fields - see DESIGN → Level Editor → Inspector fields).
@@ -2322,6 +2326,14 @@ pub const UpgradeModel = struct {
     /// The shipped values are the retired linear ladder's solve, kept as
     /// provisional tuning starting points (the audit script re-solves).
     alpha_thousandths: [item_stat_count]u32 = @splat(0),
+    /// The per-rung price growth factor, in thousandths (1250 = each
+    /// successive rung ×1.25). The wealth gap alone prices the ladder
+    /// LINEARLY in v through the mid segment (the quadratic W cancels
+    /// against the linearly-spaced frontier); this compounds the price
+    /// exponentially in v - keyed on (v − s_stat), so the first rung above
+    /// starter gear is unmultiplied and the early-paycheck anchor holds.
+    /// 1000 = no growth.
+    rung_growth_thousandths: u32 = 1000,
     /// s_stat - the standard starting value per stat, DERIVED from the
     /// new-player template's equipped gear at session setup (no
     /// hand-maintained constant).
