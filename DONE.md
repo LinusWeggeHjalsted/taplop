@@ -409,6 +409,7 @@ working rules).
 - [The editor_browser legality gap (campaign-editor ctrl+O trap)](#the-editorbrowser-legality-gap-campaign-editor-ctrlo-trap)
 - [The Polpat swap: the official campaign becomes authored, content-agnostic tests](#the-polpat-swap-the-official-campaign-becomes-authored-content-agnostic-tests)
 - [The surface-screen census (the validator-view mirror, machine-checked)](#the-surface-screen-census-the-validator-view-mirror-machine-checked)
+- [Gear upgrading: slice 1 - the wealth-gap price model + config threading](#gear-upgrading-slice-1---the-wealth-gap-price-model--config-threading)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24084,3 +24085,71 @@ content-agnostic convention note (authored campaign content - derive
 via test_harness.official*, never pin). TODO gained the
 `FileSource.init(io, undefined)` persistent-dir footgun + the dump-path
 `.?` question.
+
+## Gear upgrading: slice 1 - the wealth-gap price model + config threading
+
+The implementation-design pass settled ONE formula for the whole upgrade
+ladder (the wealth-gap form over a fraction-linear tier frontier, mid-game
+and tail unified - the DESIGN amendment landed first as its own commit;
+the retired shape was a linear mid-ladder plus a generated tail table).
+This slice lands its machinery:
+
+- `data/upgrade_model.txt` (R=27, b-line=3, campaign=66, α thousandths)
+  + the parser grammar (`upgrade_model_sections` + key map whose Alpha
+  keys DERIVE from `@typeInfo(ItemStatField)` - a new stat's key appears
+  automatically) + `loaders.loadUpgradeModel`. The loader is STRICT
+  where content loaders warn+clamp: a missing stat weight, an
+  out-of-range constant, or a backwards frontier is `InvalidData`, so a
+  broken shadow falls back to the embedded copy (the
+  `loadConfigWithFallback` posture) instead of silently pricing at 0.
+- `src/upgrade.zig`: the frontier (`frontierMission`), the per-rung
+  cost (`rungCostTotalParts`), the salvage-ratio split
+  (`rungCostSplit`), `canAffordMaterials`, and the starter-stat
+  derivation. Pure integer/rational arithmetic - no floats (the
+  gameplay-integers rule), u128 intermediates, allocation-free.
+- `s_stat` derives from `data/new_player.txt`'s EQUIPPED gear (max over
+  the pieces carrying each stat) in `session_setup.loadUpgradeModelFromDisk`
+  - a scratch-arena parse, warn + zeros on a broken template.
+- Threading: `types.UpgradeModel` is the new history-resident config
+  (value type - nothing at deinit), loaded in `createSessionSetup` +
+  the test harness.
+
+The worked-example tests pin the DESIGN table EXACTLY: sword 3→4 = 9
+parts (2 wood + 7 metal), 6→7 = 31, 7→8 = 2018, 9→10 = 22004; speed
+0→1 = 9, 1→2 = 6439. Frontier anchors exact: starter m=0, m(8) = 15.6,
+m(max) = campaign.
+
+**The speed α decision** (the one place the unification demotes a
+settled sentence): "0→1 trivial" and "1→2 the single biggest purchase
+in the game" cannot coexist under ONE per-stat α - the fraction
+frontier fixes the rung ratio (the 1→2 window spans m=2→66, so
+window(1→2)/window(0→1) = 59616/81 whatever α is). Shipped speed at the
+armor group's α (54 - wallet-consistent: boots draw cloth+leather like
+every armor piece): 0→1 = 9 parts (the cheapest rung family), 1→2 =
+6439 parts, the biggest cloth+leather purchase but not the biggest
+overall (weapon tail rungs hold that at the provisional α). The DESIGN
+speed bullet was amended accordingly. If the marquee feel is wanted
+back, the α dial is in the config - the audit-solve session surfaces
+the tradeoff explicitly (α_speed ≈ 3000 makes 1→2 ≈ 36k but 0→1 ≈ 49
+parts, no longer trivial).
+
+**The init options-struct fold-in** rode the threading as planned
+(TODO → Tech Debt, the ripple item): `GameStateHistory.init` now takes
+`InitOptions` (required: settings, weapon-type definitions, file
+source, io; defaulted: color themes, salvage definitions, tips,
+upgrade model - each default an inert empty shape). 19 call sites
+converted (15 in main.zig, 2 in input_handlers, 1 each in
+session_setup/test_harness/validation_replay). New history-resident
+config fields default in `InitOptions` from now on - the mechanical
+ripple class is closed for init.
+
+Gotchas found: `@typeInfo`'s `field_names` elements are `[:0]const u8`
+- they coerce element-wise in loops but NOT as a direct `[]const u8`
+array initializer (the key-map array needed a per-element copy), and
+AGENTS' own rendering of the tag accessor (`."@"enum"`) is not the
+tree spelling (`.@"enum"`) - the gotcha note is fixed in the same commit
+this was found.
+
+Status note: `upgrade.zig`'s price fns have their consumers in the
+events/legality + panel slices that follow (TODO → Gear Upgrading);
+`starterStatValuesFromGear` is consumed by session_setup now.

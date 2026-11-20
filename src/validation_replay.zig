@@ -390,17 +390,15 @@ pub fn revalidateMission(
         .level = null,
         .hub = null,
     };
-    var scratch_history = state_mod.GameStateHistory.init(
-        scratch,
-        starting_state,
-        history.settings,
-        history.weapon_type_definitions,
-        history.color_theme_definitions,
-        history.salvage_definitions,
-        &.{},
-        history.file_source,
-        history.io,
-    );
+    var scratch_history = state_mod.GameStateHistory.init(scratch, starting_state, .{
+        .settings = history.settings,
+        .weapon_type_definitions = history.weapon_type_definitions,
+        .color_theme_definitions = history.color_theme_definitions,
+        .salvage_definitions = history.salvage_definitions,
+        .upgrade_model = history.upgrade_model,
+        .file_source = history.file_source,
+        .io = history.io,
+    });
     const rejection = scratch_history.reconstructFromEventLogChecking(
         replay_events,
         @intCast(replay_events.len),

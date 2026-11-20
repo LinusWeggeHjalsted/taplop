@@ -7445,17 +7445,15 @@ test "keybind confirm/remove: the rebuild-ownership path (leak-checked)" {
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
     const harness = @import("test_harness.zig").Harness.init(backing.allocator());
-    var history = state.GameStateHistory.init(
-        std.testing.allocator,
-        @import("test_harness.zig").defaultStartingState(),
-        harness.settings,
-        &harness.weapon_type_definitions,
-        harness.color_theme_definitions,
-        harness.salvage_definitions,
-        &.{},
-        &harness.file_source,
-        harness.file_source.io,
-    );
+    var history = state.GameStateHistory.init(std.testing.allocator, @import("test_harness.zig").defaultStartingState(), .{
+        .settings = harness.settings,
+        .weapon_type_definitions = &harness.weapon_type_definitions,
+        .color_theme_definitions = harness.color_theme_definitions,
+        .salvage_definitions = harness.salvage_definitions,
+        .upgrade_model = harness.upgrade_model,
+        .file_source = &harness.file_source,
+        .io = harness.file_source.io,
+    });
     // The history runs on testing.allocator and init deep-copies the
     // starting state into initial_arena - that copy is a history-owned
     // allocation under the leak checker, so the test returns it (the
@@ -7565,17 +7563,15 @@ test "resetSettingsToDefaults: full reset + flush-then-copy settings backup" {
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
     const harness = @import("test_harness.zig").Harness.init(backing.allocator());
-    var history = state.GameStateHistory.init(
-        std.testing.allocator,
-        @import("test_harness.zig").defaultStartingState(),
-        harness.settings,
-        &harness.weapon_type_definitions,
-        harness.color_theme_definitions,
-        harness.salvage_definitions,
-        &.{},
-        &harness.file_source,
-        harness.file_source.io,
-    );
+    var history = state.GameStateHistory.init(std.testing.allocator, @import("test_harness.zig").defaultStartingState(), .{
+        .settings = harness.settings,
+        .weapon_type_definitions = &harness.weapon_type_definitions,
+        .color_theme_definitions = harness.color_theme_definitions,
+        .salvage_definitions = harness.salvage_definitions,
+        .upgrade_model = harness.upgrade_model,
+        .file_source = &harness.file_source,
+        .io = harness.file_source.io,
+    });
     // The history runs on testing.allocator and init deep-copies the
     // starting state into initial_arena - that copy is a history-owned
     // allocation under the leak checker, so the test returns it (the

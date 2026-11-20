@@ -2215,6 +2215,16 @@ pub const max_gloves_damage: u32 = 5;
 pub const max_pickup_radius: u32 = 5;
 pub const max_boots_speed: u32 = 2;
 
+/// Upgrade-model config bounds (data/upgrade_model.txt - see DESIGN →
+/// Gear Upgrading): the income rate R (materials per wallet per mission),
+/// the tier-frontier mission anchors, and the per-stat α weights
+/// (thousandths). Generous headroom over the shipped values (27 / 3 / 66
+/// / ≤ 600) while keeping the price arithmetic's integer intermediates
+/// comfortably bounded.
+pub const max_upgrade_income_rate: u32 = 1000;
+pub const max_upgrade_mission_count: u32 = 10000;
+pub const max_upgrade_alpha_thousandths: u32 = 10000;
+
 /// One of the entity's unbounded base stats (the inspector's numeric
 /// fields - see DESIGN → Level Editor → Inspector fields).
 pub const EntityStatField = enum {
@@ -2240,6 +2250,34 @@ pub const ItemStatField = enum {
     damage_bonus,
     pickup_radius_bonus,
     speed_bonus,
+};
+
+pub const item_stat_count = @typeInfo(ItemStatField).@"enum".field_names.len;
+
+/// The upgrade-economy model (DESIGN → Gear Upgrading): the authored
+/// constants from `data/upgrade_model.txt` plus the derived standard
+/// starting values. A value type - no allocation, nothing to free. The
+/// wealth-gap price fns over this model live in `src/upgrade.zig`.
+///
+/// The all-zero default is a legal degenerate model (every price 0);
+/// real histories load the config. Tests that never open the vendor
+/// panel can pass `.{}`.
+pub const UpgradeModel = struct {
+    /// R - materials per wallet per mission of progression (the measured
+    /// clone/pickup rate; DESIGN → Gear Upgrading → The income model).
+    materials_per_mission_per_wallet: u32 = 0,
+    /// The b-line anchor mission: the 75% tier ("T(3)" in the design).
+    b_line_mission_count: u32 = 0,
+    /// The campaign-completion mission: the 100% tier ("T(66)").
+    campaign_mission_count: u32 = 0,
+    /// Per-stat wallet-binding weights, in thousandths (the α solve).
+    /// The shipped values are the retired linear ladder's solve, kept as
+    /// provisional tuning starting points (the audit script re-solves).
+    alpha_thousandths: [item_stat_count]u32 = @splat(0),
+    /// s_stat - the standard starting value per stat, DERIVED from the
+    /// new-player template's equipped gear at session setup (no
+    /// hand-maintained constant).
+    starter_stat_values: [item_stat_count]u32 = @splat(0),
 };
 
 /// The item's display name (every item kind carries one).

@@ -960,6 +960,28 @@ pub const ReplayRejection = struct {
     message: []const u8,
 };
 
+/// The inert default for `InitOptions.color_theme_definitions`: no
+/// gradients, black theme colors. `view()` falls back to the fixed UI
+/// palette with no definitions loaded.
+const default_color_theme_definitions: ColorThemeDefinitions = .{
+    .lightest = .{ .r = 0, .g = 0, .b = 0 },
+    .darkest = .{ .r = 0, .g = 0, .b = 0 },
+    .gradients = &.{},
+};
+
+/// The inert default for `InitOptions.salvage_definitions`: empty splits
+/// (nothing salvageable). The history deinit skips zero-length splits, so
+/// the comptime-empty slices need no ownership.
+const default_salvage_definitions: SalvageDefinitions = .{
+    .weapon = @splat(.{ .splits = &.{} }),
+    .amulet = .{ .splits = &.{} },
+    .coat = .{ .splits = &.{} },
+    .gloves = .{ .splits = &.{} },
+    .pants = .{ .splits = &.{} },
+    .boots = .{ .splits = &.{} },
+    .skill_tome = .{ .splits = &.{} },
+};
+
 pub const GameStateHistory = struct {
     // Player preferences - not part of game state, not affected by undo/redo.
     settings: Settings,
@@ -972,6 +994,11 @@ pub const GameStateHistory = struct {
     weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
     color_theme_definitions: ColorThemeDefinitions,
     salvage_definitions: SalvageDefinitions,
+    /// The upgrade-economy model (a value type - nothing to free at
+    /// deinit): authored constants from data/upgrade_model.txt plus the
+    /// derived starter stats; the wealth-gap price fns live in
+    /// src/upgrade.zig. DESIGN → Gear Upgrading.
+    upgrade_model: types.UpgradeModel,
     /// The tips (data/tips.txt), one self-owned prose string each - see
     /// loaders.loadTips.
     tips: []const []const u8,
@@ -1096,25 +1123,38 @@ pub const GameStateHistory = struct {
     /// deinits (checking mode runs on short-lived scratch histories).
     replay_rejection: ?ReplayRejection = null,
 
+    /// Static-data + optional args for `init`, so a NEW history-resident
+    /// config field defaults here instead of mechanically editing every
+    /// call site (the options-struct settle - the init-ripple item in
+    /// TODO → Tech Debt). Required: the loaded settings, the weapon-type
+    /// skill mapping, the file source + io. Defaulted: everything whose
+    /// empty shape is inert (no themes, empty salvage splits, no tips,
+    /// the zero upgrade model).
+    pub const InitOptions = struct {
+        settings: Settings,
+        weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
+        file_source: *const FileSource,
+        io: std.Io,
+        color_theme_definitions: ColorThemeDefinitions = default_color_theme_definitions,
+        salvage_definitions: SalvageDefinitions = default_salvage_definitions,
+        tips: []const []const u8 = &.{},
+        upgrade_model: types.UpgradeModel = .{},
+    };
+
     pub fn init(
         allocator: std.mem.Allocator,
         initial_state: GameState,
-        settings: Settings,
-        weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
-        color_theme_definitions: ColorThemeDefinitions,
-        salvage_definitions: SalvageDefinitions,
-        tips: []const []const u8,
-        file_source: *const FileSource,
-        io: std.Io,
+        options: InitOptions,
     ) GameStateHistory {
         var history = GameStateHistory{
-            .settings = settings,
-            .weapon_type_definitions = weapon_type_definitions,
-            .color_theme_definitions = color_theme_definitions,
-            .salvage_definitions = salvage_definitions,
-            .tips = tips,
-            .file_source = file_source,
-            .io = io,
+            .settings = options.settings,
+            .weapon_type_definitions = options.weapon_type_definitions,
+            .color_theme_definitions = options.color_theme_definitions,
+            .salvage_definitions = options.salvage_definitions,
+            .upgrade_model = options.upgrade_model,
+            .tips = options.tips,
+            .file_source = options.file_source,
+            .io = options.io,
             .backing_allocator = allocator,
             .history_arena = std.heap.ArenaAllocator.init(allocator),
             .initial_state = undefined,

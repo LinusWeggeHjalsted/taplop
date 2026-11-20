@@ -42,6 +42,7 @@ const color_themes_file_format_version = parser.color_themes_file_format_version
 const player_loadout_file_format_version = parser.player_loadout_file_format_version;
 const decorations_file_format_version = parser.decorations_file_format_version;
 const editor_defaults_file_format_version = parser.editor_defaults_file_format_version;
+const upgrade_model_file_format_version = parser.upgrade_model_file_format_version;
 /// camera_zoom valid range (hundredths). Mirrors `input_handlers`'s
 /// `min_camera_zoom`/`max_camera_zoom` - duplicated here because loaders
 /// must not import the input layer; the 4-choice values (25/50/75/100) are
@@ -6493,6 +6494,195 @@ test "salvage: a missing gear section InvalidData leaks nothing (loadSalvageDefi
         error.InvalidData,
         loadSalvageDefinitions(sections, allocator),
     );
+}
+
+// ============================================================
+// Upgrade model
+// ============================================================
+
+/// A required u32 within [minimum, maximum] - the strict counterpart of
+/// `boundedU32` (which warns + clamps) for the model constants: an
+/// out-of-range or missing constant is a config-author error that falls
+/// back to the embedded copy via loadConfigWithFallback, not content to
+/// salvage.
+fn requiredBoundedU32(
+    pairs: []const KeyValuePair,
+    key: []const u8,
+    minimum: u32,
+    maximum: u32,
+) !u32 {
+    const value_text = findValue(pairs, key) orelse return error.InvalidData;
+    const value = asU32(value_text) orelse return error.InvalidData;
+    if (value < minimum or value > maximum) return error.InvalidData;
+    return value;
+}
+
+/// Load the upgrade-economy model (data/upgrade_model.txt - DESIGN →
+/// Gear Upgrading): the income constants + the per-stat α weights
+/// (thousandths). A pure value build - nothing is allocated, so error
+/// paths own nothing. `starter_stat_values` is NOT loaded here (it
+/// derives from the new-player template at session setup -
+/// session_setup.loadUpgradeModelFromDisk).
+pub fn loadUpgradeModel(
+    sections: []const Section,
+    allocator: std.mem.Allocator,
+) !types.UpgradeModel {
+    _ = allocator; // value type - nothing allocated
+    _ = try validateFileFormatVersion(
+        sections,
+        "Metadata",
+        upgrade_model_file_format_version,
+        upgrade_model_file_format_version,
+    );
+
+    var model: types.UpgradeModel = .{};
+
+    // IncomeModel: exactly one entry group (the three constants).
+    const income_section = findSection(sections, "IncomeModel") orelse return error.InvalidData;
+    if (income_section.entry_groups.len != 1) return error.InvalidData;
+    const income_pairs = income_section.entry_groups[0].pairs;
+    model.materials_per_mission_per_wallet = try requiredBoundedU32(
+        income_pairs,
+        "materials_per_mission_per_wallet",
+        1,
+        types.max_upgrade_income_rate,
+    );
+    model.b_line_mission_count = try requiredBoundedU32(
+        income_pairs,
+        "b_line_mission_count",
+        1,
+        types.max_upgrade_mission_count,
+    );
+    model.campaign_mission_count = try requiredBoundedU32(
+        income_pairs,
+        "campaign_mission_count",
+        1,
+        types.max_upgrade_mission_count,
+    );
+    // The frontier's tail segment must not run backwards.
+    if (model.campaign_mission_count < model.b_line_mission_count) return error.InvalidData;
+
+    // Alpha: exactly one entry group, one pair per stat (key = the
+    // ItemStatField name - the parser's key list derives from the same
+    // enum, so an unknown key is caught by validateKeys on the way in;
+    // a MISSING stat is a balance hole (that stat prices at 0) and is
+    // rejected here).
+    const alpha_section = findSection(sections, "Alpha") orelse return error.InvalidData;
+    if (alpha_section.entry_groups.len != 1) return error.InvalidData;
+    const alpha_pairs = alpha_section.entry_groups[0].pairs;
+    const stat_names = @typeInfo(types.ItemStatField).@"enum".field_names;
+    inline for (stat_names, 0..) |stat_name, stat_index| {
+        model.alpha_thousandths[stat_index] = try requiredBoundedU32(
+            alpha_pairs,
+            stat_name,
+            0,
+            types.max_upgrade_alpha_thousandths,
+        );
+    }
+
+    return model;
+}
+
+test "upgrade model: loads the shipped constants exactly" {
+    const allocator = std.testing.allocator;
+    const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\
+        \\IncomeModel
+        \\materials_per_mission_per_wallet 27
+        \\b_line_mission_count 3
+        \\campaign_mission_count 66
+        \\
+        \\Alpha
+        \\weapon_damage 300
+        \\spell_damage 600
+        \\health_bonus 54
+        \\defense_bonus 54
+        \\damage_bonus 54
+        \\pickup_radius_bonus 54
+        \\speed_bonus 54
+    ;
+    const sections = try parseConfigFile(raw_text, allocator, &parser.upgrade_model_sections);
+    defer freeParsedSections(sections, allocator);
+    const model = try loadUpgradeModel(sections, allocator);
+    try std.testing.expectEqual(@as(u32, 27), model.materials_per_mission_per_wallet);
+    try std.testing.expectEqual(@as(u32, 3), model.b_line_mission_count);
+    try std.testing.expectEqual(@as(u32, 66), model.campaign_mission_count);
+    try std.testing.expectEqual(@as(u32, 300), model.alpha_thousandths[@backingInt(types.ItemStatField.weapon_damage)]);
+    try std.testing.expectEqual(@as(u32, 54), model.alpha_thousandths[@backingInt(types.ItemStatField.speed_bonus)]);
+}
+
+test "upgrade model: rejects a missing stat weight, an out-of-range constant, and a backwards frontier" {
+    const allocator = std.testing.allocator;
+    const raw_missing_stat =
+        \\Metadata
+        \\file_format_version 1
+        \\
+        \\IncomeModel
+        \\materials_per_mission_per_wallet 27
+        \\b_line_mission_count 3
+        \\campaign_mission_count 66
+        \\
+        \\Alpha
+        \\weapon_damage 300
+        \\spell_damage 600
+        \\health_bonus 54
+        \\defense_bonus 54
+        \\damage_bonus 54
+        \\pickup_radius_bonus 54
+    ;
+    {
+        const sections = try parseConfigFile(raw_missing_stat, allocator, &parser.upgrade_model_sections);
+        defer freeParsedSections(sections, allocator);
+        try std.testing.expectError(error.InvalidData, loadUpgradeModel(sections, allocator));
+    }
+    const raw_out_of_range =
+        \\Metadata
+        \\file_format_version 1
+        \\
+        \\IncomeModel
+        \\materials_per_mission_per_wallet 999999
+        \\b_line_mission_count 3
+        \\campaign_mission_count 66
+        \\
+        \\Alpha
+        \\weapon_damage 300
+        \\spell_damage 600
+        \\health_bonus 54
+        \\defense_bonus 54
+        \\damage_bonus 54
+        \\pickup_radius_bonus 54
+        \\speed_bonus 54
+    ;
+    {
+        const sections = try parseConfigFile(raw_out_of_range, allocator, &parser.upgrade_model_sections);
+        defer freeParsedSections(sections, allocator);
+        try std.testing.expectError(error.InvalidData, loadUpgradeModel(sections, allocator));
+    }
+    const raw_backwards_frontier =
+        \\Metadata
+        \\file_format_version 1
+        \\
+        \\IncomeModel
+        \\materials_per_mission_per_wallet 27
+        \\b_line_mission_count 66
+        \\campaign_mission_count 3
+        \\
+        \\Alpha
+        \\weapon_damage 300
+        \\spell_damage 600
+        \\health_bonus 54
+        \\defense_bonus 54
+        \\damage_bonus 54
+        \\pickup_radius_bonus 54
+        \\speed_bonus 54
+    ;
+    {
+        const sections = try parseConfigFile(raw_backwards_frontier, allocator, &parser.upgrade_model_sections);
+        defer freeParsedSections(sections, allocator);
+        try std.testing.expectError(error.InvalidData, loadUpgradeModel(sections, allocator));
+    }
 }
 
 /// Load the tips file (data/tips.txt): one self-owned prose string per

@@ -73,6 +73,7 @@ pub const Harness = struct {
     weapon_type_definitions: [session_setup.weapon_type_count]WeaponTypeDefinition,
     color_theme_definitions: ColorThemeDefinitions,
     salvage_definitions: types.SalvageDefinitions,
+    upgrade_model: types.UpgradeModel,
 
     /// Initialize the bootstrap: a scratch-dir-backed FileSource + the four
     /// config loads, all allocated into `arena`. The test owns `arena`
@@ -106,6 +107,7 @@ pub const Harness = struct {
             .weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &startup),
             .color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &startup),
             .salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &startup),
+            .upgrade_model = session_setup.loadUpgradeModelFromDisk(&file_source, arena, &startup),
         };
     }
 
@@ -115,17 +117,15 @@ pub const Harness = struct {
     /// defaults to the main-menu start state (`defaultStartingState`) if null.
     pub fn newHistory(self: *Harness, starting: ?GameState) GameStateHistory {
         const start = starting orelse defaultStartingState();
-        return GameStateHistory.init(
-            self.arena,
-            start,
-            self.settings,
-            &self.weapon_type_definitions,
-            self.color_theme_definitions,
-            self.salvage_definitions,
-            &.{},
-            &self.file_source,
-            self.file_source.io,
-        );
+        return GameStateHistory.init(self.arena, start, .{
+            .settings = self.settings,
+            .weapon_type_definitions = &self.weapon_type_definitions,
+            .color_theme_definitions = self.color_theme_definitions,
+            .salvage_definitions = self.salvage_definitions,
+            .upgrade_model = self.upgrade_model,
+            .file_source = &self.file_source,
+            .io = self.file_source.io,
+        });
     }
 };
 

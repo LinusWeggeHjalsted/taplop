@@ -52,6 +52,10 @@ fn validateConfigFile(
         const sections = try parser.parseConfigFile(bytes, allocator, &parser.salvage_sections);
         _ = try loaders.loadSalvageDefinitions(sections, allocator);
         parser.validateKeys(sections, parser.salvage_key_map, path, allocator, warnings);
+    } else if (std.mem.eql(u8, path, "data/upgrade_model.txt")) {
+        const sections = try parser.parseConfigFile(bytes, allocator, &parser.upgrade_model_sections);
+        _ = try loaders.loadUpgradeModel(sections, allocator);
+        parser.validateKeys(sections, parser.upgrade_model_key_map, path, allocator, warnings);
     } else if (std.mem.eql(u8, path, "data/decorations.txt")) {
         const sections = try parser.parseConfigFile(bytes, allocator, &parser.decoration_registry_sections);
         _ = try loaders.loadDecorationRegistry(sections, file_source, allocator);
@@ -120,7 +124,7 @@ test "shipped content: every config .txt parses, loads, and has no unknown keys"
     var warnings: std.ArrayList([]const u8) = .empty;
 
     // Iterate every file in the embedded-asset map. Validate the .txt config
-    // files; skip non-config files (.png, etc.). 16 config files as of now.
+    // files; skip non-config files (.png, etc.). 17 config files as of now.
     // StaticStringMap has no iterator() - iterate the underlying keys array.
     const keys = embedded_assets.map.kvs.keys;
     const values = embedded_assets.map.kvs.values;
@@ -141,7 +145,7 @@ test "shipped content: every config .txt parses, loads, and has no unknown keys"
     }
 
     // Sanity: at least the known config files are present.
-    try std.testing.expect(config_count >= 16);
+    try std.testing.expect(config_count >= 17);
 
     // No warnings across all shipped config (key validation + the settings
     // file's binding lint).

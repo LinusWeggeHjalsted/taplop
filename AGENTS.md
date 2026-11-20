@@ -537,7 +537,7 @@ survived many sessions this way).
 - PriorityQueue: `.empty`, `.push(allocator, item)`, `.pop()`, `.deinit(allocator)`
 - Dir.writeFile takes an options struct: `.{ .sub_path = path, .data = data }`
 - File I/O needs Io handle: `std.Io.Threaded.init(allocator, .{})`, `std.Io.Dir.cwd()`
-- No `std.enums.count()` - use `@typeInfo(MyEnum)."@"enum".field_names.len`
+- No `std.enums.count()` - use `@typeInfo(MyEnum).@"enum".field_names.len`
 - No default parameter values - `fn f(x: i32 = 0)` is a compile error. Use
   a required param + callers pass the default, or an optional `?T` the
   caller fills with `null`.
@@ -552,7 +552,10 @@ survived many sessions this way).
   indexed access picks the slice you need. std.meta.fields was removed;
   std.meta.fieldNames/fieldTypes remain but are deprecated AND their
   result is not comptime-resolvable as an `inline for` condition - use
-  `@typeInfo(T)."@"enum".field_names` directly.
+  `@typeInfo(T).@"enum".field_names` directly (the tag accessor is the
+  quoted identifier `@"enum"`, and `field_names` elements are
+  `[:0]const u8`: they coerce element-wise in loops but NOT as a direct
+  `[]const u8` array initializer - copy per element for typed arrays).
 - **Array multiplication (`[1]u8{0} ** 8`) is removed since 0.17** - use
   `@splat`. @splat takes its result type from the result location (field
   init, typed const, fn arg); in an `++` chain there is none, so spell it
@@ -828,13 +831,18 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   `types.*`): `loadLevel`/`loadHub`/`loadMission`/`loadCampaign`/
   `loadPlayerSave`/`loadSettings`/`loadWeaponTypeDefinition`/
   `loadColorThemeDefinitions`/`loadSalvageDefinitions`/`loadDecorationRegistry`/
-  `loadPlayerLoadout`, decoration footprint/anchor validation, editor dedup
+  `loadPlayerLoadout`/`loadUpgradeModel`, decoration footprint/anchor validation,
+  editor dedup
   (`buildEditorMission`)/instantiation (`instantiateEditorLevel`), the
   `free*`/`clone*`/equality helpers, balance bounds (`boundedU32`/`max_*`),
   custom-sprite PNG dim resolution.
 - `src/writers.zig` - save/settings writers (typed objects → config text):
   `writePlayerSave`/`writeSettings`/`writePlayerSaveToFile`. The inverse of
   `loaders.zig`.
+- `src/upgrade.zig` - the wealth-gap upgrade price model (the tier frontier,
+  the per-rung cost over the wealth curve, the salvage-ratio split, the
+  starter-stat derivation): pure integer/rational math over the
+  history-resident `types.UpgradeModel`. See DESIGN → Gear Upgrading.
 - `src/console.zig` - the console input channel (stdin - see DESIGN →
   Input → Console input): the command parser, the SPSC reader→game queue,
   the per-frame command drain + PlatformInput merge, the applyAction fold,
@@ -1011,10 +1019,10 @@ stay here in AGENTS; this map is the seam between the two.
   Key: `src/handlers/level.zig` (end_level completion flow),
   `src/handlers/player.zig` (clone harvest math).
 - **Gear upgrading** - DESIGN → Gear Upgrading: the upgrade economy
-  (clone-derived income model, the two anchors, the cost ladder + α
-  table, drops-as-pre-bought-rungs, the tier frontier), the hub vendor
-  panel. Builds on DESIGN → Clones; implementation deferred (TODO →
-  Gear Upgrading).
+  (clone-derived income model, the two anchors, the ONE wealth-gap cost
+  formula over the tier frontier, the α solve, drops-as-pre-bought-rungs),
+  the hub vendor panel. Builds on DESIGN → Clones; implementation
+  underway (TODO → Gear Upgrading). Key: `src/upgrade.zig`.
 - **Post-game rewards & cosmetics** - DESIGN → Post-game Rewards &
   Cosmetics: the post-campaign material sink - central-hub decoration
   customization (buy-once-place-freely), weapon skins (per-type registry,

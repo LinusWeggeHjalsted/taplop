@@ -1,0 +1,16 @@
+Metadata
+file_format_version 1
+
+IncomeModel
+materials_per_mission_per_wallet 27
+b_line_mission_count 3
+campaign_mission_count 66
+
+Alpha
+weapon_damage 300
+spell_damage 600
+health_bonus 54
+defense_bonus 54
+damage_bonus 54
+pickup_radius_bonus 54
+speed_bonus 54

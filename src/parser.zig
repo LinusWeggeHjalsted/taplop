@@ -88,6 +88,9 @@ pub const editor_defaults_file_format_version: u32 = 1;
 /// v1: the tips file - a `Tips` section, one entry group per tip carrying
 /// a single `tip <prose>` pair (the UI wraps; prose stays one line here).
 pub const tips_file_format_version: u32 = 1;
+/// The upgrade-economy model file (data/upgrade_model.txt). v1: the
+/// initial format - Metadata + IncomeModel + Alpha.
+pub const upgrade_model_file_format_version: u32 = 1;
 
 const Color = types.Color;
 
@@ -566,6 +569,11 @@ pub const salvage_sections = [_][]const u8{
 /// group per tip.
 pub const tips_sections = [_][]const u8{ "Metadata", "Tips" };
 
+/// The upgrade-economy model file (data/upgrade_model.txt): Metadata +
+/// the income constants + the per-stat α weights (thousandths). See
+/// loaders.loadUpgradeModel + DESIGN → Gear Upgrading.
+pub const upgrade_model_sections = [_][]const u8{ "Metadata", "IncomeModel", "Alpha" };
+
 // ============================================================
 // Key validation (approach A - see DESIGN → Error Handling)
 // ============================================================
@@ -842,6 +850,33 @@ const tips_tip_keys = [_][]const u8{"tip"};
 pub const tips_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
     .{ "Metadata", &shared_metadata_keys },
     .{ "Tips", &tips_tip_keys },
+});
+
+// --- Upgrade-model file key whitelists ---
+//
+// Metadata carries file_format_version (shared keys). IncomeModel carries
+// the measured income rate R + the two tier-frontier mission anchors.
+// Alpha carries one pair per ItemStatField (key = the stat's enum name,
+// value = the α weight in thousandths) - the key list is DERIVED from the
+// enum so a new stat's key appears automatically.
+
+const upgrade_income_keys = [_][]const u8{
+    "materials_per_mission_per_wallet",
+    "b_line_mission_count",
+    "campaign_mission_count",
+};
+
+const upgrade_alpha_keys: [types.item_stat_count][]const u8 = blk: {
+    const stat_names = @typeInfo(types.ItemStatField).@"enum".field_names;
+    var keys: [types.item_stat_count][]const u8 = undefined;
+    for (stat_names, 0..) |stat_name, index| keys[index] = stat_name;
+    break :blk keys;
+};
+
+pub const upgrade_model_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
+    .{ "Metadata", &shared_metadata_keys },
+    .{ "IncomeModel", &upgrade_income_keys },
+    .{ "Alpha", &upgrade_alpha_keys },
 });
 
 // --- Player save file key whitelists ---

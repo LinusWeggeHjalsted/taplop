@@ -309,13 +309,6 @@ design pass, replacing the generated tail table - the α solve,
 drops-as-pre-bought-rungs, the vendor panel + display settles).
 Implementation underway; slices in dependency order:
 
-- [ ] config + price math: `data/upgrade_model.txt` (R, the b-line +
-      campaign mission counts, α thousandths) + parser/loader; `s_stat`
-      derived from new_player.txt; the W / frontier / rung-cost fns +
-      the salvage split (round-half-up + largest-remainder), tests;
-      thread the model through `GameStateHistory` + FOLD IN the init
-      options-struct (the call-site ripple, Tech Debt below) as the new
-      history-resident field lands.
 - [ ] events + legality + handler: `player_upgrade_item` (PlayerInputEvent
       orchestrator + `validatePlayerAction` arm over a bool legality
       helper, gated on the vendor panel being open) → `upgrade_item`
@@ -942,18 +935,14 @@ Done items in DONE.md. Open:
       dump paths. Both ride the same convention decision eventually
       (DESIGN → Error Handling → OOM never propagates as a config-layer
       error).
-- **`GameStateHistory.init` + `view()` call-site ripple (options struct).**
-  `init` has ~20 call sites and every new history-resident config field
-  (tips was the latest) mechanically edits all of them (tests pass `&.{}`);
-  ~12 `view()` test callers hand-write the same boilerplate render context.
-  Settled direction: an options-struct parameter for the static-data /
-  optional args so the DEFAULT is `.{}` at test call sites (the established
-  Zig answer to no-default-params). Fold into the next field addition or
-  do as its own rider; the handler-tests call-shape item above is the same
-  family for `handleAnytimeInput`. `buildCampaignEditorView` adopted the
-  shape (`CampaignEditorViewOptions` - the panel-bounds guard session): its
-  8 test call sites now pass `.{ .ui_state = ... }` literals, so it is no
-  longer part of this ripple; init/view remain.
+- **`view()` call-site ripple (options struct - the init half is DONE).**
+  `GameStateHistory.init` took its options struct with the upgrade model
+  (the 19 call sites converted; new history-resident config fields default
+  in `InitOptions` from now on - see DONE.md, "gear upgrading slice 1").
+  The remaining half: ~12 `view()` test callers hand-write the same
+  boilerplate render context - an options struct so the default is `.{}`.
+  The handler-tests call-shape item above is the same family for
+  `handleAnytimeInput`.
 - **`AnytimeInput.options_action` rename (meaning drift).** The umbrella
   field now carries every overlay-surface action (settings, tips, the
   editor picker clicks), not just the options menu - the name lags the

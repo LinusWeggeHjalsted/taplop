@@ -15,6 +15,7 @@ const loaders = @import("loaders.zig");
 const writers = @import("writers.zig");
 const file_source_mod = @import("file_source.zig");
 const console = @import("console.zig");
+const upgrade = @import("upgrade.zig");
 
 const FileSource = file_source_mod.FileSource;
 const GameState = state.GameState;
@@ -329,6 +330,58 @@ pub fn loadSalvageDefinitionsFromDisk(
     return loadConfigWithFallback(types.SalvageDefinitions, file_source, allocator, "data/salvage.txt", &parser.salvage_sections, loaders.loadSalvageDefinitions, parser.salvage_key_map, startup);
 }
 
+/// Load the upgrade-economy model (data/upgrade_model.txt) and derive the
+/// starter stats from the new-player template's equipped gear (s_stat -
+/// DESIGN → Gear Upgrading). The authored constants load through the
+/// standard fallback path; the derivation runs in a scratch arena (the
+/// template's parse is transient - only the seven values are kept), and
+/// a missing/unparsable template warns + leaves zeros (environmental,
+/// not fatal - the fallback posture).
+pub fn loadUpgradeModelFromDisk(
+    file_source: *const FileSource,
+    allocator: std.mem.Allocator,
+    startup: *StartupMemory,
+) types.UpgradeModel {
+    var model = loadConfigWithFallback(
+        types.UpgradeModel,
+        file_source,
+        allocator,
+        "data/upgrade_model.txt",
+        &parser.upgrade_model_sections,
+        loaders.loadUpgradeModel,
+        parser.upgrade_model_key_map,
+        startup,
+    );
+
+    var scratch = std.heap.ArenaAllocator.init(allocator);
+    defer scratch.deinit();
+    const scratch_allocator = scratch.allocator();
+    const derivation_failed = derivation: {
+        const bytes = file_source.readFile(scratch_allocator, "data/new_player.txt") catch
+            break :derivation true;
+        const sections = parser.parseConfigFile(
+            bytes,
+            scratch_allocator,
+            &parser.player_save_sections,
+        ) catch break :derivation true;
+        const player_data = loaders.loadPlayerSave(sections, scratch_allocator, "", null) catch
+            break :derivation true;
+        model.starter_stat_values = upgrade.starterStatValuesFromGear(player_data);
+        break :derivation false;
+    };
+    if (derivation_failed) {
+        startup.warnings.append(
+            allocator,
+            std.fmt.allocPrint(
+                allocator,
+                "Failed to derive upgrade starter stats from data/new_player.txt; pricing from zero.",
+                .{},
+            ) catch @panic("failed to allocate startup warning"),
+        ) catch @panic("failed to append startup warning");
+    }
+    return model;
+}
+
 /// Load the tips (data/tips.txt), falling back to the embedded copy on
 /// parse failure (see DESIGN → Error Handling). Self-owned strings,
 /// retained process-lifetime by the startup tracking; freed by the
@@ -387,6 +440,7 @@ pub fn createSessionSetup(
     const color_theme_definitions = loadColorThemeDefinitionsFromDisk(file_source, allocator, &startup);
     const salvage_definitions = loadSalvageDefinitionsFromDisk(file_source, allocator, &startup);
     const tips = loadTipsFromDisk(file_source, allocator, &startup);
+    const upgrade_model = loadUpgradeModelFromDisk(file_source, allocator, &startup);
 
     const starting_game_state = GameState{
         .screen = .main_menu,
@@ -412,17 +466,16 @@ pub fn createSessionSetup(
     // System & IO (autosave).
     const autosave_available = file_source.fileExists(writers.autosave_path);
 
-    var history = GameStateHistory.init(
-        allocator,
-        starting_game_state,
-        settings,
-        &weapon_type_definitions,
-        color_theme_definitions,
-        salvage_definitions,
-        tips,
-        file_source,
-        io,
-    );
+    var history = GameStateHistory.init(allocator, starting_game_state, .{
+        .settings = settings,
+        .weapon_type_definitions = &weapon_type_definitions,
+        .color_theme_definitions = color_theme_definitions,
+        .salvage_definitions = salvage_definitions,
+        .upgrade_model = upgrade_model,
+        .tips = tips,
+        .file_source = file_source,
+        .io = io,
+    });
     history.session.autosave_available = autosave_available;
 
     // Repair write: a user settings.txt that loaded but had stale entries
