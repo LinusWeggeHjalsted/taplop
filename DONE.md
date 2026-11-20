@@ -426,6 +426,7 @@ working rules).
 - [Playtest feedback 4: the health-globe tooltip names its stat](#playtest-feedback-4-the-health-globe-tooltip-names-its-stat)
 - [Playtest feedback 3: Escape closes the middle panels, rightmost-first](#playtest-feedback-3-escape-closes-the-middle-panels-rightmost-first)
 - [Playtest feedback 2: the mission announcements are ordinary overlay-stack members](#playtest-feedback-2-the-mission-announcements-are-ordinary-overlay-stack-members)
+- [Playtest feedback 1: hidden tabs pause web audio cleanly](#playtest-feedback-1-hidden-tabs-pause-web-audio-cleanly)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24724,3 +24725,47 @@ skip_level through the campaign's first mission → the overlay's slot is
 open_overlays[0] in the hub → the top-bar `?` opens tips as slot [1]
 ABOVE it → Escape pops tips first, then dismisses the announcement
 (payload null, stack empty).
+
+## Playtest feedback 1: hidden tabs pause web audio cleanly
+
+The report: music (maybe all audio) cut/glitched out on web when the
+tab was not in focus. Code-grounded diagnosis: music is a raylib STREAM
+whose only refill driver is `frame()` (main.zig's updateMusic), and the
+web driver schedules frame() on requestAnimationFrame - which browsers
+stop entirely for a hidden tab. The ScriptProcessorNode keeps pulling
+while the stream buffer starves: the stutter is the expected symptom,
+not a miniaudio bug (sfx are unaffected in principle - no frames, no
+triggers; matching the "maybe all audio" hedge). A visible-but-unfocused
+window keeps rAF, so the report is really about hidden tabs.
+
+The fix (settled with the author: clean pause, not keep-playing):
+`installVisibilityAudioPause` (web.zig) - a `visibilitychange` listener
+that suspends the AudioContext on hidden and resumes on visible,
+installed once per page next to the audio-lead watchdog (idempotent
+across the Import Game re-boots). Suspend stops the mixer PULLING (a
+suspended context delivers no fills), so the starved stream never
+stutters; the context clock freezes with it, so the watchdog's lead
+math sees no phantom banking on return (its state !== 'running' guard
+already no-ops while suspended). Music simply stops for as long as the
+tab is hidden. The keep-playing-in-background alternative needs the
+stream scheduled by WebAudio itself - the AudioWorklet structural fix
+that stays deferred to the hosting milestone (TODO → Platform Layer).
+
+Verification (the compiles-≠-runs rule, in a real browser): built the
+web artifact, served it, drove it in the MCP headless Firefox - boot
+OK (autoplay-suspended), the listener installed, a real canvas click
+resumed the context, then a tab switch away + back while a page-side
+probe recorded the transitions: hidden → settled 'suspended', visible →
+settled 'running'. Debugging note that fell out of this: the headless
+Firefox's audio routes through the normal PulseAudio stack, so web
+audio changes are AUDIBLE on the host speakers with no window anywhere
+(confusing the author mid-session: "maybe I hallucinated the music" -
+no, the headless page was simply playing).
+
+Side-finding (its own TODO item, not fixed here): the audio-lead
+watchdog's wrapper VANISHES after the first user gesture - the boot-time
+wrap is in place (flag true pre-gesture), but miniaudio appears to
+recreate the ScriptProcessorNode on the autoplay resume path, dropping
+the wrapper with the old node. The documented quietly-no-op degradation
+class, now observed live; fix shape + verification plan in TODO →
+Platform Layer.

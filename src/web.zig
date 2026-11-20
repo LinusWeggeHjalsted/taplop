@@ -116,8 +116,11 @@ fn bootSession(session: *WebSession) void {
     // The audio queue watchdog (see installAudioLeadWatchdog) - after
     // initAudio so the node exists; per boot so a re-boot re-wraps the
     // fresh node. ALL web builds (the Release-scale banking is exactly the
-    // player-facing case).
+    // player-facing case). The visibility pause (see
+    // installVisibilityAudioPause) is a page-level listener - once per
+    // page, idempotent across re-boots.
     installAudioLeadWatchdog();
+    installVisibilityAudioPause();
 }
 
 /// Best-effort: resume the re-boot's fresh AudioContext immediately (it
@@ -253,6 +256,36 @@ fn installAudioLeadWatchdog() void {
         "    old.disconnect();" ++
         "    last_lead = null;" ++
         "  };" ++
+        "})();";
+    emscripten_run_script(script);
+}
+
+/// Clean audio pause when the tab is hidden (playtest feedback: music
+/// stuttered/cut out in background tabs - the starved-buffer symptom of a
+/// stream that only `frame()` refills, and rAF stops entirely for a
+/// hidden tab). Suspend the AudioContext on hidden / resume on visible:
+/// the mixer stops PULLING while hidden, so the starved stream never
+/// stutters, and the suspended context's clock freezes too, so the
+/// watchdog's lead math sees no phantom banking on return (its
+/// state !== 'running' guard already no-ops the checks while suspended).
+/// Best-effort like every seam script: a promise rejection is swallowed,
+/// and a raylib upgrade that reshapes the miniaudio layout makes this
+/// find nothing and quietly no-op (the watchdog's known-limitation
+/// posture). The KEEP-PLAYING-in-background alternative (WebAudio-side
+/// stream scheduling) stays deferred to the AudioWorklet milestone (TODO
+/// → Platform Layer).
+fn installVisibilityAudioPause() void {
+    const script =
+        "(function() {" ++
+        "  if (document.__taplopVisibilityPause) return;" ++
+        "  document.__taplopVisibilityPause = true;" ++
+        "  document.addEventListener('visibilitychange', function() {" ++
+        "    var m = window.miniaudio;" ++
+        "    var d = m && m.devices && m.devices[0];" ++
+        "    if (!d || !d.webaudio) return;" ++
+        "    if (document.hidden) { d.webaudio.suspend().catch(function() {}); }" ++
+        "    else { d.webaudio.resume().catch(function() {}); }" ++
+        "  });" ++
         "})();";
     emscripten_run_script(script);
 }

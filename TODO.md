@@ -155,33 +155,10 @@ via the session log (logging has landed).
 
 ## Playtest Feedback (friends' reports, post-GitHub-migration)
 
-Six issues reported by friends playing the shipped builds. Written up
-with the code-grounded mechanism for each; fixes NOT yet settled - the
-OPEN questions are the discussion agenda. Check each off + delete when
-its fix lands (DONE.md is the record).
+Six issues reported by friends playing the shipped builds. Five have
+landed (DONE.md); only the momentum gate remains, with its OPEN
+questions as the discussion agenda.
 
-- **Web: music glitches/cuts out when the tab is not in focus.**
-      Mechanism (code-grounded): music is a raylib STREAM, refilled only
-      by `updateMusic` inside `frame()` - and the web driver schedules
-      `frame()` on requestAnimationFrame, which browsers stop entirely
-      for a hidden tab. The ScriptProcessorNode keeps pulling while the
-      stream buffer starves, so the mixer reads stale/underrun audio:
-      the stutter/cutout is the expected symptom, not a miniaudio bug.
-      Sfx are unaffected in principle (no frames → no triggers), which
-      matches the "maybe all audio" hedge. The audio-lead watchdog is
-      probably NOT involved (its trip shape is a banked-too-FULL queue;
-      starvation is the opposite) - worth one console-warn glance while
-      reproducing. Note: a visible-but-unfocused window keeps rAF, so
-      "not in focus" in the reports almost certainly means hidden tab.
-      OPEN (the design question): what SHOULD happen when hidden -
-      (a) clean pause: a `visibilitychange` handler in web.zig (next to
-      the watchdog) suspends the AudioContext on hidden + resumes on
-      visible - no glitch, music simply stops while away, the standard
-      for rAF-driven games, ~10 lines of JS; or (b) keep playing in the
-      background - requires streaming scheduled by WebAudio itself
-      instead of rAF, which is the AudioWorklet-class structural fix
-      already deferred to the hosting milestone (Platform Layer above).
-      Lean: (a) now; (b) rides the existing deferred item.
 - **Momentum can be stacked infinitely out of combat.** Momentum
       accrues +1 on EVERY `use_skill` and `move_entity`
       (handlers/level.zig), regardless of combat state, so walking
@@ -586,6 +563,24 @@ Open:
   cross-origin-isolation headers required from every host that serves
   the game (emrun verified; itch/GitHub Pages `_headers`; the fallback when
   a host can't send them = today's ScriptProcessorNode + watchdog path).
+- **The audio-lead watchdog drops its wrapper when miniaudio recreates
+      the ScriptProcessorNode (found live, driving the visibility-pause
+      fix)** - the boot-time wrap IS in place (flag observed true while
+      the context was still autoplay-suspended), but after the first user
+      gesture (the autoplay resume path) the flag is GONE: miniaudio
+      appears to tear down + recreate the node on resume, discarding the
+      wrapper + flag with the old one. That is the documented degradation
+      class (DESIGN → Platform Seam → Web audio onset latency: "a raylib
+      upgrade that reshapes the layout makes the watchdog find nothing
+      and quietly no-op") happening without any raylib upgrade - possibly
+      triggered by the emsdk HEAD re-download (the zig-pkg live
+      dependency, fetched fresh this session). Consequence: after the
+      first click the watchdog guards nothing until the next boot. Fix
+      shape: re-run the install from a hook that follows the recreation
+      (the same runtime-property-swap trick watching for a fresh node, or
+      a cheap re-install on visibility-resume), verified against the
+      onset probe (the original diagnosis instrumentation) before
+      trusting it.
 - **Web frame-time dips during rapid turn steps - MEASURE + optimize
   (perf polish).** Observed: release web dips below 60fps (~45) while
   holding space through turn steps (each auto-fired skip = a full turn

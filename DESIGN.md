@@ -680,6 +680,19 @@ config) - measured serviceable at 60fps (clock ratio 1.000, the main
 thread services a fill every ~21ms against ~16.7ms frame gaps) with the
 inherent lead halved; 512/~10.7ms would chronically starve.
 
+**Hidden tabs pause audio cleanly** (`installVisibilityAudioPause`,
+web.zig - playtest feedback): rAF stops entirely for a hidden tab, so
+`frame()` - the only refill driver of the music stream - stops too, and
+the starving stream used to stutter (the reported "music cuts/glitches
+when the tab is not in focus"). A `visibilitychange` listener suspends
+the AudioContext on hidden and resumes it on visible: the mixer stops
+pulling (no starved-buffer stutter), the context clock freezes with it
+(so the watchdog's lead math sees no phantom banking on return - its
+`state !== 'running'` guard already no-ops while suspended), and the
+music simply stops for as long as the tab is hidden. Music
+KEEP-PLAYING in the background would need the stream scheduled by
+WebAudio itself - the structural fix below.
+
 The STRUCTURAL fix - miniaudio's AudioWorklet path (mixing on the
 browser's audio thread; a load block becomes a silent ring-buffer
 underrun that recovers instantly instead of a banked queue) - is DEFERRED
