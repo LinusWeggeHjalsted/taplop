@@ -414,6 +414,7 @@ working rules).
 - [Gear upgrading: slice 3 - the vendor interaction wiring](#gear-upgrading-slice-3---the-vendor-interaction-wiring)
 - [Gear upgrading: slice 4 - the vendor panel](#gear-upgrading-slice-4---the-vendor-panel)
 - [Gear upgrading: the polish pass (growth curve + panel layout)](#gear-upgrading-the-polish-pass-growth-curve--panel-layout)
+- [Gear upgrading: the wheel captures the whole vendor panel](#gear-upgrading-the-wheel-captures-the-whole-vendor-panel)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24349,3 +24350,22 @@ The author's first playtest feedback, five items:
 1107 tests pass; the live console drive (scratch dir + crafted
 autosave) confirmed the button geometry, the two-purchase compounding,
 and the close path.
+
+## Gear upgrading: the wheel captures the whole vendor panel
+
+The item list's wheel routing keyed on "pointer over an item-row
+button" - empty space inside the panel (the upgrade column, the strip
+below the last visible row) fell through to camera zoom. The routing
+now keys on the panel's full bounds, captured ANYWHERE inside it.
+
+The bounds derivation needed no new plumbing: the close button
+(`.toggle_gear_upgrading` - the vendor panel is its only emitter) pins
+the right edge + top, and the panel's background nine_slice is the
+element whose right edge + top match it - so `ui.vendorPanelScrollRegion
+(elements)` derives the exact bounds from the previous frame's emission
+and the input layer needs neither the layout math nor the font metrics
+(the editor-metadata region precedent, element-derived instead of
+constant-derived). Tests: the region unit test (bounds match, in/out
+points, null on no emission) + the wheel-routing test over a real
+built-panel emission (pointer in the UPGRADE column scrolls; clamps at
+the top; outside the panel untouched).

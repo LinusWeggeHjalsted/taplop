@@ -522,6 +522,55 @@ pub fn vendorPanelWidth(font_metrics: FontMetrics) i32 {
         2 * ui_gap;
 }
 
+/// The vendor panel's full bounds for the wheel routing (the WHOLE
+/// panel captures the scroll - anywhere inside it, not just over the
+/// item rows). Derived from the emitted elements, so the input layer
+/// needs neither the layout math nor the font metrics: the close button
+/// (`.toggle_gear_upgrading` - this panel is its only emitter) fixes the
+/// right edge + top, and the panel's background nine_slice is the one
+/// whose right edge + top match it. Null when the panel didn't render
+/// The vendor panel's full bounds for the wheel routing (the WHOLE
+/// panel captures the scroll - anywhere inside it, not just over the
+/// item rows). Derived from the emitted elements, so the input layer
+/// needs neither the layout math nor the font metrics: the close button
+/// (`.toggle_gear_upgrading` - this panel is its only emitter) fixes the
+/// right edge + top, and the panel's background nine_slice is the one
+/// whose right edge + top match it. Null when the panel didn't render
+/// this frame (nothing to scroll).
+pub fn vendorPanelScrollRegion(ui_elements: []const ui_element.UiElement) ?types.Rectangle {
+    var close_right: ?i32 = null;
+    var close_top: ?i32 = null;
+    for (ui_elements) |element| {
+        switch (element) {
+            .button => |button| if (button.action == .toggle_gear_upgrading) {
+                close_right = button.screen_position.x + button.width;
+                close_top = button.screen_position.y;
+            },
+            else => {},
+        }
+    }
+    const right_edge = close_right orelse return null;
+    const top = close_top.?;
+    for (ui_elements) |element| {
+        switch (element) {
+            .nine_slice_panel => |panel| {
+                if (panel.screen_position.x + panel.width == right_edge and
+                    panel.screen_position.y == top)
+                {
+                    return .{
+                        .x = panel.screen_position.x,
+                        .y = top,
+                        .width = panel.width,
+                        .height = panel.height,
+                    };
+                }
+            },
+            else => {},
+        }
+    }
+    return null;
+}
+
 /// One upgradeable item the vendor panel lists: the slot it lives in +
 /// the item itself.
 const VendorItem = struct {
@@ -2756,4 +2805,66 @@ test "vendorPanelWidth: inventory + gear + vendor + gaps exactly fill the refere
         types.reference_width,
         width + ui_element.inventory_panel_width + gearPanelWidth(vendor_test_metrics) + 2 * ui_gap,
     );
+}
+
+test "vendorPanelScrollRegion: the close button + background pin the panel's bounds" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // A panel with a scrolling list (40 carried items + the Inventory
+    // header), emitted at a known bounds.
+    var player = Entity{};
+    for (0..40) |slot_index| {
+        player.inventory.slots[slot_index] = .{ .weapon = .{
+            .name = "carried",
+            .weapon_type = .sword,
+            .weapon_damage = 3,
+        } };
+    }
+    const bounds = Rectangle{
+        .x = 1200,
+        .y = 96,
+        .width = vendorPanelWidth(vendor_test_metrics),
+        .height = middle_panel_height,
+    };
+    var elements: UiElementList = .empty;
+    var scroll: i32 = 0;
+    try buildVendorPanel(
+        &elements,
+        allocator,
+        vendor_test_metrics,
+        bounds,
+        player,
+        &.{},
+        .{},
+        vendor_test_model,
+        vendor_test_salvage,
+        vendor_test_theme,
+        null,
+        &scroll,
+    );
+
+    // The derived region IS the panel's bounds.
+    const region = vendorPanelScrollRegion(elements.items).?;
+    try std.testing.expectEqual(bounds.x, region.x);
+    try std.testing.expectEqual(bounds.y, region.y);
+    try std.testing.expectEqual(bounds.width, region.width);
+    try std.testing.expectEqual(bounds.height, region.height);
+
+    // The whole panel captures - a point in the RIGHT column (over no
+    // item row) is inside, as is the strip below the last visible row.
+    try std.testing.expect(region.contains(.{
+        .x = region.x + region.width - 100,
+        .y = region.y + region.height - 50,
+    }));
+    try std.testing.expect(region.contains(.{
+        .x = region.x + 10,
+        .y = region.y + region.height - 10,
+    }));
+    try std.testing.expect(!region.contains(.{ .x = region.x - 10, .y = region.y + 10 }));
+    try std.testing.expect(!region.contains(.{ .x = region.x + region.width + 10, .y = region.y + 10 }));
+
+    // No panel emission: no region.
+    try std.testing.expectEqual(@as(?types.Rectangle, null), vendorPanelScrollRegion(&.{}));
 }

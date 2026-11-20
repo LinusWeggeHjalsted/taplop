@@ -4740,12 +4740,13 @@ pub fn handleAnytimeInput(
             if (history.session.ui_state.skills_scroll_offset < 0) {
                 history.session.ui_state.skills_scroll_offset = 0;
             }
-        } else if (ui.buttonAt(ui_elements, pointer_position)) |hovered_button| {
-            // The vendor panel's item list: rows only render while the
-            // panel is open, so a hit implies the panel. Lower clamp here;
-            // `buildVendorPanel` clamps the upper bound in place
-            // (authoritative - it knows the row count).
-            if (hovered_button.action == .select_vendor_item) {
+        } else if (ui.vendorPanelScrollRegion(ui_elements)) |panel_region| {
+            // The vendor panel captures the wheel ANYWHERE inside it (the
+            // whole panel, not just the item rows - the author's UX
+            // settle). Lower clamp here; `buildVendorPanel` clamps the
+            // upper bound in place (authoritative - it knows the row
+            // count).
+            if (panel_region.contains(pointer_position)) {
                 const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
                 history.session.ui_state.vendor_list_scroll_offset -= delta_rows;
                 if (history.session.ui_state.vendor_list_scroll_offset < 0) {

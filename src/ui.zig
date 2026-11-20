@@ -206,6 +206,7 @@ pub const gearPanelWidth = ui_panels.gearPanelWidth;
 pub const buildGearPanel = ui_panels.buildGearPanel;
 pub const vendorPanelWidth = ui_panels.vendorPanelWidth;
 pub const buildVendorPanel = ui_panels.buildVendorPanel;
+pub const vendorPanelScrollRegion = ui_panels.vendorPanelScrollRegion;
 pub const buildEntityInspectPanel = ui_panels.buildEntityInspectPanel;
 pub const buildSkillsPanel = ui_panels.buildSkillsPanel;
 pub const buildErrorPopup = ui_screens.buildErrorPopup;

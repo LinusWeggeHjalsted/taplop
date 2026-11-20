@@ -1040,3 +1040,88 @@ test "interact_with_npc: crafted-log belts - a dream_guide and an out-of-range i
     pushInputAndRun(&history, .{ .interact_with_npc = .{ .npc_index = 0 } });
     try testing.expect(history.current_state.ui_surfaces.isMiddlePanelOpen(.gear_upgrading));
 }
+
+test "vendor panel wheel routing: captured anywhere inside the panel, not outside" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // A hub with the vendor panel open and more carried items than the
+    // visible window (so scrolling has room).
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    history.current_state.ui_surfaces.openMiddlePanel(.gear_upgrading);
+    for (0..40) |slot_index| {
+        player(&history).inventory.slots[slot_index] = .{ .weapon = .{
+            .name = "carried",
+            .weapon_type = .sword,
+            .weapon_damage = 3,
+        } };
+    }
+
+    // The previous frame's emission (what the input layer reads): built
+    // with the history's own config (the real model + salvage defs).
+    const metrics = ui.FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+    const bounds: types.Rectangle = .{
+        .x = 0,
+        .y = ui.top_bar_height,
+        .width = ui.vendorPanelWidth(metrics),
+        .height = ui.middle_panel_height,
+    };
+    var elements: ui.UiElementList = .empty;
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 9, .g = 9, .b = 9 },
+        .darkest = .{ .r = 0, .g = 0, .b = 0 },
+        .world_gradient = .{ .colors = @splat(.{ .r = 0, .g = 0, .b = 0 }) },
+        .enemy_gradient = .{ .colors = @splat(.{ .r = 0, .g = 0, .b = 0 }) },
+        .player_gradient = .{ .colors = @splat(.{ .r = 0, .g = 0, .b = 0 }) },
+    };
+    try ui.buildVendorPanel(
+        &elements,
+        backing.allocator(),
+        metrics,
+        bounds,
+        player(&history).*,
+        &.{},
+        history.current_state.player_data.materials,
+        history.upgrade_model,
+        history.salvage_definitions,
+        theme,
+        null,
+        &history.session.ui_state.vendor_list_scroll_offset,
+    );
+
+    // Wheel over the UPGRADE column (no item row under the pointer):
+    // captured - the whole panel owns the wheel.
+    const upgrade_column_point: types.ScreenPosition = .{
+        .x = bounds.x + bounds.width - 100,
+        .y = bounds.y + 400,
+    };
+    input_handlers.handleAnytimeInput(
+        &history,
+        .{ .scroll_delta = -1 },
+        null,
+        upgrade_column_point,
+        elements.items,
+    );
+    try testing.expectEqual(@as(i32, 1), history.session.ui_state.vendor_list_scroll_offset);
+
+    // Wheel-up at the top clamps at 0.
+    input_handlers.handleAnytimeInput(
+        &history,
+        .{ .scroll_delta = 1 },
+        null,
+        upgrade_column_point,
+        elements.items,
+    );
+    try testing.expectEqual(@as(i32, 0), history.session.ui_state.vendor_list_scroll_offset);
+
+    // Outside the panel: the offset is untouched (the camera-zoom branch).
+    input_handlers.handleAnytimeInput(
+        &history,
+        .{ .scroll_delta = -1 },
+        null,
+        .{ .x = 3800, .y = 400 },
+        elements.items,
+    );
+    try testing.expectEqual(@as(i32, 0), history.session.ui_state.vendor_list_scroll_offset);
+}
