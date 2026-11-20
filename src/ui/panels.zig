@@ -844,7 +844,8 @@ pub fn buildVendorPanel(
     // button BELOW it ("Upgrade {stat}"), or "MAX" in its place.
     const stat_block_top = upgrade_column.y + inventory_slot_size + ui_gap;
     const info_line_height: i32 = 128;
-    const stat_block_pitch = info_line_height + ui_gap + panel_button_height + ui_gap;
+    const purchase_button_height: i32 = 128;
+    const stat_block_pitch = info_line_height + ui_gap + purchase_button_height + ui_gap;
     const label_zone_width = blk: {
         var widest: i32 = 0;
         inline for (@typeInfo(types.ItemStatField).@"enum".field_names) |stat_name| {
@@ -886,37 +887,39 @@ pub fn buildVendorPanel(
             .blocks_input = false,
         } });
 
-        // The cost: one small icon + count per drawn wallet, right-aligned
-        // at the column edge. Red when unaffordable (the tooltip
-        // comparison color family - `ui.negative_color`).
+        // The cost: one inventory-sized material icon per drawn wallet,
+        // right-aligned at the column edge, each carrying its count in
+        // the icon's bottom-right corner (the inventory material-count
+        // recipe - same size, font, inset, outline). Red when unaffordable
+        // (the tooltip comparison color family - `ui.negative_color`).
         var cost_x = upgrade_column.x + upgrade_column.width;
         for (emit.material_kinds, 0..) |kind, kind_index| {
             const parts = emit.materialCount(cost, kind_index);
             if (parts == 0) continue;
-            const count_text = try std.fmt.allocPrint(allocator, "{d}", .{parts});
-            const count_width = font_metrics.measureSpanWidth(text(count_text), material_count_font_size);
-            const icon_size: i32 = 96;
-            cost_x -= count_width;
-            try elements.append(allocator, .{ .text_label = .{
-                .text = count_text,
-                .screen_position = .{
-                    .x = cost_x,
-                    .y = block_y + @divFloor(info_line_height - material_count_font_size, 2),
-                },
-                .font_size = material_count_font_size,
-                .color = if (affordable) default_tint else negative_color,
-                .blocks_input = false,
-            } });
-            cost_x -= icon_size;
+            cost_x -= inventory_slot_size;
+            const icon_y = block_y + @divFloor(info_line_height - inventory_slot_size, 2);
             try elements.append(allocator, .{ .image = .{
                 .sprite_id = kind.sprite_id,
                 .screen_position = .{
                     .x = cost_x,
-                    .y = block_y + @divFloor(info_line_height - icon_size, 2),
+                    .y = icon_y,
                 },
-                .width = icon_size,
-                .height = icon_size,
+                .width = inventory_slot_size,
+                .height = inventory_slot_size,
                 .color = p[@min(kind.color_index, types.gradient_color_count - 1)],
+                .blocks_input = false,
+            } });
+            const count_text = try std.fmt.allocPrint(allocator, "{d}", .{parts});
+            const count_width = font_metrics.measureSpanWidth(text(count_text), material_count_font_size);
+            try elements.append(allocator, .{ .text_label = .{
+                .text = count_text,
+                .screen_position = .{
+                    .x = cost_x + inventory_slot_size - count_width - material_count_inset,
+                    .y = icon_y + inventory_slot_size - material_count_font_size - material_count_inset,
+                },
+                .font_size = material_count_font_size,
+                .color = if (affordable) default_tint else negative_color,
+                .outlined = true,
                 .blocks_input = false,
             } });
             cost_x -= ui_gap;
@@ -929,7 +932,7 @@ pub fn buildVendorPanel(
             .x = upgrade_column.x,
             .y = block_y + info_line_height + ui_gap,
             .width = upgrade_column.width,
-            .height = panel_button_height,
+            .height = purchase_button_height,
         };
         if (!maxed and affordable) {
             const button_label = try std.fmt.allocPrint(
@@ -2651,6 +2654,52 @@ test "buildVendorPanel: purchase button when affordable, red cost without a butt
     try std.testing.expectEqual(@as(usize, 1), purchase_buttons);
     try std.testing.expectEqual(@as(usize, 0), max_labels);
     try std.testing.expectEqual(@as(usize, 1), upgrade_damage_labels);
+
+    // The polish contracts: the purchase strip renders at the
+    // inventory-slot height, and every cost icon carries its count in
+    // its bottom-right corner (the inventory material-count recipe -
+    // same font size + inset, outlined) with the default tint while
+    // affordable. Expectations are derived from the emitted icon itself,
+    // not from a second copy of the layout math.
+    var cost_icons: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .purchase_upgrade) {
+            try std.testing.expectEqual(inventory_slot_size, button.height);
+        },
+        .image => |image| {
+            const kind_index = for (emit.material_kinds, 0..) |kind, index| {
+                if (std.mem.eql(u8, image.sprite_id, kind.sprite_id)) break index;
+            } else continue;
+            const parts = emit.materialCount(cost, kind_index);
+            if (parts == 0) continue;
+            cost_icons += 1;
+            const count_text = try std.fmt.allocPrint(allocator, "{d}", .{parts});
+            const count_width = vendor_test_metrics.measureSpanWidth(text(count_text), material_count_font_size);
+            const corner = ScreenPosition{
+                .x = image.screen_position.x + image.width - count_width - material_count_inset,
+                .y = image.screen_position.y + image.height - material_count_font_size - material_count_inset,
+            };
+            var matches: usize = 0;
+            for (elements.items) |candidate| switch (candidate) {
+                .text_label => |label| {
+                    if (std.mem.eql(u8, label.text, count_text) and
+                        label.screen_position.x == corner.x and
+                        label.screen_position.y == corner.y)
+                    {
+                        matches += 1;
+                        try std.testing.expectEqual(material_count_font_size, label.font_size);
+                        try std.testing.expect(label.outlined);
+                        try std.testing.expect(std.meta.eql(label.color, default_tint));
+                        try std.testing.expect(!label.blocks_input);
+                    }
+                },
+                else => {},
+            };
+            try std.testing.expectEqual(@as(usize, 1), matches);
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(usize, 2), cost_icons);
 
     // The maxed boots: selected directly - the speed row shows MAX, no
     // purchase button for it.

@@ -681,6 +681,7 @@ working rules).
 - [Gear upgrading: the polish pass (growth curve + panel layout)](#gear-upgrading-the-polish-pass-growth-curve--panel-layout)
 - [Gear upgrading: the wheel captures the whole vendor panel](#gear-upgrading-the-wheel-captures-the-whole-vendor-panel)
 - [Gear upgrading: item rows at the inventory-slot height](#gear-upgrading-item-rows-at-the-inventory-slot-height)
+- [Gear upgrading: cost counts in the icon corners + the 128 purchase strip](#gear-upgrading-cost-counts-in-the-icon-corners--the-128-purchase-strip)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24647,3 +24648,31 @@ change re-centers automatically; the right column's purchase strip
 keeps the panel-button height. The scroll test's window math derives
 from the same pitch, so the taller window (10 visible rows) tracked
 with no pin updates.
+## Gear upgrading: cost counts in the icon corners + the 128 purchase strip
+
+The author's polish pair on the vendor panel's upgrade view: the
+per-stat purchase strip ("Upgrade {stat}" / "MAX") dropped from the
+panel-button height (160) to 128 (a local `purchase_button_height`
+constant - the same height as the item rows, so the right column's
+pitch tightened to match), and the material cost now renders as the
+INVENTORY recipe instead of the count-beside-icon layout: each wallet
+icon at the full 128x128 inventory size, edge-to-edge in the 128px
+info line, with its count in the icon's bottom-right corner
+(`material_count_font_size` + `material_count_inset`, outlined,
+non-blocking) - one shared corner-count recipe across the inventory
+sidebar, the bottom bar, and the vendor cost. Unaffordable costs keep
+the red comparison color; the count is the colored element now, not a
+separate label.
+
+The purchase test gained the two geometry contracts, derived from the
+emission itself rather than a second copy of the layout math: the
+purchase button's height equals `inventory_slot_size`, and each cost
+icon has exactly one outlined count label at its corner position
+(measured width via the same font metrics). The red-cost assertions
+were already count-based and tracked unchanged.
+
+Live drive (scratch $ZIGLOP_DATA dir, crafted autosave at Driftwood
+Beach with a starter sword + 50 wood / 50 metal): the purchase strip
+renders at 940x128, the purchase click spends the exact worked-example
+2 wood + 7 metal (wallets 50/50 -> 48/43), and the entity's sword
+reads 4 (PlayerData's copy untouched at 3, the sync convention).
