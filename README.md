@@ -1,6 +1,17 @@
+# taplop
+
 taplop is a tactical turnbased gridbased rpg working towards full official release
 
 Zig rewrite of the Unity original at https://github.com/LinusWeggeHjalsted/taplop-unity
+
+**Play:** a hosted browser build is planned (GitHub Pages) - this becomes
+the link when it lands. until then, build and run locally (see below).
+
+## How this codebase is written
+
+the code, tests, and documentation in this repository are written by an AI
+agent (an LLM, currently glm-5.3) working at the direction of the maintainer;
+the game's design and every creative and review decision are human.
 
 ## Licenses
 this game is multi-licensed:
@@ -20,6 +31,20 @@ zig build run --release=fast     # release build for general play (no dev tools)
 zig build                        # compile the native exe
 scripts/test.sh                  # run the test suite (headless, PASS/FAIL summary)
 ```
+
+the native build targets the host platform (linux is the everyday dev
+host). the game also cross-compiles to every supported target - the
+verified workflow is cross-compiling from linux:
+
+```sh
+zig build -Dtarget=aarch64-macos       # macos (Apple Silicon): bin/taplop + taplop.app/
+zig build -Dtarget=x86_64-windows-gnu  # windows 10+ 64-bit: bin/taplop.exe
+```
+
+the macos build produces the double-clickable `taplop.app/` bundle next to
+the exe; the windows build needs no windows toolchain (zig bundles MinGW).
+`scripts/release.sh` wraps the native/web/mac builds with release gating
+(`native|web|mac|all`) if you want the full matrix.
 
 ### Dev mode
 
@@ -44,7 +69,7 @@ tools compiled into their logic path.
 
 ### Scratch data dir
 
-during dev, point the persistent dir at a scratch path so your play sessions
+you can point the persistent dir at a scratch path so your play sessions
 don't mix into real saves:
 
 ```sh
