@@ -153,6 +153,117 @@ Test by running `zig build run` and clicking through.
 KNOWN DEFERRED BUGS: (none currently.) When one appears, troubleshoot
 via the session log (logging has landed).
 
+## Playtest Feedback (friends' reports, post-GitHub-migration)
+
+Six issues reported by friends playing the shipped builds. Written up
+with the code-grounded mechanism for each; fixes NOT yet settled - the
+OPEN questions are the discussion agenda. Check each off + delete when
+its fix lands (DONE.md is the record).
+
+- **Web: music glitches/cuts out when the tab is not in focus.**
+      Mechanism (code-grounded): music is a raylib STREAM, refilled only
+      by `updateMusic` inside `frame()` - and the web driver schedules
+      `frame()` on requestAnimationFrame, which browsers stop entirely
+      for a hidden tab. The ScriptProcessorNode keeps pulling while the
+      stream buffer starves, so the mixer reads stale/underrun audio:
+      the stutter/cutout is the expected symptom, not a miniaudio bug.
+      Sfx are unaffected in principle (no frames → no triggers), which
+      matches the "maybe all audio" hedge. The audio-lead watchdog is
+      probably NOT involved (its trip shape is a banked-too-FULL queue;
+      starvation is the opposite) - worth one console-warn glance while
+      reproducing. Note: a visible-but-unfocused window keeps rAF, so
+      "not in focus" in the reports almost certainly means hidden tab.
+      OPEN (the design question): what SHOULD happen when hidden -
+      (a) clean pause: a `visibilitychange` handler in web.zig (next to
+      the watchdog) suspends the AudioContext on hidden + resumes on
+      visible - no glitch, music simply stops while away, the standard
+      for rAF-driven games, ~10 lines of JS; or (b) keep playing in the
+      background - requires streaming scheduled by WebAudio itself
+      instead of rAF, which is the AudioWorklet-class structural fix
+      already deferred to the hosting milestone (Platform Layer above).
+      Lean: (a) now; (b) rides the existing deferred item.
+- **Mission complete / fail overlays should be normal fullscreen
+      overlays** (report: the tips window can't sit over them). Today
+      both are emitted ABOVE the overlay stack in view() (fixed order:
+      stack → mission fail → mission complete → error popup → top
+      bar), so tips opened from the top-bar `?` (the top bar renders
+      above everything, so the click lands) draws BENEATH the mission
+      overlay - invisible and unclickable. The report asks for full
+      overlay-stack membership (slot order = z-order, Escape pops
+      topmost). Design tension to settle: both overlays are
+      deliberately VIEW-DERIVED (fail from `playerDead`, complete from
+      `last_completed_mission`) so undo/redo handles them, and their
+      triggers fire INSIDE a handler - the DESIGN → Architecture →
+      Modal overlays rule says such modals must not gate `update()`
+      (the stuck-drain lesson). As stack members they'd join
+      `anyOverlayOpen()` (the update gate + anim-clock pause) and
+      reopen that trap unless they stay gate-exempt. Options:
+      (a) minimal - keep the derived triggers + payloads, only change
+      view()'s EMISSION order so the mission overlays render below the
+      overlay stack (any overlay, opened before or after, draws above;
+      escape rungs unchanged, ~5 lines, zero input/timeline changes);
+      (b) full membership - the completing cascade pushes them onto
+      `open_overlays` (the surface bit rides the same events that set
+      the payload; dismissal stays `dismiss_mission_complete` /
+      `player_exit_mission`), gate membership excludes them (the
+      pop_overlay_stack rung absorbs escape rungs 1-2; the census +
+      derived escape test extend automatically). OPEN: which; also
+      whether the anim clock should pause behind them either way.
+- **Escape should close open middle panels (from the right) before
+      opening the options menu.** The exclusion is deliberate +
+      comptime-pinned (`escape_excluded_surfaces` mirrors the
+      MiddlePanelId set; DESIGN → Input → Escape overlay chain says
+      "revisit if playtesting asks" - playtest asked). Fix shape: a new
+      rung after `pop_overlay_stack` that closes the RIGHTMOST open
+      panel (open order = display order, so rightmost = most recently
+      opened - "from the right" per the report) via the same recorded
+      `player_toggle_ui_surface` push the panel's own toggle key
+      fires; the stack pops first (topmost z-order), then panels
+      right-to-left, then options menu opens. The comptime mirror
+      flips to pin the middle panels as INCLUDED (or is deleted in
+      favor of the derived escape test walking them). DESIGN's
+      exclusion-mirror paragraph updates with the flip.
+- **Health globe tooltip should say "{current} / {max} health"** -
+      bottom_bar.zig's health-globe tooltip header is `{d} / {d}` with
+      no unit word, while the adjacent momentum tooltip already reads
+      `{d} momentum`. One-line fix + consistency with momentum.
+- **Momentum can be stacked infinitely out of combat.** Momentum
+      accrues +1 on EVERY `use_skill` and `move_entity`
+      (handlers/level.zig), regardless of combat state, so walking
+      back and forth in an enemy-free (or all-unaggroed) level maxes
+      it before the fight. Fix: gate the +1 on `hasActiveEnemies`
+      (types.zig - the alive + aggroed + enemy-team check already
+      shared by the win condition). OPEN: (a) gate all entities or
+      player-only (enemies only act while aggroed, so a uniform gate
+      changes nothing in practice - simpler); (b) combat ENTRY
+      semantics - should aggroing the first enemy RESET momentum
+      ("in-combat resource" reading) or does leftover momentum from a
+      previous fight carry in (the report only asks to stop the
+      out-of-combat faucet)? (c) replay cost: a handler-behavior
+      change breaks strict verification of existing session logs +
+      the SHIPPED campaign validation replays (the Logging & Replay
+      pre-release policy: re-record, no migration) - the re-record is
+      part of this task, not a follow-up.
+- **The camera snaps back to player-centered after the player pans
+      and then acts (moves / uses a skill).** Mechanism: frame()'s
+      player-move recenter clears `session.camera_pan` whenever
+      `cameraRecenterKey` (the player's tile + editor level index)
+      changes - the deliberate "look, then go" handoff (main.zig).
+      Report asks: a panned view STAYS. Fix shape: when a pan is
+      active, don't clear - but the stored pan is an OFFSET from the
+      player-centered camera, so keeping the offset would scroll the
+      world as the player walks (not "stay in that view"); staying in
+      the panned view means re-anchoring the pan by the player's move
+      delta so the absolute camera position is held. Enemy turns
+      don't touch the key, so a pinned view is already stable through
+      the enemy cascade - good for watching the fight from a panned
+      position. OPEN: what ends the pinned view - (a) never (until the
+      existing screen/world-change resets), (b) when the player's
+      tile leaves the visible view region (soft-follow escape hatch -
+      the player can't walk off-screen), and/or (c) an explicit
+      recenter affordance (key or gesture); the editor level-tab half
+      of the recenter key should keep recenting either way.
+
 ## Skill Logic
 
 All 44 shipped skills done - the 25 original ports + the Tier A reworks
