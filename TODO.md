@@ -285,8 +285,11 @@ multi-salvage - all DONE (DONE.md). Open:
 - interact_with_npc handler (dialogue, shop, quest, etc.). The hub input
   path deliberately does NOT fire it yet - the handler is a `{}` stub and
   firing it would record a no-op undo step (clicks on NPC tiles do nothing;
-  the click→push site is marked in handleIdleInput's hub branch). When the
-  handler lands, re-wire that site and drop the move-blocker comment.
+  the click→push site is marked in handleIdleInput's hub branch). The
+  gear-upgrader vendor is the handler's first consumer (TODO → Gear
+  Upgrading, the wiring slice): the click site fires only for
+  `gear_upgrader` NPCs, and `dream_guide` clicks stay unfired until the
+  dreams browser lands.
 - NPC dialogue system
 - NPC types - SETTLED (see DESIGN → Campaigns & the Campaign Editor →
   File formats): `NpcType = { gear_upgrader, dream_guide }` - the whole
@@ -300,27 +303,38 @@ multi-salvage - all DONE (DONE.md). Open:
 ## Gear Upgrading
 
 Design SETTLED - see DESIGN → Gear Upgrading (the income model extracted
-from the clone economy, the two anchors, the starter-anchored cost ladder
-+ α table, drops-as-pre-bought-rungs, the tier frontier, the vendor
-panel). Implementation deferred; slices when it lands:
+from the clone economy, the two anchors, the ONE wealth-gap cost formula
+over the tier frontier - mid-game and tail unified at the implementation-
+design pass, replacing the generated tail table - the α solve,
+drops-as-pre-bought-rungs, the vendor panel + display settles).
+Implementation underway; slices in dependency order:
 
+- [ ] config + price math: `data/upgrade_model.txt` (R, the b-line +
+      campaign mission counts, α thousandths) + parser/loader; `s_stat`
+      derived from new_player.txt; the W / frontier / rung-cost fns +
+      the salvage split (round-half-up + largest-remainder), tests;
+      thread the model through `GameStateHistory` + FOLD IN the init
+      options-struct (the call-site ripple, Tech Debt below) as the new
+      history-resident field lands.
 - [ ] events + legality + handler: `player_upgrade_item` (PlayerInputEvent
       orchestrator + `validatePlayerAction` arm over a bool legality
-      helper) → `upgrade_item` (PlayerEvent machinery; PlayerData mutation
-      + equipped-entity gear re-sync), tests.
-- [ ] config + loader + the derived mid-ladder price table (model constants;
-      `s_stat` derived from new_player.txt; the floor + largest-remainder
-      split rule), tests.
-- [ ] vendor NPC authoring (SETTLED: a `gear_upgrader` NPC placed in a
-      hub - DESIGN → Campaigns & the Campaign Editor; no extra hub-format
-      marker) + `interact_with_npc` wiring: re-wire the hub click site +
-      drop the move-blocker comment (see NPC Interaction above).
-- [ ] panel builder (two-column: item list = every item with a nonempty
-      `itemStatSet`, no skill tomes; per-stat rows with cost + button) +
-      selection UiState + panel toggle on the unified GameState convention
-      (see DESIGN → UI Framework → UI state classification).
-- [ ] tail-price generation script (the sound_report.sh pattern) - BLOCKED
-      on the boss drop table (content not yet authored).
+      helper, gated on the vendor panel being open) → `upgrade_item`
+      (PlayerEvent machinery; PlayerData mutation + equipped-entity gear
+      re-sync), tests.
+- [ ] `interact_with_npc` wiring (the vendor NPCs are already authored -
+      every shipped hub places a `gear_upgrader`): route on npc_type +
+      push the panel toggle, re-wire the hub click site + drop the
+      move-blocker comment + flip the no-fire test. `dream_guide` clicks
+      stay unfired until the dreams browser lands (see NPC Interaction).
+- [ ] panel builder (`gear_upgrading` middle panel, two-column: item list
+      = every item with a nonempty `itemStatSet`, gear slots then
+      inventory, no skill tomes; per-stat rows with cost + button) +
+      selection UiState. Display details: DESIGN → Gear Upgrading →
+      The surface.
+- [ ] audit report script (the sound_report.sh pattern): demand curve per
+      wallet vs W(m), α re-solve + emit, end-state identity error -
+      audits with zero boss drops today, re-audits when the drop table
+      lands (replaces the retired generated tail-price table; UNBLOCKED).
 - [ ] tuning follow-ups: re-measure R when enemy-gear richness or
       utility-skill density changes; playtest the drip feel (the α dials).
 

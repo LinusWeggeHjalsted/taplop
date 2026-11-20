@@ -93,10 +93,10 @@ next session meets it as a surprise instead of a known.
 - [Gear Upgrading (the upgrade economy + hub vendor panel)](#gear-upgrading-the-upgrade-economy--hub-vendor-panel)
   - [The income model (extracted from the clone design)](#the-income-model-extracted-from-the-clone-design)
   - [The anchors](#the-anchors)
-  - [The cost ladder (the mid-game segment)](#the-cost-ladder-the-mid-game-segment)
+  - [The cost ladder (one formula: wealth-gap pricing over the frontier)](#the-cost-ladder-one-formula-wealth-gap-pricing-over-the-frontier)
   - [The tail + tier frontier (75% → 100%)](#the-tail--tier-frontier-75--100)
   - [Drops: found gear is pre-bought rungs](#drops-found-gear-is-pre-bought-rungs)
-  - [The surface: vendor NPC + two-column panel (wiring deferred)](#the-surface-vendor-npc--two-column-panel-wiring-deferred)
+  - [The surface: vendor NPC + two-column panel](#the-surface-vendor-npc--two-column-panel)
   - [Audit identities (the tuning tools)](#audit-identities-the-tuning-tools)
   - [Post-game](#post-game)
 - [Post-game Rewards & Cosmetics (decoration base-builder + weapon skins)](#post-game-rewards--cosmetics-decoration-base-builder--weapon-skins)
@@ -4434,7 +4434,7 @@ the clone economy are spent at a hub vendor NPC to raise the stats of
 equipped or carried gear. Found loot provides variety and materials, not
 power; authored boss gear provides the big jumps; an on-pace player who
 completes the campaign ends it exactly fully maxed with empty wallets.
-Implementation is deferred (TODO → Gear Upgrading) - this section is the
+Implementation is underway (TODO → Gear Upgrading) - this section is the
 settled design. All prices are tuning starting points; the anchors and
 audit identities at the end are the invariants.
 
@@ -4496,16 +4496,46 @@ at pickup, so all of it is part of the measured rate. Consequences:
 - Between the anchors the tier frontier climbs linearly (below); drops
   make it a staircase (jumps at bosses).
 
-### The cost ladder (the mid-game segment)
+### The cost ladder (one formula: wealth-gap pricing over the frontier)
 
 Every price is a pure function of (stat, current value) plus config -
-static, deterministic, replay-trivial. The ladder is anchored at the
-standard starting stats, so the first point above starter gear costs
-~one early paycheck:
+static, deterministic, replay-trivial. ONE formula prices the whole
+ladder, mid-game and tail alike (unified at the implementation-design
+pass; the retired shape was a linear mid-ladder plus a generated tail
+table): each rung costs its wallets' share of the WEALTH GAP between the
+tier frontier's crossings at the rung's endpoint values. Because W is
+quadratic, the escalation is automatic - mid rungs cost tens of parts,
+late rungs thousands ("stats closer to max cost significantly more"
+falls out of the income curve, not a ratio knob) - and the ladder is
+anchored at the standard starting stats, so the first point above
+starter gear costs ~one early paycheck:
 
 ```
-cost(stat, v → v+1) = α_stat · K · R · (1 + (v − s_stat) · d_stat)   [parts]
+cost(stat, v → v+1) = α_stat · K · ( W(m(f(v+1))) − W(m(f(v))) )   [parts]
+f(v) = v / itemStatMax(stat)          the endpoint's tier fraction
 ```
+
+`m(f)` is the tier frontier - the mission at which fraction f of max
+is the on-pace tier. Piecewise-linear, one rule for every stat (no
+per-stat tables), all three anchors exact (the b-line + campaign
+mission counts come from `data/upgrade_model.txt`):
+
+```
+m(f) = b_line · (f − f_s) / (0.75 − f_s)                    f ≤ 0.75
+m(f) = b_line + (campaign − b_line) · (f − 0.75) / 0.25     f ≥ 0.75
+```
+
+with f_s = s_stat / max the starter's fraction. The tail landings
+reproduce the original analysis exactly: a 10-stat's value-8 rung
+completes at m = 15.6 ≈ 16, value-9 at ≈ 41, value-10 at m = 66. The
+mid segment prices near-linearly in v (the W-gap across evenly spaced
+frontier points is R·spacing·(v − s) plus a small constant), which is
+what the retired linear ladder (`α·K·R·(1 + (v − s)·d)`) approximated;
+the two shapes track within about one rung's growth across the
+mid-game, so the anchors and identities are unaffected by the
+unification. All arithmetic is exact integer/rational (no floats - the
+gameplay-integers rule); prices are exact integers by the rounding rule
+below.
 
 - **s_stat** - the standard starting value per stat (weapons/spell 3,
   health 1, minors/speed 0), DERIVED from `data/new_player.txt` at load -
@@ -4514,10 +4544,10 @@ cost(stat, v → v+1) = α_stat · K · R · (1 + (v − s_stat) · d_stat)   [p
   (weapons use their weapon-type salvage definition). The cost splits
   across those materials in the salvage ratio - upgrading a sword is
   metal-heavy, a staff knowledge+wood, boots cloth+leather - mirroring
-  what salvaging that item yields. Integer rounding: floor each
-  material, distribute the remainder by largest fraction (deterministic).
-- **d_stat** - missions of progression between points: 1 for 10-max
-  stats, 2 for 5-max stats.
+  what salvaging that item yields. Integer rounding: the per-rung total
+  is round-half-up of the exact rational cost; floor each material's
+  share, distribute the difference by largest fraction, ties broken by
+  material order (deterministic).
 - **α_stat** - the wallet-binding solve at the b-line anchor: demand
   from starter gear to the 75% tier (all equipped items) is distributed
   so every wallet drains to exactly zero at the tier. The ranking is
@@ -4525,42 +4555,54 @@ cost(stat, v → v+1) = α_stat · K · R · (1 + (v − s_stat) · d_stat)   [p
   weapons on wood+metal vs one amulet on knowledge, against uniform
   income) and independently reads as design intent - survivability is a
   cheap drip, weapon points are weighty, spell points are premium.
-  Per-stat α is the wallet-mix balancer.
+  Per-stat α is the wallet-mix balancer. The values shipped in
+  `data/upgrade_model.txt` (thousandths) are the retired linear shape's
+  solve, kept as PROVISIONAL tuning starting points: the audit script
+  re-solves them against the wealth-gap shape and reports the
+  wallet-binding residual (how far each wallet lands from exactly zero
+  at the b-line).
 
-| stat group | α | first purchase | tier-completing purchase |
-|---|---|---|---|
-| armor (health/defense/damage/pickup) | 0.054 | health 1→2 ≈ 3 parts | health 6→7 ≈ 17 parts |
-| weapon_damage | 0.30 | 3→4 ≈ 16 parts (sword ≈ 4 wood + 12 metal) | 6→7 ≈ 65 parts (≈ 16 wood + 49 metal) |
-| spell_damage | 0.60 | 3→4 ≈ 16 knowledge | 6→7 ≈ 65 knowledge |
+Worked example - a sword at the shipped provisional α (300 thousandths,
+K = 2, split 1 wood : 3 metal), showing the escalation character:
+
+| sword rung | price (provisional α) |
+|---|---|
+| 3→4 | ≈ 9 parts (2 wood + 7 metal) |
+| 6→7 (the b-line) | ≈ 31 parts |
+| 7→8 (first tail rung) | ≈ 2.0k parts |
+| 9→10 (final rung) | ≈ 22k parts - multiple plateau paychecks |
 
 - **Ladders are keyed by stat, shared across item kinds** - health_bonus
   prices identically on coat/gloves/pants/boots; weapon_damage prices
   identically across weapon types (only the split varies). A stat the
   kind doesn't carry never appears; skill tomes carry none and are
   excluded from the panel by construction.
-- **Speed is the deliberate outlier**: 0→1 costs ~3 parts (trivial);
-  1→2 is a TAIL purchase (below) - the single biggest purchase in the
-  game, and never on dropped boots in the official campaign (custom
-  missions are unrestricted; `itemStatMax` still bounds them).
+- **Speed is the deliberate outlier**: 0→1 lands at m = 2 and costs ~3
+  parts (trivial); 1→2 lands at f = 1.0 → m = 66, a tail purchase
+  automatically - the single biggest purchase in the game, and never on
+  dropped boots in the official campaign (custom missions are
+  unrestricted; `itemStatMax` still bounds them).
 
 ### The tail + tier frontier (75% → 100%)
 
-The frontier T(m) climbs linearly from 75% at m=3 to 100% at m=66: a
-10-stat's value-8 rungs land around m ≈ 16, value-9 around m ≈ 41,
-value-10 at m = 66. Each rung's price is its wallets' share of the
-WEALTH GAP between frontier crossings - and because W is quadratic, the
-escalation is automatic: the gaps are ≈ 3.5k (m 3→16), ≈ 19.6k (16→41),
-≈ 36.5k (41→66) parts per wallet, so late rungs cost thousands of parts
-each (multiple plateau paychecks) while mid rungs cost tens. "Stats
-closer to max cost significantly more" falls out of the income curve,
-not a ratio knob.
+The frontier climb is the m(f) rule above; the tail windows are the
+W-gaps between its crossings - ≈ 3.5k (m 3→16), ≈ 19.6k (16→41), ≈ 36.5k
+(41→66) parts per wallet - so late rungs cost thousands of parts each
+(multiple plateau paychecks) while mid rungs cost tens. Tail prices are
+no longer a separately GENERATED table (the retired plan): they derive
+from the same formula at load. What the boss drop table still owns is
+TUNING, not derivation: drops pre-pay tail rungs (below), so the
+end-state identity holds only at the solved α against the actual drop
+schedule.
 
-The tail's exact integer prices depend on the boss drop table (drops
-pre-pay tail rungs - see below), so they are GENERATED, not hand-set: a
-design-time script (the sound_report.sh pattern) regenerates the tail
-price table from the model constants + the drop schedule whenever
-either changes. The mid-ladder derives at load from config constants;
-the doc ships the solve machinery + the audit identities.
+The design-time script (the sound_report.sh pattern) is therefore the
+AUDIT, not the generator: it derives the full per-wallet demand curve
+from the model constants, diffs it against W(m) at every m, re-solves
+and emits the α values, and reports the end-state identity error
+(starter + drops + purchases vs the 100% tier at m=66). It is UNBLOCKED:
+it audits with zero boss drops today and re-audits whenever the drop
+schedule changes. The doc ships the solve machinery + the audit
+identities.
 
 ### Drops: found gear is pre-bought rungs
 
@@ -4587,32 +4629,44 @@ power - starter + drops + purchases - however the points got there.
 - **L(3) = 0** - the b-liner has beaten no bosses when they arrive at
   the first one; the 75% anchor is unaffected by drops.
 
-### The surface: vendor NPC + two-column panel (wiring deferred)
+### The surface: vendor NPC + two-column panel
 
 - Each hub has an upgrade-vendor NPC - the first real consumer of the
   `interact_with_npc` handler (currently a `{}` stub; the hub click site
-  is marked in handleIdleInput). The hub format gains a way to mark an
-  NPC as the vendor (exact authoring shape decided at implementation).
+  is marked in handleIdleInput). The vendor needs no hub-format marker:
+  `NpcType.gear_upgrader` IS the marker (see File formats), and the
+  shipped campaign already authors a vendor in every hub. The panel (the
+  `gear_upgrading` middle panel, display name "Gear Upgrading") opens
+  ONLY from the vendor: clicking the NPC pushes `interact_with_npc`,
+  whose handler toggles the surface - re-clicking the vendor closes it;
+  no keybind, no bottom-bar button. A `dream_guide` NPC click stays
+  unfired until its consumer (the dreams browser) lands - a recorded
+  no-op undo step is worse than a silent tile.
 - The panel is a middle panel, two columns: an ITEM LIST of all
   upgradeable items (equipped or in inventory - every item with a
-  nonempty `itemStatSet`; skill tomes excluded by construction), and the
+  nonempty `itemStatSet`; skill tomes excluded by construction; ordered
+  gear slots first, then inventory slots, each in slot order), and the
   UPGRADE VIEW for the selected item - per stat: current value / max,
-  cost in materials, an upgrade button (disabled when unaffordable,
-  "MAX" when maxed).
-- Panel open/close lands on the TARGET convention of the panel-toggle
-  unification (TODO → Tech Debt): a GameState event on the undo
-  timeline. Item selection within the panel is pure UiState (the
-  inventory-slot-selection pattern).
+  cost in materials (no wallet counts displayed; the cost renders red
+  when unaffordable), an upgrade button (disabled when unaffordable,
+  "MAX" when maxed). Default selection: the first upgradeable item.
+- Panel open/close is class-1 surface state - the `UiSurfaceState`
+  convention (see UI Framework → UI state classification): a
+  `toggle_ui_surface` event on the undo timeline, pushed by the
+  `interact_with_npc` orchestrator. Item selection within the panel is
+  pure UiState (the inventory-slot-selection pattern).
 - **Events** follow the equip/salvage shape: a `player_upgrade_item`
   PlayerInputEvent orchestrator (item reference - gear slot or inventory
   index - plus ItemStatField) whitelisted in `isPlayerAction`, with a
-  `validatePlayerAction` arm over a bool legality helper (item exists,
-  stat applicable, not maxed, materials sufficient - computed from the
-  same derived price table); the machinery `upgrade_item` PlayerEvent
+  `validatePlayerAction` arm over a bool legality helper (the vendor
+  panel open, item exists, stat applicable, not maxed, materials
+  sufficient - computed from the same price fns); the machinery
+  `upgrade_item` PlayerEvent
   mutates PlayerData and re-syncs the equipped entity's gear stats (the
   entity↔PlayerData sync machinery). Pure state transform + queued sound
-  gated `!replaying`; no turn cost (hub activity); commits clamp to
-  `itemStatMax` (the existing single source of balance bounds).
+  gated `!replaying` (the item-action cue family: `item_base` + an
+  `sfx/items/upgrade_layer` stem); no turn cost (hub activity); commits
+  clamp to `itemStatMax` (the existing single source of balance bounds).
 
 ### Audit identities (the tuning tools)
 
