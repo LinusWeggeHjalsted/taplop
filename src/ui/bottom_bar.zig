@@ -138,7 +138,7 @@ pub fn buildBottomBar(
         .background_color = c_globe_bg,
         .fill_color = c_globe_fill,
         .tooltip = .{ .header = try spanRow(allocator, text(
-            try std.fmt.allocPrint(allocator, "{d} / {d}", .{ player.current_health, player.getEffectiveMaxHealth() }),
+            try std.fmt.allocPrint(allocator, "{d} / {d} health", .{ player.current_health, player.getEffectiveMaxHealth() }),
         )) },
     } });
     // Stylized border drawn over the globe at its native size, centered on the

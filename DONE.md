@@ -423,6 +423,7 @@ working rules).
 - [emitCornerNumber: the one corner-count recipe](#emitcornernumber-the-one-corner-count-recipe)
 - [Rename to taplop + the GitHub migration](#rename-to-taplop--the-github-migration)
 - [Playtest feedback 6: the panned camera stays put (pan persistence)](#playtest-feedback-6-the-panned-camera-stays-put-pan-persistence)
+- [Playtest feedback 4: the health-globe tooltip names its stat](#playtest-feedback-4-the-health-globe-tooltip-names-its-stat)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24631,3 +24632,11 @@ still projecting to the clicked screen point (the view held; old
 behavior would have nulled the pan). DESIGN → Platform Seam → Camera
 clamping / Camera pan updated; stale comments at the pan doc
 (state.zig), the solve, and the key's doc fixed in the same commit.
+
+## Playtest feedback 4: the health-globe tooltip names its stat
+
+The globe tooltip read "{d} / {d}" - bare numbers, confusable with mana
+or any other pool (the report). Now "{d} / {d} health", matching the
+adjacent momentum indicator's "{d} momentum" (the established shape).
+The entity-inspect Current Health row was already labeled and is
+unchanged.

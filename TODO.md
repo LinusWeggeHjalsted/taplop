@@ -223,10 +223,6 @@ its fix lands (DONE.md is the record).
       flips to pin the middle panels as INCLUDED (or is deleted in
       favor of the derived escape test walking them). DESIGN's
       exclusion-mirror paragraph updates with the flip.
-- **Health globe tooltip should say "{current} / {max} health"** -
-      bottom_bar.zig's health-globe tooltip header is `{d} / {d}` with
-      no unit word, while the adjacent momentum tooltip already reads
-      `{d} momentum`. One-line fix + consistency with momentum.
 - **Momentum can be stacked infinitely out of combat.** Momentum
       accrues +1 on EVERY `use_skill` and `move_entity`
       (handlers/level.zig), regardless of combat state, so walking
