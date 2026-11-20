@@ -292,8 +292,8 @@ session + the ButtonPayload migration):
   (anything before GL init) can be probed like a native CLI. That
   technique diagnosed the 136-commit black screen entirely outside a
   browser.
-- macOS build: `zig build -Dtarget=aarch64-macos` cross-compiles from the
-  Linux box (Apple Silicon; raylib's macOS path uses the lazy
+- macOS build: `zig build -Dtarget=aarch64-macos` cross-compiles from a
+  Linux host (Apple Silicon; raylib's macOS path uses the lazy
   `xcode_frameworks` .tbd-stub package - fetched once, then offline; our
   build.zig.zon declares the same package so the exe's link step gets the
   framework search paths raylib's own module doesn't propagate - see
@@ -310,7 +310,7 @@ session + the ButtonPayload migration):
   on mac: `~/Library/Application Support/taplop/` - see DESIGN → File
   System & IO → Persistent path.
 - Windows build: `zig build -Dtarget=x86_64-windows-gnu` cross-compiles from
-  the Linux box (Zig's bundled MinGW - no Windows toolchain needed),
+  a Linux host (Zig's bundled MinGW - no Windows toolchain needed),
   producing zig-out/bin/taplop.exe (+ .pdb) alongside the native exe.
   The supported floor is Windows 10+, 64-bit (the stack would likely run
   on 7 SP1 - GLFW 3.5's own floor - but that is an unstated bonus, not a
@@ -594,8 +594,8 @@ survived many sessions this way).
   once - the `drawNineSlice`/`drawTextLabel` tint shape) stays as harmless
   style; mac runtime validation on real aarch64 hardware is still pending
   (TODO → macOS native port). History: DONE → "mac 9-slice panels - ROOT
-  CAUSE FOUND"; repro + report kit: `../ziglop-mac-bisect/repro/`
-  (UPSTREAM_REPORT.md).
+  CAUSE FOUND" (the upstream report kit from that investigation lives
+  outside the repo).
 - **`std.Io.Threaded.init(allocator, .{})` spawns children with an EMPTY
   environment** - the options' `environ` field defaults to `.empty`, so a
   child process (e.g. `xdg-open`) gets no PATH/DISPLAY/DBUS and fails
