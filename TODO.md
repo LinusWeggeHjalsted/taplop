@@ -282,14 +282,11 @@ multi-salvage - all DONE (DONE.md). Open:
 
 ## NPC Interaction
 
-- interact_with_npc handler (dialogue, shop, quest, etc.). The hub input
-  path deliberately does NOT fire it yet - the handler is a `{}` stub and
-  firing it would record a no-op undo step (clicks on NPC tiles do nothing;
-  the click→push site is marked in handleIdleInput's hub branch). The
-  gear-upgrader vendor is the handler's first consumer (TODO → Gear
-  Upgrading, the wiring slice): the click site fires only for
-  `gear_upgrader` NPCs, and `dream_guide` clicks stay unfired until the
-  dreams browser lands.
+- interact_with_npc: the vendor consumer is WIRED (a `gear_upgrader`
+  click toggles the gear-upgrading panel, re-click closes - DESIGN → Gear
+  Upgrading → The surface). `dream_guide` clicks stay unfired until the
+  dreams browser lands (no recorded no-ops); a future dialogue system
+  would be its own consumer family.
 - NPC dialogue system
 - NPC types - SETTLED (see DESIGN → Campaigns & the Campaign Editor →
   File formats): `NpcType = { gear_upgrader, dream_guide }` - the whole
@@ -309,11 +306,6 @@ design pass, replacing the generated tail table - the α solve,
 drops-as-pre-bought-rungs, the vendor panel + display settles).
 Implementation underway; slices in dependency order:
 
-- [ ] `interact_with_npc` wiring (the vendor NPCs are already authored -
-      every shipped hub places a `gear_upgrader`): route on npc_type +
-      push the panel toggle, re-wire the hub click site + drop the
-      move-blocker comment + flip the no-fire test. `dream_guide` clicks
-      stay unfired until the dreams browser lands (see NPC Interaction).
 - [ ] panel builder (`gear_upgrading` middle panel, two-column: item list
       = every item with a nonempty `itemStatSet`, gear slots then
       inventory, no skill tomes; per-stat rows with cost + button) +

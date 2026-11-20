@@ -1528,7 +1528,24 @@ pub fn handlePlayerInputEvent(
                 }
             }
         },
-        .interact_with_npc => {},
+        // Hub NPC interaction: thin - the interacted NPC's TYPE routes it.
+        // The upgrade vendor (gear_upgrader) is the first real consumer:
+        // the click toggles the vendor panel (re-clicking the NPC closes
+        // it - DESIGN → Gear Upgrading → The surface). A dream_guide has
+        // no consumer yet (the dreams browser is unbuilt), so the live
+        // click site never fires it - a recorded no-op would be worse
+        // than a silent tile; a crafted log carrying one is rejected at
+        // the validator.
+        .interact_with_npc => |interact| {
+            const hub = current.hub orelse return;
+            if (interact.npc_index >= hub.npcs.len) return;
+            switch (hub.npcs[interact.npc_index].npc_type) {
+                .gear_upgrader => pushEvents(current, &.{.{ .meta_event = .{ .toggle_ui_surface = .{
+                    .surface = .gear_upgrading,
+                } } }}, allocator),
+                .dream_guide => {},
+            }
+        },
 
         // --- Level: player-action orchestrators ---
         .player_move_action => |action| {

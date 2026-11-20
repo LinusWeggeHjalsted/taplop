@@ -3038,8 +3038,15 @@ pub const GameStateHistory = struct {
                     .export_game,
                     .dismiss_mission_complete,
                     .swap_hands,
-                    .interact_with_npc,
                     => {},
+                    // Hub NPC interaction: the npc_index must address a
+                    // live gear_upgrader on the hub screen (the only
+                    // type the click site fires - a dream_guide log
+                    // entry is a crafted no-op the live path can't
+                    // produce).
+                    .interact_with_npc => |interact| {
+                        self.validateNpcInteraction(interact);
+                    },
                     // Hub movement: the tile-membership + NPC-occupancy
                     // mirror of the live hub click gate (see
                     // isHubMoveLegal). Outside a hub the handler no-ops -
@@ -3170,6 +3177,28 @@ pub const GameStateHistory = struct {
             "replay validation: illegal upgrade purchase ({s} on {s})",
             .{ @tagName(purchase.stat), @tagName(purchase.item) },
         ) catch "replay validation: illegal upgrade purchase";
+        self.rejectReplay(msg);
+        return;
+    }
+
+    /// An NPC interaction is legal when the screen is the hub and
+    /// `npc_index` addresses a gear_upgrader - the only type the live
+    /// click site fires (see the interact_with_npc handler arm).
+    fn isNpcInteractionLegal(self: *GameStateHistory, interact: events.Interaction) bool {
+        if (self.current_state.screen != .hub) return false;
+        const hub = self.current_state.hub orelse return false;
+        if (interact.npc_index >= hub.npcs.len) return false;
+        return hub.npcs[interact.npc_index].npc_type == .gear_upgrader;
+    }
+
+    fn validateNpcInteraction(self: *GameStateHistory, interact: events.Interaction) void {
+        if (self.isNpcInteractionLegal(interact)) return;
+        var buf: [128]u8 = undefined;
+        const msg = std.fmt.bufPrint(
+            &buf,
+            "replay validation: illegal NPC interaction (index {d})",
+            .{interact.npc_index},
+        ) catch "replay validation: illegal NPC interaction";
         self.rejectReplay(msg);
         return;
     }
@@ -4562,4 +4591,42 @@ test "isUpgradeLegal: the vendor purchase legality core" {
     current.player_data.materials.add(cost);
     try std.testing.expect(history.isUpgradeLegal(.{ .item = .{ .inventory = 2 }, .stat = .weapon_damage }));
     try std.testing.expect(!history.isUpgradeLegal(.{ .item = .{ .inventory = types.inventory_slot_count }, .stat = .weapon_damage }));
+}
+
+test "isNpcInteractionLegal: the interaction legality core" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = test_harness.Harness.init(backing.allocator());
+    const npcs = [_]types.NPC{
+        .{ .npc_type = .gear_upgrader, .position = .{ .x = 1, .y = 0 } },
+        .{ .npc_type = .dream_guide, .position = .{ .x = 2, .y = 0 } },
+    };
+    var history = harness.newHistory(.{
+        .screen = .hub,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = .{ .npcs = &npcs },
+    });
+    const current = &history.current_state;
+
+    // The vendor: legal.
+    try std.testing.expect(history.isNpcInteractionLegal(.{ .npc_index = 0 }));
+
+    // The dream guide: no consumer yet, the live click site never fires
+    // it - a crafted log carrying it is rejected.
+    try std.testing.expect(!history.isNpcInteractionLegal(.{ .npc_index = 1 }));
+
+    // Out of range / outside the hub screen: rejected.
+    try std.testing.expect(!history.isNpcInteractionLegal(.{ .npc_index = 2 }));
+    current.screen = .level;
+    try std.testing.expect(!history.isNpcInteractionLegal(.{ .npc_index = 0 }));
+    current.screen = .hub;
+    current.hub = null;
+    try std.testing.expect(!history.isNpcInteractionLegal(.{ .npc_index = 0 }));
 }

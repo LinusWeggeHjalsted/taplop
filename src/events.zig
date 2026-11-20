@@ -10,6 +10,13 @@ const types = @import("types.zig");
 
 const Vector2 = types.Vector2;
 const SkillId = types.SkillId;
+/// One hub NPC interaction: the clicked NPC's index into the hub's
+/// `npcs` (the handler routes on the NPC's type - see DESIGN → Gear
+/// Upgrading → The surface + NPC Interaction).
+pub const Interaction = struct {
+    npc_index: u32,
+};
+
 /// One vendor purchase: the referenced item + the stat being raised (see
 /// DESIGN → Gear Upgrading → The surface). Shared by the
 /// `player_upgrade_item` orchestrator and the `upgrade_item` machinery so
@@ -1986,9 +1993,7 @@ pub const PlayerInputEvent = union(enum) {
     move_player: struct {
         destination: Vector2,
     },
-    interact_with_npc: struct {
-        npc_index: u32,
-    },
+    interact_with_npc: Interaction,
 
     // --- Level: player-action orchestrators ---
     // Each player input pushes exactly ONE of these as the top-level event;

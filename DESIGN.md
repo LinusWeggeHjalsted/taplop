@@ -3556,11 +3556,12 @@ no rename in v1"): rename is free, for all three content kinds.
   two shipped `assets/npcs/` files; `NpcType = { gear_upgrader,
   dream_guide }` - the whole cast for the foreseeable future). Blocking
   (NPC tiles aren't walkable; clicks on them fire nothing) needs only the
-  position. The hub PLAYER stays an Entity. `interact_with_npc` (still a
-  stub) routes on the type when it lands - the gear-upgrading vendor is
-  simply a `gear_upgrader` NPC placed in a hub (no extra hub-format
-  marker); `dream_guide` is the dreams-browser entry (already designed -
-  Custom Missions & Online Services → Browser).
+  position. The hub PLAYER stays an Entity. `interact_with_npc` routes on
+  the type: the gear-upgrading vendor (WIRED - clicking a `gear_upgrader`
+  toggles the vendor panel, DESIGN → Gear Upgrading) is simply an NPC
+  placed in a hub (no extra hub-format marker); `dream_guide` is the
+  dreams-browser entry (already designed - Custom Missions & Online
+  Services → Browser) and stays unfired until that consumer lands.
 - **mission.txt drops `start_hub` + `end_hub` + `level_count`** (v3,
   landed): the writer stops emitting them; the loader warns + drops old
   keys. `Mission.end_hub` survives as a pure runtime channel populated
@@ -4632,8 +4633,7 @@ power - starter + drops + purchases - however the points got there.
 ### The surface: vendor NPC + two-column panel
 
 - Each hub has an upgrade-vendor NPC - the first real consumer of the
-  `interact_with_npc` handler (currently a `{}` stub; the hub click site
-  is marked in handleIdleInput). The vendor needs no hub-format marker:
+  `interact_with_npc` handler. The vendor needs no hub-format marker:
   `NpcType.gear_upgrader` IS the marker (see File formats), and the
   shipped campaign already authors a vendor in every hub. The panel (the
   `gear_upgrading` middle panel, display name "Gear Upgrading") opens

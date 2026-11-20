@@ -1006,3 +1006,37 @@ test "player_upgrade_item: the orchestrator pushes the machinery" {
     expected.subtract(cost);
     try testing.expectEqual(expected, history.current_state.player_data.materials);
 }
+
+test "interact_with_npc: crafted-log belts - a dream_guide and an out-of-range index no-op" {
+    // The click site never produces these shapes (the legality core
+    // rejects them at replay); the handler stays a silent no-op for
+    // hand-crafted logs rather than panicking.
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const npcs = [_]types.NPC{
+        .{ .npc_type = .gear_upgrader, .position = .{ .x = 1, .y = 0 } },
+        .{ .npc_type = .dream_guide, .position = .{ .x = 2, .y = 0 } },
+    };
+    var history = harness.newHistory(.{
+        .screen = .hub,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = .{ .npcs = &npcs },
+    });
+
+    pushInputAndRun(&history, .{ .interact_with_npc = .{ .npc_index = 1 } });
+    try testing.expect(!history.current_state.ui_surfaces.isMiddlePanelOpen(.gear_upgrading));
+    pushInputAndRun(&history, .{ .interact_with_npc = .{ .npc_index = 99 } });
+    try testing.expect(!history.current_state.ui_surfaces.isMiddlePanelOpen(.gear_upgrading));
+
+    // The real path: the vendor's index opens the panel.
+    pushInputAndRun(&history, .{ .interact_with_npc = .{ .npc_index = 0 } });
+    try testing.expect(history.current_state.ui_surfaces.isMiddlePanelOpen(.gear_upgrading));
+}

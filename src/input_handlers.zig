@@ -5411,20 +5411,29 @@ pub fn handleIdleInput(
 
     if (idle.tile_clicked) |clicked_position| {
         if (current.hub) |hub| {
-            // An NPC on the clicked tile: interaction is an unimplemented
-            // stub (TODO → NPC Interaction), so the click does nothing -
-            // firing interact_with_npc would record a no-op undo step, and
-            // walking onto the NPC would misread a click addressed to the
-            // NPC as a click addressed to the tile. When the system lands,
-            // this is where the click → interact_with_npc push goes.
+            // An NPC on the clicked tile: a gear_upgrader is the upgrade
+            // vendor - the click toggles the vendor panel (re-clicking
+            // closes it - DESIGN → Gear Upgrading → The surface). A
+            // dream_guide has no consumer yet (the dreams browser is
+            // unbuilt), so its clicks fire nothing - a recorded no-op
+            // would be worse than a silent tile. Walking onto an NPC
+            // tile never fires either way: NPC tiles aren't walkable,
+            // and the move branch below gates on `clicked_npc`.
             var clicked_npc = false;
-            for (hub.npcs) |npc| {
+            var vendor_index: ?u32 = null;
+            for (hub.npcs, 0..) |npc, npc_index| {
                 if (npc.position.x == clicked_position.x and
                     npc.position.y == clicked_position.y)
                 {
                     clicked_npc = true;
+                    if (npc.npc_type == .gear_upgrader) vendor_index = @intCast(npc_index);
                     break;
                 }
+            }
+            if (vendor_index) |npc_index| {
+                event_push.pushPlayerAction(current, .{ .interact_with_npc = .{
+                    .npc_index = npc_index,
+                } }, allocator);
             }
 
             // Move to the clicked tile if walkable. The player's own tile
@@ -7275,16 +7284,16 @@ test "hub exit click resolves the destination through the campaign edge table (d
     }
 }
 
-test "hub clicks: own tile and NPC tiles fire nothing, walkable tile moves" {
+test "hub clicks: vendor NPC toggles the panel, dream_guide and own tile fire nothing, walkable tile moves" {
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
     var harness = @import("test_harness.zig").Harness.init(backing.allocator());
 
-    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } };
-    const npcs = [_]types.NPC{.{
-        .npc_type = .gear_upgrader,
-        .position = .{ .x = 2, .y = 0 },
-    }};
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 } };
+    const npcs = [_]types.NPC{
+        .{ .npc_type = .gear_upgrader, .position = .{ .x = 2, .y = 0 } },
+        .{ .npc_type = .dream_guide, .position = .{ .x = 1, .y = 0 } },
+    };
     var history = harness.newHistory(.{
         .screen = .hub,
         .event_stack = &.{},
@@ -7307,17 +7316,30 @@ test "hub clicks: own tile and NPC tiles fire nothing, walkable tile moves" {
     handleIdleInput(&history, .{ .tile_clicked = .{ .x = 0, .y = 0 } }, .{});
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
-    // NPC tile: the interact_with_npc handler is an unimplemented stub -
-    // no fire (no recorded no-op).
+    // The vendor's tile: fires interact_with_npc, which opens the panel.
     handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 0 } }, .{});
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    try std.testing.expect(history.current_state.event_stack[0].player_input_event == .interact_with_npc);
+    @import("test_harness.zig").runToIdle(&history);
+    try std.testing.expect(history.current_state.ui_surfaces.isMiddlePanelOpen(.gear_upgrading));
+
+    // Re-clicking the vendor closes the panel (the toggle semantics).
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 0 } }, .{});
+    @import("test_harness.zig").runToIdle(&history);
+    try std.testing.expect(!history.current_state.ui_surfaces.isMiddlePanelOpen(.gear_upgrading));
+
+    // The dream guide's tile: no consumer yet - no fire (no recorded
+    // no-op), and no walk onto the tile either.
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 0 } }, .{});
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try std.testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, history.current_state.hub.?.player.position);
 
     // A walkable other tile: fires move_player and moves.
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 0 } }, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 3, .y = 0 } }, .{});
     try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
     try std.testing.expect(history.current_state.event_stack[0].player_input_event == .move_player);
     @import("test_harness.zig").runToIdle(&history);
-    try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, history.current_state.hub.?.player.position);
+    try std.testing.expectEqual(types.Vector2{ .x = 3, .y = 0 }, history.current_state.hub.?.player.position);
 
     // A non-walkable tile: no fire.
     handleIdleInput(&history, .{ .tile_clicked = .{ .x = 5, .y = 5 } }, .{});

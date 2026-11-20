@@ -411,6 +411,7 @@ working rules).
 - [The surface-screen census (the validator-view mirror, machine-checked)](#the-surface-screen-census-the-validator-view-mirror-machine-checked)
 - [Gear upgrading: slice 1 - the wealth-gap price model + config threading](#gear-upgrading-slice-1---the-wealth-gap-price-model--config-threading)
 - [Gear upgrading: slice 2 - the purchase events + legality](#gear-upgrading-slice-2---the-purchase-events--legality)
+- [Gear upgrading: slice 3 - the vendor interaction wiring](#gear-upgrading-slice-3---the-vendor-interaction-wiring)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24210,3 +24211,36 @@ stat }`).
   impossible, so the capacity guard is exercised through a hand-set
   duplicate array (the close/compact/reopen half stays on a real
   enum-derived strip).
+
+## Gear upgrading: slice 3 - the vendor interaction wiring
+
+`interact_with_npc` stops being a `{}` stub: the hub click site (the old
+move-blocker comment's home in handleIdleInput) now fires it for
+`gear_upgrader` NPCs only, and the handler arm routes on the NPC's type -
+the vendor toggles the `gear_upgrading` panel (re-clicking the NPC closes
+it, the class-1 toggle semantics), so the surface is reachable through
+the real recorded path (its own undo step; replay-legal by construction).
+
+- **Legality**: `interact_with_npc` moved out of validatePlayerAction's
+  "no payload to validate" group into its own arm over
+  `isNpcInteractionLegal` (screen is hub, index in range, the NPC is a
+  gear_upgrader). A `dream_guide` log entry is a crafted no-op the live
+  path can't produce - rejected at the validator, and the handler stays
+  a silent no-op for hand-crafted logs (the belt discipline). The
+  payload gained a name (`events.Interaction`) for the legality pair.
+- **The click site**: vendor detection inside the existing NPC scan; the
+  walk gate keeps the `clicked_npc` belt (NPC tiles aren't walkable by
+  content, the gate is the crafted-log defense). The pinning test
+  flipped from "NPC tiles fire nothing" to "the vendor toggles the
+  panel, re-click closes, the dream guide still fires nothing" - with a
+  fourth fixture tile so the walk case doesn't share the dream guide's
+  tile.
+- No new sound: the panel opens silently (the purchase carries its cue);
+  the vendor's own click cue, if wanted, is a sound-designer decision.
+- Tests: 1103 passing - the flipped click-site test (the full
+  input→handler→panel round trip, including the re-click close), the
+  legality core (vendor legal; dream guide / out-of-range / non-hub /
+  no-hub rejected), and the crafted-log belt drains.
+
+The remaining Gear Upgrading slices: the panel builder (the UI details
+land with the author's input) + the audit report script.
