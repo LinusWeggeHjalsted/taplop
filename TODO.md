@@ -805,9 +805,12 @@ Status:
    branch first - a mirror push carries it.
 5. REMAINING - GitHub Pages: project sites serve at
    `linusweggehjalsted.github.io/taplop/` (a SUBPATH, not repo root).
-   raylib/emscripten web builds default to assuming root, so the HTML needs
-   relative asset paths or a `<base>` tag / build-time base-path config.
-   Solve this here, not on demo day.
+   RESOLVED (verified, not assumed): the emcc shell output already uses
+   relative asset refs (`taplop.js` / `taplop.wasm`), and the build was
+   served under a `/taplop/` subpath and booted to a rendering menu -
+   no `<base>` tag or build-time path config needed. What remains is
+   only the serving-source choice (gh-pages branch vs `docs/` on master
+   vs an Actions deploy) + flipping Pages on in the repo settings.
 
 Reversible throughout (GitHub renames back if needed; redirects cover the
 transition). Never delete-and-recreate to shuffle names - rename always,
