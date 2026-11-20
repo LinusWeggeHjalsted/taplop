@@ -69,7 +69,12 @@ Hygiene rules that keep the above true in practice:
   marker-bounded index block at the top of each (DESIGN: sections +
   subsections nested; DONE: flat, one line per archive unit; anchors, no
   line numbers - nothing goes stale). Run it in the SAME commit that
-  adds, renames, or removes a `##`/`###` heading in either file.
+  adds, renames, or removes a `##`/`###` heading in either file - and the
+  discipline is MACHINE-CHECKED (`--check`, a non-fatal advisory in
+  `scripts/test.sh`, same posture as the dash sweep): the DONE index was
+  once found ~295 lines stale across many sessions of forgetting, and
+  the first --check run immediately caught a wrong-levels regeneration
+  committed the same day - remembering is not a mechanism.
 - **TODO drift is linted** (`scripts/todo_lint.sh`): checked `[x]` boxes,
   COMPLETE status words, and dangling "X below" pointers are the
   machine-checkable residue of the deletion policy above - advisory,
