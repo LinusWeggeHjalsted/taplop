@@ -360,8 +360,10 @@ fallback + hover-rim path only.
     WITHOUT pushing the player past the margin - a player at the level's
     left edge sheds most of the left void but keeps exactly 2 tiles of
     clearance. A pan offset suspends the margin on BOTH axes (the point of
-    panning is to look away from the player); it clears on player move /
-    screen transition, so normal play always has the margin.
+    panning is to look away from the player); it no longer clears on
+    player move (it is re-anchored - see the Camera pan bullet below) and
+    clears on screen/world transition + editor level-tab switch, so
+    unpanned play always has the margin.
   - **Panel fallback**: when the panel-occupied remainder is narrower than
     the margin band (4 tiles at the current zoom) - the fully-covered
     screen - the region ignores panels entirely ("act as if none open").
@@ -397,10 +399,21 @@ fallback + hover-rim path only.
 - **Camera pan (right-drag)** is transient view state on `SessionState`
   (`camera_pan` + `camera_pan_anchor` + `camera_pan_press`), off `GameState`
   - replay-safe by construction (like `tile_cursor` / the animation clock).
-  Levels/hubs + the editor viewport; cleared on player move, editor
-  level-tab switch, or screen transition - the `cameraRecenterKey` check in
-  `update()`. In the editor the camera centers on the active level's
-  `player_start` (`playerPosition` editor arm), so pan is relative to that.
+  Levels/hubs + the editor viewport. A deliberate pan PINS the view
+  (playtest feedback: the camera snapping back to player-centered on the
+  first move after a pan was a reported annoyance): when the player's tile
+  changes, `frame()` RE-ANCHORS the pan by the player-centered camera's
+  move delta (`applyCameraPanPersistence`, keyed on
+  `view.cameraRecenterKey`) so the absolute camera position is held - the
+  camera does not follow the player, and the player can walk off-screen
+  until the next pan or transition. Forced movement (enemy knockback,
+  undo/redo) holds the view the same way. The pan CLEARS on screen/world
+  transition and editor level-tab switch (a new world to frame, not a
+  move); mid-drag the gesture solve re-derives it from the world anchor
+  each frame, so persistence never fights an active drag. In the editor
+  the camera centers on the active level's `player_start`
+  (`playerPosition` editor arm), so pan is relative to that - dragging
+  the '!' marker re-anchors the same as a gameplay move.
   `handleCameraPan` (input_gestures.zig) runs anytime (mid-wait /
   mid-turn). A right-press records the press position + the world point
   under it (sub-tile float precision via `input.floatWorldPoint`, the float

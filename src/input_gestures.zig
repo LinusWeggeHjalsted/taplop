@@ -481,9 +481,9 @@ fn resolveInventoryClick(
 ///
 /// Pan-start is suppressed when the pointer is over a blocking UI element
 /// (same occlusion check as the tile cursor) - right-clicking a panel pans
-/// nothing. On player move (detected in frame()) the pan is cleared so the
-/// camera recenters; on screen transition frame() also clears it. Here we
-/// only own the drag itself.
+/// nothing. On player move (detected in frame()) the pan is re-anchored so
+/// the camera stays where it was panned; screen/world transitions and
+/// editor level-tab switches clear it. Here we only own the drag itself.
 pub fn handleCameraPan(
     history: *GameStateHistory,
     pointer: input.PointerInput,
@@ -592,7 +592,8 @@ pub fn handleCameraPan(
     //
     // pan = camera.position - player_centered_camera.position (computed here
     // without the pan offset, so the offset is relative to the recentered
-    // camera and survives a player move only until frame() clears it).
+    // camera; frame() re-anchors it when the player moves, so the absolute
+    // camera position holds while the player walks).
     if (pointer.right_held) {
         // Threshold gate: until the pointer moves beyond the drag threshold
         // there is no pan (a sub-threshold wiggle pans nothing, so a clean

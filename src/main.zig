@@ -416,6 +416,44 @@ fn applyRenderResolutionSetting(backend: anytype, history: *GameStateHistory) vo
     history.session.setPendingError(history.history_arena.allocator(), message);
 }
 
+/// Frame-end camera-pan persistence, called from `frame()` when the
+/// recenter key changed this frame. A deliberate pan PINS the view: a
+/// player-tile change RE-ANCHORS the pan by the player-centered camera's
+/// move delta, so the absolute camera position (player-centered + pan)
+/// is held and the camera does not follow the player - the playtest
+/// behavior (moving or being knocked back after panning used to snap the
+/// camera back to player-centered). An editor level-tab switch clears
+/// the pan instead (a new world to frame, not a move); screen/world
+/// transitions clear it at their own reset sites in `frame()`. Mid-drag
+/// (anchor non-null) is left alone: the gesture solve re-derives the pan
+/// from its world anchor each frame, so it already holds the grabbed
+/// point exactly. No pan means the automatic camera follows as always.
+fn applyCameraPanPersistence(
+    session: *state.SessionState,
+    key_before: view_mod.CameraRecenterKey,
+    key_after: view_mod.CameraRecenterKey,
+    player_centered_camera_before: types.Vector2,
+    player_centered_camera_after: types.Vector2,
+) void {
+    if (key_after.editor_level_index != key_before.editor_level_index) {
+        session.camera_pan = null;
+        session.camera_pan_anchor = null;
+        session.camera_pan_press = null;
+        return;
+    }
+    if (session.camera_pan == null) return; // automatic camera follows
+    if (session.camera_pan_anchor != null) return; // mid-drag: the solve self-corrects
+    // pan_after = pan_before + (before - after): player_centered + pan is
+    // invariant, so the downstream clamp (bounds unchanged by a
+    // within-level move) reproduces the identical camera.
+    session.camera_pan = .{
+        .x = session.camera_pan.?.x +
+            (player_centered_camera_before.x - player_centered_camera_after.x),
+        .y = session.camera_pan.?.y +
+            (player_centered_camera_before.y - player_centered_camera_after.y),
+    };
+}
+
 /// Drain budget: process events for at most this long per frame before
 /// returning control to the driver. Long enough that a typical small-level
 /// drain completes in one frame on both platforms; short enough that the
@@ -608,12 +646,19 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         input_handlers.resolveKeybindCaptureOutcome(history, player_input.keybind_capture_outcome);
     }
 
-    // Recenter key before the drain, for the pan-clear check: if the
-    // player moved this frame (a move event in the drain, or a click-to-move
-    // in the idle update) OR the editor switched level tabs, clear the camera
-    // pan so the camera recenters on the (newly) clamped framing. Grabbing
-    // the pre-drain key lets us detect the change without inspecting events.
+    // Recenter key + the unclamped player-centered camera, before the
+    // drain, for the pan-persistence check below: if the player moved this
+    // frame (a move event in the drain, or a click-to-move in the idle
+    // update), re-anchor the pan so the panned view is held; an editor
+    // level-tab switch clears it. Grabbing the pre-drain values lets us
+    // detect the change without inspecting events.
     const recenter_key_before = view_mod.cameraRecenterKey(&history.current_state);
+    const player_centered_camera_before = view_mod.computeCamera(
+        &history.current_state,
+        camera_zoom,
+        null,
+        null,
+    ).position;
 
     // Advance the non-pause-gated session clock (pause-independent
     // timing: debounced write deadlines + the outline stripe phase).
@@ -798,18 +843,22 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         }) catch @panic("failed to activate anim");
     }
 
-    // Player-move recenter: if the player's tile changed this frame (a move
-    // event in the drain or a click-to-move in the idle update), clear the
-    // camera pan so the camera recenters on the player - pan drifts off the
-    // player while looking around, and a move is the natural "look, then go"
-    // hand-off back to player-centered framing. The editor's active level
-    // index rides the key too: a level-tab switch recenters even when two
-    // levels share a player_start (fresh levels all come from one template).
+    // Camera-pan persistence: if the player's tile changed this frame (a
+    // move event in the drain or a click-to-move in the idle update), HOLD
+    // the panned view - re-anchor the pan by the player-centered camera's
+    // move delta instead of clearing it, so the camera stays where the
+    // player panned it rather than following the player. A level-tab
+    // switch still clears (a new world to frame); no pan means the
+    // automatic camera follows as always.
     const recenter_key_after = view_mod.cameraRecenterKey(&history.current_state);
     if (!std.meta.eql(recenter_key_after, recenter_key_before)) {
-        history.session.camera_pan = null;
-        history.session.camera_pan_anchor = null;
-        history.session.camera_pan_press = null;
+        applyCameraPanPersistence(
+            &history.session,
+            recenter_key_before,
+            recenter_key_after,
+            player_centered_camera_before,
+            view_mod.computeCamera(&history.current_state, camera_zoom, null, null).position,
+        );
     }
 
     // Advance the animation clock by this frame's real-time delta, but only
@@ -1183,6 +1232,128 @@ test "applyRenderResolutionSetting: failed apply reverts the setting + popup, no
     // Setting now matches the snapshot → a second frame does not retry.
     applyRenderResolutionSetting(&backend, &history);
     try std.testing.expectEqual(@as(usize, 1), backend.apply_count);
+}
+
+test "applyCameraPanPersistence: a player move re-anchors the pan so the view holds" {
+    // The contract: player_centered + pan is invariant across the move, so
+    // the absolute camera position is held instead of following the player.
+    var session = state.SessionState{};
+    session.camera_pan = .{ .x = 500, .y = -200 };
+    applyCameraPanPersistence(
+        &session,
+        .{ .position = .{ .x = 2, .y = 2 }, .editor_level_index = null },
+        .{ .position = .{ .x = 5, .y = 3 }, .editor_level_index = null },
+        .{ .x = 1000, .y = 1000 },
+        .{ .x = 2500, .y = 1500 },
+    );
+    // pan_after = pan_before + (before - after).
+    try std.testing.expectEqual(types.Vector2{ .x = -1000, .y = -700 }, session.camera_pan.?);
+    try std.testing.expectEqual(@as(i32, 1000 + 500), 2500 + session.camera_pan.?.x);
+    try std.testing.expectEqual(@as(i32, 1000 - 200), 1500 + session.camera_pan.?.y);
+    // Nothing was mid-drag - the drag state stays untouched.
+    try std.testing.expect(session.camera_pan_anchor == null);
+    try std.testing.expect(session.camera_pan_press == null);
+}
+
+test "applyCameraPanPersistence: no pan stored means the automatic camera follows" {
+    var session = state.SessionState{};
+    applyCameraPanPersistence(
+        &session,
+        .{ .position = .{ .x = 0, .y = 0 }, .editor_level_index = null },
+        .{ .position = .{ .x = 4, .y = 0 }, .editor_level_index = null },
+        .{ .x = 0, .y = 0 },
+        .{ .x = 1024, .y = 0 },
+    );
+    try std.testing.expect(session.camera_pan == null);
+}
+
+test "applyCameraPanPersistence: an editor level-tab switch clears the pan (even alongside a move)" {
+    var session = state.SessionState{};
+    session.camera_pan = .{ .x = 500, .y = -200 };
+    session.camera_pan_anchor = .{ .world_x = 3.5, .world_y = 2.5 };
+    session.camera_pan_press = .{ .x = 10.0, .y = 20.0 };
+    applyCameraPanPersistence(
+        &session,
+        .{ .position = .{ .x = 2, .y = 2 }, .editor_level_index = 0 },
+        .{ .position = .{ .x = 5, .y = 3 }, .editor_level_index = 1 },
+        .{ .x = 1000, .y = 1000 },
+        .{ .x = 2500, .y = 1500 },
+    );
+    try std.testing.expect(session.camera_pan == null);
+    try std.testing.expect(session.camera_pan_anchor == null);
+    try std.testing.expect(session.camera_pan_press == null);
+}
+
+test "applyCameraPanPersistence: a mid-drag pan is left to the gesture solve" {
+    // The drag solve re-derives the pan from its world anchor each frame,
+    // so persistence must not touch a pan whose drag is still active.
+    var session = state.SessionState{};
+    session.camera_pan = .{ .x = 500, .y = -200 };
+    session.camera_pan_anchor = .{ .world_x = 3.5, .world_y = 2.5 };
+    applyCameraPanPersistence(
+        &session,
+        .{ .position = .{ .x = 2, .y = 2 }, .editor_level_index = null },
+        .{ .position = .{ .x = 5, .y = 3 }, .editor_level_index = null },
+        .{ .x = 1000, .y = 1000 },
+        .{ .x = 2500, .y = 1500 },
+    );
+    try std.testing.expectEqual(types.Vector2{ .x = 500, .y = -200 }, session.camera_pan.?);
+    try std.testing.expect(session.camera_pan_anchor != null);
+}
+
+test "camera pan persistence: the held view is pixel-identical through computeCamera" {
+    // End-to-end over the real camera math, clamp engaged on both axes:
+    // after a player move, the re-anchored pan reproduces the exact
+    // pre-move clamped camera (the pan survives the clamp because the
+    // clamp inputs - absolute camera, bounds, region - are unchanged).
+    var entities = [_]types.Entity{
+        .{ .team = 0, .position = .{ .x = 2, .y = 2 }, .current_health = 10 },
+    };
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 29, .y = 19 } }; // 30x20 level
+    var level: types.Level = .{};
+    level.level_tiles = &tiles;
+    level.entities = &entities;
+    var game_state = state.GameState{
+        .screen = .level,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = level,
+        .hub = null,
+    };
+
+    const zoom: f32 = 1.0;
+    // The middle-section band shape (roughly): the region the clamp keeps
+    // the world inside. Chosen so both axes' pan pushes past the flush
+    // bound + void wiggle, i.e. the clamp actually engages.
+    const region = types.Rectangle{ .x = 0, .y = 256, .width = 3840, .height = 1536 };
+    const pan = types.Vector2{ .x = 7000, .y = -3000 };
+
+    const player_centered_before = view_mod.computeCamera(&game_state, zoom, null, null).position;
+    const camera_before = view_mod.computeCamera(&game_state, zoom, pan, region).position;
+    // Sanity: the clamp IS engaged on both axes (not the trivial unclamped
+    // equality - the pan pushes past the bounds on x and y).
+    const unclamped_before = view_mod.computeCamera(&game_state, zoom, pan, null).position;
+    try std.testing.expect(camera_before.x != unclamped_before.x);
+    try std.testing.expect(camera_before.y != unclamped_before.y);
+
+    entities[0].position = .{ .x = 5, .y = 3 };
+    const player_centered_after = view_mod.computeCamera(&game_state, zoom, null, null).position;
+    var session = state.SessionState{};
+    session.camera_pan = pan;
+    applyCameraPanPersistence(
+        &session,
+        .{ .position = .{ .x = 2, .y = 2 }, .editor_level_index = null },
+        .{ .position = .{ .x = 5, .y = 3 }, .editor_level_index = null },
+        player_centered_before,
+        player_centered_after,
+    );
+    const camera_after = view_mod.computeCamera(&game_state, zoom, session.camera_pan.?, region).position;
+    try std.testing.expectEqual(camera_before, camera_after);
 }
 
 test "session log round-trips through reconstruction (forward play == replay)" {

@@ -378,11 +378,13 @@ pub const SessionState = struct {
     // Camera pan (right-drag): offset in world pixels added to the player-
     // centered camera, plus the drag anchor + press position. Transient view
     // state - off the undoable GameState, replay-safe by construction (like
-    // tile_cursor / the animation clock). Levels/hubs only; cleared on screen
-    // transition and on player move (the camera recenters when the player
-    // moves). The pan engages only once the pointer moves beyond
-    // ui.drag_threshold_pixels from the press. See handleCameraPan in
-    // input_gestures.zig.
+    // tile_cursor / the animation clock). Levels/hubs only. A deliberate pan
+    // PINS the view: frame() re-anchors it when the player's tile changes
+    // (the camera stays where it was panned instead of following the player
+    // - applyCameraPanPersistence in main.zig) and clears it on screen/world
+    // transition + editor level-tab switch. The pan engages only once the
+    // pointer moves beyond ui.drag_threshold_pixels from the press. See
+    // handleCameraPan in input_gestures.zig.
     camera_pan: ?types.Vector2 = null,
     camera_pan_anchor: ?CameraPanAnchor = null,
     // Press position (full-precision pointer space) of a right-drag that

@@ -244,25 +244,6 @@ its fix lands (DONE.md is the record).
       the SHIPPED campaign validation replays (the Logging & Replay
       pre-release policy: re-record, no migration) - the re-record is
       part of this task, not a follow-up.
-- **The camera snaps back to player-centered after the player pans
-      and then acts (moves / uses a skill).** Mechanism: frame()'s
-      player-move recenter clears `session.camera_pan` whenever
-      `cameraRecenterKey` (the player's tile + editor level index)
-      changes - the deliberate "look, then go" handoff (main.zig).
-      Report asks: a panned view STAYS. Fix shape: when a pan is
-      active, don't clear - but the stored pan is an OFFSET from the
-      player-centered camera, so keeping the offset would scroll the
-      world as the player walks (not "stay in that view"); staying in
-      the panned view means re-anchoring the pan by the player's move
-      delta so the absolute camera position is held. Enemy turns
-      don't touch the key, so a pinned view is already stable through
-      the enemy cascade - good for watching the fight from a panned
-      position. OPEN: what ends the pinned view - (a) never (until the
-      existing screen/world-change resets), (b) when the player's
-      tile leaves the visible view region (soft-follow escape hatch -
-      the player can't walk off-screen), and/or (c) an explicit
-      recenter affordance (key or gesture); the editor level-tab half
-      of the recenter key should keep recenting either way.
 
 ## Skill Logic
 

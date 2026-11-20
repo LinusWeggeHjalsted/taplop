@@ -422,6 +422,7 @@ working rules).
 - [The doc-index check gate (and the wrong-levels regeneration it caught)](#the-doc-index-check-gate-and-the-wrong-levels-regeneration-it-caught)
 - [emitCornerNumber: the one corner-count recipe](#emitcornernumber-the-one-corner-count-recipe)
 - [Rename to taplop + the GitHub migration](#rename-to-taplop--the-github-migration)
+- [Playtest feedback 6: the panned camera stays put (pan persistence)](#playtest-feedback-6-the-panned-camera-stays-put-pan-persistence)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24586,3 +24587,47 @@ agent at the maintainer's direction - the front-page disclosure).
 Machine-local references were pruned from AGENTS (the ziglop-mac-bisect
 kit pointer, "the Linux box" phrasing) - the repo now reads
 machine-neutral.
+
+## Playtest feedback 6: the panned camera stays put (pan persistence)
+
+First of the six friends-reported playtest issues to land (the write-up:
+TODO → Playtest Feedback; the others remain there).
+
+The report: after panning the camera, using a skill or moving snapped it
+back to player-centered - annoying when looking around. The settled
+semantics (author decision): a deliberate pan PINS the view. The camera
+stays at the same absolute world position when the player moves (it does
+NOT follow); forced movement (enemy knockback) and undo/redo hold the view
+the same way; the pan resets only on screen/world transitions (the
+existing reset sites) and editor level-tab switches (a tab switch frames a
+different world - the cameraRecenterKey editor half stays a CLEAR, not a
+re-anchor). No soft-follow escape hatch: the player can walk off-screen
+until the next pan or transition, taken literally from "reset should be on
+screen transitions". Mid-drag is untouched - handleCameraPan's solve
+re-derives the pan from its world anchor every frame, so it self-corrects
+and persistence never fights an active drag.
+
+Mechanics: the stored pan is an OFFSET from the player-centered camera
+(computeCamera = player_centered + pan, then clamped), so "hold the view"
+means re-anchoring on every player-tile change:
+pan_after = pan_before + (player_centered_before - player_centered_after)
+- the pre-clamp sum is then bit-identical, and the clamp inputs (absolute
+camera, bounds, region) are unchanged by a within-level move, so the
+rendered view is pixel-identical. The old behavior (frame() clearing the
+pan whenever cameraRecenterKey changed) is replaced by
+`applyCameraPanPersistence` (main.zig, the applyRenderResolutionSetting
+pattern: a frame-level policy helper extracted so it is unit-testable -
+the frame() site itself needs a backend and is not). The recenter key got
+a named type (`view.CameraRecenterKey`) so the helper can take two keys.
+
+Verification: 5 new tests (1121 total) - the re-anchor contract
+(player_centered + pan invariant), no-pan follow, tab-switch clear
+(also alongside a move), mid-drag untouched, and an end-to-end over the
+real computeCamera with the clamp engaged on both axes (pre-move and
+post-move clamped cameras equal). Runtime: console-driven hub session -
+pan {500,-192}, click-move the player two tiles, dump shows pan
+re-anchored to {244,-192} (exactly -2*256 on x) and the player's tile
+still projecting to the clicked screen point (the view held; old
+behavior would have nulled the pan). DESIGN → Platform Seam → Camera
+clamping / Camera pan updated; stale comments at the pan doc
+(state.zig), the solve, and the key's doc fixed in the same commit.

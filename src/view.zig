@@ -1661,12 +1661,25 @@ pub fn computeCamera(
     return .{ .position = pos };
 }
 
-/// The camera-recenter key: what a frame's pan-clear check compares
-/// before/after `update()` (main.zig). The player's tile, plus the editor's
-/// active level index - a level-tab switch recenters even when two levels
-/// share a player_start (fresh levels all come from the same template, so
-/// identical spawns across tabs are the common case, not a freak accident).
-pub fn cameraRecenterKey(current_state: *const GameState) struct { position: types.Vector2, editor_level_index: ?usize } {
+/// The camera-recenter key: what frame()'s pan-persistence check
+/// compares before/after the drain (main.zig,
+/// `applyCameraPanPersistence`). A player-tile change re-anchors the pan
+/// (the panned view is held - the camera does not follow the player); a
+/// change of the editor's active level index clears it (a tab switch
+/// frames a different world, not a move - and it must clear even when two
+/// levels share a player_start, since fresh levels all come from the same
+/// template).
+pub const CameraRecenterKey = struct {
+    /// The player's tile - `playerPosition` (the editor's player_start in
+    /// the editor viewport).
+    position: types.Vector2,
+    /// Null outside the editor.
+    editor_level_index: ?usize,
+};
+
+/// The camera-recenter key for the current state: the player's tile plus
+/// the editor's active level index.
+pub fn cameraRecenterKey(current_state: *const GameState) CameraRecenterKey {
     return .{
         .position = playerPosition(current_state),
         .editor_level_index = if (current_state.editor) |editor| editor.active_level_index else null,
