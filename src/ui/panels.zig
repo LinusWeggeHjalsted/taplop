@@ -909,19 +909,17 @@ pub fn buildVendorPanel(
                 .color = p[@min(kind.color_index, types.gradient_color_count - 1)],
                 .blocks_input = false,
             } });
-            const count_text = try std.fmt.allocPrint(allocator, "{d}", .{parts});
-            const count_width = font_metrics.measureSpanWidth(text(count_text), material_count_font_size);
-            try elements.append(allocator, .{ .text_label = .{
-                .text = count_text,
-                .screen_position = .{
-                    .x = cost_x + inventory_slot_size - count_width - material_count_inset,
-                    .y = icon_y + inventory_slot_size - material_count_font_size - material_count_inset,
-                },
-                .font_size = material_count_font_size,
-                .color = if (affordable) default_tint else negative_color,
-                .outlined = true,
-                .blocks_input = false,
-            } });
+            // The count rides in the icon's bottom-right corner - the
+            // shared corner-count recipe (emitCornerNumber), tinted by
+            // affordability.
+            try emitCornerNumber(
+                elements,
+                allocator,
+                font_metrics,
+                .{ .x = cost_x, .y = icon_y, .width = inventory_slot_size, .height = inventory_slot_size },
+                parts,
+                if (affordable) null else negative_color,
+            );
             cost_x -= ui_gap;
         }
 
@@ -1134,7 +1132,7 @@ pub fn buildEntityInspectPanel(
                     }),
                 },
             } });
-            try emitCornerNumber(elements, allocator, font_metrics, cell, effect.duration);
+            try emitCornerNumber(elements, allocator, font_metrics, cell, effect.duration, null);
         }
         const effect_rows = @divTrunc(@as(i32, @intCast(entity.active_effects.len)) + effect_columns - 1, effect_columns);
         cursor_y += effect_rows * small_icon_size + ui_gap;

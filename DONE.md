@@ -420,6 +420,7 @@ working rules).
 - [Persistent path: the XDG data dir on Linux, the Windows default decided, one shared resolution site](#persistent-path-the-xdg-data-dir-on-linux-the-windows-default-decided-one-shared-resolution-site)
 - [Windows port: the cross-build + the wine smoke](#windows-port-the-cross-build--the-wine-smoke)
 - [The doc-index check gate (and the wrong-levels regeneration it caught)](#the-doc-index-check-gate-and-the-wrong-levels-regeneration-it-caught)
+- [emitCornerNumber: the one corner-count recipe](#emitcornernumber-the-one-corner-count-recipe)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24517,3 +24518,22 @@ AGENTS → Documentation records the gate next to the run-it-in-the-
 same-commit rule; the behavioral probe (a fake appended heading flags
 STALE, git checkout restores, CLEAN again) confirmed both directions
 before committing.
+
+## emitCornerNumber: the one corner-count recipe
+
+The session-close reflection's second fix (the duplicated-rendering
+family, same class as the buildEntityInspectPanel note in TODO): the
+bottom-right corner count - `material_count_font_size` +
+`material_count_inset` + outline, non-blocking - existed as THREE
+hand-copies (emitMaterialIcons' inline label, emitCornerNumber's
+effect-duration overlays, and the vendor cost counts from the polish
+session earlier the same day). `emitCornerNumber` is now the one
+emitter, gaining an optional color parameter (null = the TextLabel
+default tint; the vendor passes the affordability red - the only
+consumer that tints).
+
+The vendor purchase test needed NO changes: it pins the corner
+position against the emitted icon element (icon.x + width - measured
+count width - inset), not against a copy of the emitter's math, so
+the recipe swap is invisible to it - the contract-over-mechanics
+testing discipline paying off one session after it was written.

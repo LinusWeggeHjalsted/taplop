@@ -300,7 +300,7 @@ pub fn buildBottomBar(
                     }),
                 },
             } });
-            try emitCornerNumber(elements, allocator, font_metrics, cell, effect.duration);
+            try emitCornerNumber(elements, allocator, font_metrics, cell, effect.duration, null);
         }
     }
 

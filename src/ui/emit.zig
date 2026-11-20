@@ -91,19 +91,23 @@ pub fn emitCenteredNumber(
 }
 
 /// Emit a number label in the BOTTOM-RIGHT corner of `cell`, outlined for
-/// readability. Mirrors the material-count placement (`material_count_font_size`
-/// + `material_count_inset`) so effect-duration numbers read like the
-/// inventory material counts. Used for active-effect duration overlays.
+/// readability. THE corner-count recipe - one emitter behind the inventory
+/// + wallet material icons (`emitMaterialIcons`), the active-effect
+/// duration overlays, and the vendor panel's per-wallet cost counts:
+/// `material_count_font_size` + `material_count_inset` + outline, always.
+/// `color` null = the TextLabel default tint; the vendor passes the
+/// affordability comparison color (red when the rung is too expensive).
 pub fn emitCornerNumber(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
     cell: Rectangle,
     value: u32,
+    color: ?Color,
 ) !void {
     const label = try std.fmt.allocPrint(allocator, "{d}", .{value});
     const label_width = font_metrics.measureSpanWidth(text(label), material_count_font_size);
-    try elements.append(allocator, .{ .text_label = .{
+    var corner_label: element.TextLabel = .{
         .text = label,
         .screen_position = .{
             .x = cell.x + cell.width - label_width - material_count_inset,
@@ -112,7 +116,9 @@ pub fn emitCornerNumber(
         .font_size = material_count_font_size,
         .outlined = true,
         .blocks_input = false,
-    } });
+    };
+    if (color) |tint| corner_label.color = tint;
+    try elements.append(allocator, .{ .text_label = corner_label });
 }
 
 /// Sprite id of the reusable button background - a rounded panel drawn
@@ -534,21 +540,17 @@ pub fn emitMaterialIcons(
             .color = icon_color,
             .tooltip = .{ .header = try spanRow(allocator, text(tooltip_text)) },
         } });
-        // Count label: bottom-right corner of the icon, outlined for
-        // readability over the icon art. Passes hover through to the icon
-        // so the icon's tooltip is the single target.
-        const count_text = try std.fmt.allocPrint(allocator, "{d}", .{count});
-        const label_width = font_metrics.measureSpanWidth(text(count_text), material_count_font_size);
-        try elements.append(allocator, .{ .text_label = .{
-            .text = count_text,
-            .screen_position = .{
-                .x = pos.x + icon_size - label_width - material_count_inset,
-                .y = pos.y + icon_size - material_count_font_size - material_count_inset,
-            },
-            .font_size = material_count_font_size,
-            .outlined = true,
-            .blocks_input = false,
-        } });
+        // Count label: bottom-right corner of the icon (the shared
+        // corner-count recipe - emitCornerNumber). Passes hover through to
+        // the icon so the icon's tooltip is the single target.
+        try emitCornerNumber(
+            elements,
+            allocator,
+            font_metrics,
+            .{ .x = pos.x, .y = pos.y, .width = icon_size, .height = icon_size },
+            count,
+            null,
+        );
         switch (direction) {
             .vertical => pos.y += icon_size,
             .horizontal => pos.x += icon_size + ui_gap,
