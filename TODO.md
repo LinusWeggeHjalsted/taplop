@@ -312,8 +312,9 @@ Implementation underway; slices in dependency order:
 - [ ] events + legality + handler: `player_upgrade_item` (PlayerInputEvent
       orchestrator + `validatePlayerAction` arm over a bool legality
       helper, gated on the vendor panel being open) → `upgrade_item`
-      (PlayerEvent machinery; PlayerData mutation + equipped-entity gear
-      re-sync), tests.
+      (PlayerEvent machinery; entity gear-slot/inventory mutation - the
+      equip/unequip convention, PlayerData syncs on save/transition -
+      + the wallet spend on `player_data.materials`), tests.
 - [ ] `interact_with_npc` wiring (the vendor NPCs are already authored -
       every shipped hub places a `gear_upgrader`): route on npc_type +
       push the panel toggle, re-wire the hub click site + drop the

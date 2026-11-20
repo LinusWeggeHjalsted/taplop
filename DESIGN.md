@@ -4661,12 +4661,17 @@ power - starter + drops + purchases - however the points got there.
   `validatePlayerAction` arm over a bool legality helper (the vendor
   panel open, item exists, stat applicable, not maxed, materials
   sufficient - computed from the same price fns); the machinery
-  `upgrade_item` PlayerEvent
-  mutates PlayerData and re-syncs the equipped entity's gear stats (the
-  entity↔PlayerData sync machinery). Pure state transform + queued sound
-  gated `!replaying` (the item-action cue family: `item_base` + an
-  `sfx/items/upgrade_layer` stem); no turn cost (hub activity); commits
-  clamp to `itemStatMax` (the existing single source of balance bounds).
+  `upgrade_item` PlayerEvent mutates the item
+  ON THE PLAYER ENTITY (the equip/unequip convention - the gear slot or
+  inventory slot the reference names; PlayerData's gear copy updates via
+  the existing `build_data_from_player` sync on save/screen transition,
+  never in the handler) and spends the wallets on
+  `player_data.materials` (the salvage precedent - materials are
+  deliberately PlayerData-only, no entity field). Pure state transform +
+  queued sound gated `!replaying` (the item-action cue family:
+  `item_base` + an `sfx/items/upgrade_layer` stem); no turn cost (hub
+  activity); commits clamp to `itemStatMax` (the existing single source
+  of balance bounds).
 
 ### Audit identities (the tuning tools)
 
