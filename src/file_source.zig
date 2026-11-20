@@ -1535,8 +1535,9 @@ fn saveFileOrder(_: void, a: SaveFileEntry, b: SaveFileEntry) bool {
 extern fn emscripten_run_script(script: [*:0]const u8) void;
 
 /// The virtual path where web mounts the in-memory persistent dir
-/// (mirrors $HOME/.ziglop on native - an in-memory MEMFS mount; see DESIGN
-/// → File System & IO → Web storage model). Single source of truth for
+/// (mirrors the native per-OS default - persistent_path.zig - as an
+/// in-memory MEMFS mount; see DESIGN → File System & IO → Web storage
+/// model). Single source of truth for
 /// the mount (web.zig) and for absolute FS paths in JS seams like
 /// `triggerBrowserDownload`.
 pub const persistent_mount_path = "/ziglop";

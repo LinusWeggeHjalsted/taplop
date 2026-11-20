@@ -366,7 +366,8 @@ WEB COMPILES ≠ RUNS). `zig build` first.
   report, then click (the 4-5c lesson: a restructure moved the "+" cell).
 - A drive that can trigger a popup must still EXIT - check the exit
   code, not just the output (the hung-run lesson).
-- Piped runs write REAL FILES into `~/.ziglop/` (the persistent dir).
+- Piped runs write REAL FILES into `~/.local/share/ziglop/` (the persistent
+  dir; `$XDG_DATA_HOME/ziglop` when set).
   Clean up your own drive artifacts only (check mtime - the author's
   campaigns live there too).
 

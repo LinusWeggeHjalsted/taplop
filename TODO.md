@@ -779,7 +779,9 @@ Steps:
    - `build.zig.zon` package name
    - exe name (`build.zig`)
    - web build output (`ziglop.html` → `taplop.html` or `index.html`)
-   - persistent data dir `~/.ziglop/` → `~/.taplop/` (the one player-facing
+   - persistent data dir `~/.local/share/ziglop/` → `~/.local/share/taplop/`
+     (`$XDG_DATA_HOME/<name>` on Linux, `%LOCALAPPDATA%/<name>` on Windows;
+     the one player-facing
      surface that's annoying to migrate later - free now, costly post-release)
    - doc references: the `https://github.com/LinusWeggeHjalsted/taplop`
      URLs in AGENTS.md + DONE.md → `taplop-unity` (those currently point at

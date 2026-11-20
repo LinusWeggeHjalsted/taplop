@@ -682,6 +682,7 @@ working rules).
 - [Gear upgrading: the wheel captures the whole vendor panel](#gear-upgrading-the-wheel-captures-the-whole-vendor-panel)
 - [Gear upgrading: item rows at the inventory-slot height](#gear-upgrading-item-rows-at-the-inventory-slot-height)
 - [Gear upgrading: cost counts in the icon corners + the 128 purchase strip](#gear-upgrading-cost-counts-in-the-icon-corners--the-128-purchase-strip)
+- [Persistent path: the XDG data dir on Linux, the Windows default decided, one shared resolution site](#persistent-path-the-xdg-data-dir-on-linux-the-windows-default-decided-one-shared-resolution-site)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24676,3 +24677,40 @@ Beach with a starter sword + 50 wood / 50 metal): the purchase strip
 renders at 940x128, the purchase click spends the exact worked-example
 2 wood + 7 metal (wallets 50/50 -> 48/43), and the entity's sword
 reads 4 (PlayerData's copy untouched at 3, the sync convention).
+
+## Persistent path: the XDG data dir on Linux, the Windows default decided, one shared resolution site
+
+Three changes in one settle, prompted by the Windows-port planning:
+
+- **Linux default flipped to XDG**: `$XDG_DATA_HOME/ziglop`, defaulting
+  to `~/.local/share/ziglop` (empty or relative `$XDG_DATA_HOME` means
+  unset, per the spec's degenerate-value rule). The dotfile's
+  discoverability-over-convention rationale is RETIRED (DESIGN →
+  Persistent path records the new reasoning: experienced Linux
+  players expect XDG and redirect via the env var). The author's real
+  data moved with a one-time manual `mv ~/.ziglop ~/.local/share/ziglop`
+  - no auto-migration code, the transition mattered once, pre-release.
+  Verified live: the default-path launch resolves the new dir and the
+  main menu offers Continue (the migrated autosave found).
+- **The Windows default is DECIDED** (`%LOCALAPPDATA%\ziglop`, falling
+  back to `%USERPROFILE%/AppData/Local`) and lands in code as a dormant
+  arm - the switch is ready when the port build exists. Local over
+  Roaming (data never follows the user between machines); rejected:
+  Saved Games (Win32 API call, and the dir is a workshop area, not
+  just saves), Documents (OneDrive redirection), next-to-exe (UAC).
+- **The default exists ONCE now**: `persistent_path.zig` is the shared
+  resolution site (pure over an explicit env snapshot + os tag, so
+  headless tests drive synthetic environments; the getenv calls stay
+  at the libc-linked callers). The motivation was live drift:
+  sound_report.zig + art_report.zig each hand-duplicated the per-OS
+  default to audit shadowed assets - the old shape would have
+  silently kept reading the dead dotfile after this change.
+  native.zig delegates (flag -> $ZIGLOP_DATA -> shared fn); the
+  report tools ride the same fn. settings.txt stays in the one dir
+  with everything else (an XDG_CONFIG_HOME split was considered and
+  rejected; revisit only if players ask).
+
+7 new unit tests (override precedence, the spec's degenerate-value
+rule, per-OS shapes, the missing-env errors); 1116 pass. Doc
+references across AGENTS/DESIGN/TODO updated in the same commit
+(DONE's history entries keep the old path - it is the record).

@@ -131,7 +131,7 @@ fn dumpEventLog(history: *GameStateHistory) void {
     };
 
     // Feedback for this dev tool: the bundle lands in the persistent data
-    // dir (~/.ziglop/logs/).
+    // dir (~/.local/share/ziglop/logs/).
     std.debug.print("wrote session log bundle: {s} ({d} events)\n", .{
         bundle_dir,
         history.event_history.items.len,

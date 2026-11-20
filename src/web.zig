@@ -1,7 +1,8 @@
 //! Web (emscripten) entry point.
 //!
 //! Mirrors native.zig but with two platform differences:
-//!   - Persistence: instead of $HOME/.ziglop, the persistent dir is an
+//!   - Persistence: instead of the native per-OS default (persistent_path.zig -
+//!     e.g. ~/.local/share/ziglop on Linux), the persistent dir is an
 //!     in-memory (MEMFS) mount at the virtual path /ziglop - SESSION-SCOPED
 //!     (see DESIGN → File System & IO → Web storage model): browser storage
 //!     is NEVER touched by the game, nothing persists between sessions by
@@ -50,8 +51,7 @@ extern fn emscripten_run_script(script: [*:0]const u8) void;
 pub const panic = crash_dump.panic;
 
 /// The virtual path where the in-memory persistent dir is mounted. Mirrors
-/// the native persistent dir ($HOME/.ziglop on Linux, ~/Library/Application
-/// Support/ziglop on macOS - see native.zig) - FileSource reads/writes
+/// the native persistent dir (the per-OS default - persistent_path.zig). - FileSource reads/writes
 /// against this path.
 /// The constant lives in file_source.zig (shared with the JS seams that
 /// build absolute FS paths, e.g. triggerBrowserDownload).

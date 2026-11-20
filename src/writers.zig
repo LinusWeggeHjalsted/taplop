@@ -254,7 +254,7 @@ fn writeInventoryItem(
 
 /// Serialize a `Settings` struct to the config-file format (same shape as
 /// `data/default_settings.txt`). Used to persist user preferences to
-/// `~/.ziglop/settings.txt` - see DESIGN → Input. The full settings are
+/// the persistent dir's `settings.txt` - see DESIGN → Input. The full settings are
 /// written (audio + display + gameplay + InputBindings) so the user file is
 /// the same format as the defaults. The loader overlays this onto the shipped
 /// defaults at startup (per-field scalars, binding replace).

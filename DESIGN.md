@@ -1827,7 +1827,7 @@ that true (`src/session_log_bundle.zig`):
   gets extracted then (one consumer today - the same call as B-simple).
 - **Settings persistence (user preferences).** Shipped defaults live in
   `data/default_settings.txt` (embedded, read-only). User preferences live in
-  `~/.ziglop/settings.txt` (persistent dir, same format). At startup the
+  the persistent dir's `settings.txt` (same format). At startup the
   loader reads defaults, then overlays the user file: scalars per-field (user
   value wins, missing keeps default); InputBindings overlay PER-ACTION (see
   Binding overlay semantics below). Writes
@@ -2209,7 +2209,7 @@ Two error classes, with different responses:
 - **Recoverable** - an I/O or parse failure on content that is effectively
   user-supplied at runtime: custom missions, player saves, session logs, AND
   shipped files overridden via the persistent-dir shadowing (a player/dev
-  drops a broken file at `~/.ziglop/<shipped-path>` and the embedded copy is
+  drops a broken file at `<persistent-dir>/<shipped-path>` and the embedded copy is
   never reached - so "shipped content can't fail at runtime" is false by
   construction, not by accident). Response: warn + degrade/revert, never
   crash. See the three contexts below.
@@ -2413,14 +2413,30 @@ existing files require a recompile (which `zig build run` does anyway).
 
 ### Persistent path
 
-Per-OS defaults, resolved in `native.zig:resolvePersistentPath` (the single
-site; `builtin.os.tag` switch):
-- **Linux**: `~/.ziglop/` - a dotfile in `$HOME`, NOT XDG - chosen for
-  player-discoverability of saves/custom content over convention.
+Per-OS defaults, resolved in `persistent_path.zig` (the ONE shared
+site - native.zig + the dev report tools ride the same fn, so the default
+cannot drift between them; env acquisition stays at the libc-linked
+callers, keeping the module pure/headless-testable):
+- **Linux**: `$XDG_DATA_HOME/ziglop`, defaulting to `~/.local/share/ziglop/`
+  - the XDG base-directory spec. An earlier design deliberately used a
+  `$HOME` dotfile for player-discoverability over convention; SETTLED the
+  other way (the author's call): experienced Linux players expect XDG and
+  redirect it via `$XDG_DATA_HOME`, and `%appdata`-style conventions beat
+  dotfiles for the audience that cares. The spec's degenerate-value rule
+  is honored (empty or relative `$XDG_DATA_HOME` means unset).
 - **macOS**: `~/Library/Application Support/ziglop/` - the platform convention
   for player-visible save data (Finder's Go→Folder knows it; the dotfile
-  would be hidden in Finder). Same discoverability-over-convention
-  reasoning, different platform convention.
+  would be hidden in Finder).
+- **Windows**: `%LOCALAPPDATA%\ziglop` (`C:/Users/<name>/AppData/Local/
+  ziglop`), falling back to `%USERPROFILE%/AppData/Local` - the arm is
+  DECIDED and dormant until the Windows build exists (the same switch gains
+  a live target then). Local over Roaming: the data never needs to follow
+  the user between machines, so roaming sync is pure downside; AppData is
+  both the convention Windows users know (Win+R `%localappdata%`) and
+  resolvable from a plain env var. Rejected: `Saved Games` (needs a Win32
+  API call for a marginal gain, and the dir is a workshop area, not just
+  saves), `Documents` (Microsoft's game guidance moved away; OneDrive
+  redirects), next-to-the-exe (Program Files / UAC).
 
 Holds `autosave.txt`,
 `saves/`, `logs/`, `missions/`, `campaigns/`, and `deleted/` (the browser
@@ -2433,9 +2449,11 @@ recreates the folder (writeFile mkdir -p's its parents). Overridable via
 `--data-dir` flag / `$ZIGLOP_DATA` env var (dev, portable installs, tests);
 the flag wins over the env var, which wins over the default. For dev work,
 prefer `zig build run -- --data-dir <scratch-dir>` so session logs and
-autosaves don't mix into your real persistent play data. The Windows native
-path is still DEFERRED (the same switch gains a `.windows` arm when that
-build exists). Web (emscripten) is WIRED: web.zig mounts the IN-MEMORY
+autosaves don't mix into your real persistent play data. `settings.txt`
+rides in the same dir as everything else (the one-dir model; splitting
+config into `$XDG_CONFIG_HOME` was considered and rejected - complexity
+for zero player benefit; revisit only if players ask). Web (emscripten) is
+WIRED: web.zig mounts the IN-MEMORY
 persistent dir (MEMFS at /ziglop - browser storage is never touched;
 see Web storage model) and builds FileSource on that dir - same
 read/write code path as native, just a different dir source.
@@ -2694,8 +2712,9 @@ main menu. Design points:
 ### Modding by shadowing (side effect, not a designed feature)
 
 Because the read order checks the persistent dir BEFORE the embedded map, a
-player can drop a file at `~/.ziglop/<shipped-path>` to shadow shipped
-content, or add new paths (e.g. `~/.ziglop/assets/weapons/my_new_sword.png`)
+player can drop a file at `<persistent-dir>/<shipped-path>` to shadow shipped
+content, or add new paths (e.g.
+`~/.local/share/ziglop/assets/weapons/my_new_sword.png` on Linux)
 for new sprites/campaigns. Audio shadows may be `.wav` or `.ogg` (see
 Audio → File formats). This is a side effect of the unified-source
 layering, NOT a designed modding feature: no policy on which paths are

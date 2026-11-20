@@ -29,6 +29,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const lookups = @import("generated_lookups.zig");
 const ui = @import("ui.zig");
+const persistent_path = @import("persistent_path.zig");
 
 /// The sprite namespaces the game consumes - the first path segment of a
 /// sprite id. Everything else under assets/ (audio, fonts) is not a sprite.
@@ -70,8 +71,8 @@ pub fn main() !void {
     const io = threaded_io.io();
     const cwd = std.Io.Dir.cwd();
 
-    const persistent_path = try resolvePersistentPath(allocator);
-    const persistent_dir: ?std.Io.Dir = cwd.openDir(io, persistent_path, .{
+    const persistent_dir_path = try resolvePersistentPath(allocator);
+    const persistent_dir: ?std.Io.Dir = cwd.openDir(io, persistent_dir_path, .{
         .access_sub_paths = true,
     }) catch null;
     defer if (persistent_dir) |dir| std.Io.Dir.close(dir, io);
@@ -184,7 +185,7 @@ pub fn main() !void {
         \\
         \\Hand-maintained notes (each retires when its condition lands):
         \\
-    , .{persistent_path});
+    , .{persistent_dir_path});
     for (manual_notes) |note| {
         try report.print(allocator, "- {s}\n", .{note});
     }
@@ -514,20 +515,27 @@ fn stripPrefixSuffix(path: []const u8, prefix: []const u8, suffix: []const u8) ?
     return inner;
 }
 
-/// The per-OS persistent data directory (mirrors sound_report.zig's
-/// resolvePersistentPath - the native.zig discipline, minus the CLI flag).
+/// The per-OS persistent data directory: the SHARED resolution site
+/// (persistent_path.zig - the same fn native.zig rides, so the default
+/// exists once), fed from the environment. The tool reads `$ZIGLOP_DATA`
+/// or the platform default. libc is linked (see build.zig), so
+/// `std.c.getenv` is available - the native.zig discipline.
 fn resolvePersistentPath(allocator: std.mem.Allocator) ![]u8 {
-    if (std.c.getenv("ZIGLOP_DATA")) |override| {
-        return allocator.dupe(u8, std.mem.sliceTo(override, 0));
-    }
-    const home = std.c.getenv("HOME") orelse return error.HomeNotSet;
-    const home_slice = std.mem.sliceTo(home, 0);
-    return switch (@import("builtin").target.os.tag) {
-        .macos => try std.fmt.allocPrint(
-            allocator,
-            "{s}/Library/Application Support/ziglop",
-            .{home_slice},
-        ),
-        else => try std.fmt.allocPrint(allocator, "{s}/.ziglop", .{home_slice}),
-    };
+    return persistent_path.resolvePersistentPath(
+        allocator,
+        @import("builtin").target.os.tag,
+        .{
+            .ziglop_data = getenvSlice("ZIGLOP_DATA"),
+            .home = getenvSlice("HOME"),
+            .xdg_data_home = getenvSlice("XDG_DATA_HOME"),
+            .localappdata = getenvSlice("LOCALAPPDATA"),
+            .userprofile = getenvSlice("USERPROFILE"),
+        },
+    );
+}
+
+/// getenv as a proper slice (NUL stripped); null when unset.
+fn getenvSlice(name: [*:0]const u8) ?[]const u8 {
+    const value = std.c.getenv(name) orelse return null;
+    return std.mem.sliceTo(value, 0);
 }
