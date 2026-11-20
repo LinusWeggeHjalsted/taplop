@@ -249,12 +249,14 @@ pub fn handleMetaEvent(
             current.world_generation +%= 1;
             current.transitionScreen(.hub);
 
-            // Set/clear the mission-complete overlay info. Non-null
-            // when this hub entry follows a mission completion (the
-            // overlay renders); null on a normal entry (clears any
-            // stale value). On the undo timeline via GameState. See
-            // DESIGN → Architecture.
-            current.last_completed_mission = start.completed_mission;
+            // Set/clear the mission-complete overlay: the payload and
+            // its overlay-stack slot move together (setCompletedMission).
+            // Non-null when this hub entry follows a mission completion
+            // (the overlay renders); null on a normal entry (clears any
+            // stale value). The open lands AFTER transitionScreen's
+            // closeAll above, so the slot survives. On the undo timeline
+            // via GameState. See DESIGN → Architecture.
+            current.setCompletedMission(start.completed_mission);
 
             // Sync player entity from PlayerData
             pushEvents(current, &.{.{ .super_event = .{ .build_player_from_data = .{
@@ -389,8 +391,8 @@ pub fn handleMetaEvent(
             // replay). Rides the working copy: replay reproduces it, and
             // the end_validation transition discards it with the mission.
             current.mission.?.validation_run = true;
-            // Entering a run retires any prior completion overlay info.
-            current.last_completed_mission = null;
+            // Entering a run retires any prior completion overlay.
+            current.setCompletedMission(null);
 
             // The run's player data: the SAVED player.txt loadout with
             // every utility skill learned (the playtest path builds from
@@ -459,7 +461,7 @@ pub fn handleMetaEvent(
                 // The clone fields are zeroed - validation is
                 // discard-semantics, no clone harvest.
                 if (current.mission) |*mission| {
-                    current.last_completed_mission = .{
+                    current.setCompletedMission(.{
                         .uuid = mission.uuid,
                         .name = mission.name,
                         .path = mission.path,
@@ -470,7 +472,7 @@ pub fn handleMetaEvent(
                         .damage_taken = mission.damage_taken,
                         .skills_used = mission.skills_used,
                         .validation = true,
-                    };
+                    });
                 }
             }
             // Restore after a validation run. Live (editor present): edit
@@ -487,6 +489,14 @@ pub fn handleMetaEvent(
                 current.transitionScreen(.editor);
             } else {
                 current.transitionScreen(.main_menu);
+            }
+            // The transition above just closed every surface (closeAll),
+            // wiping the slot setCompletedMission opened with the stats
+            // payload - re-open it AFTER the transition so the bit and the
+            // payload agree on the stable state (the setCompletedMission
+            // doc's stated exception).
+            if (current.last_completed_mission != null) {
+                current.ui_surfaces.openSurface(.mission_complete);
             }
         },
         .start_mission => |start| {
@@ -527,11 +537,11 @@ pub fn handleMetaEvent(
                 return;
             };
 
-            // Clear the mission-complete overlay info - entering a
-            // mission (new game or replay) retires any prior
-            // completion. On the undo timeline via GameState. See
-            // DESIGN → Architecture.
-            current.last_completed_mission = null;
+            // Entering a mission (new game or replay) retires any prior
+            // completion overlay (payload + slot together - the screens
+            // transition below, but the pairing keeps the invariant local
+            // and obvious at every write site).
+            current.setCompletedMission(null);
 
             // Return destination: the event's end_hub_id override is the
             // ONLY source - the exit-click path passes the exit's

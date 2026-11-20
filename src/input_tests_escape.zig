@@ -85,6 +85,12 @@ test "escape: every stackable surface closes alone, derived from the surface enu
         // not z-order); their Escape coverage is the derived panel walk
         // below.
         if (comptime @hasField(types.MiddlePanelId, field_name)) continue;
+        // The mission overlays are stack members but not TOGGLE surfaces:
+        // the pop rung routes them to their own orchestrators
+        // (dismiss_mission_complete / player_exit_mission) with context
+        // requirements, not the bare toggle this walk asserts. The
+        // dedicated mission tests below pin their pops.
+        if (surface == .mission_complete or surface == .mission_fail) continue;
         if (surface == .options_menu or surface == .world_map) continue;
 
         history.current_state.ui_surfaces.openSurface(.options_menu);
@@ -366,7 +372,9 @@ test "escape: mission fail exits the mission" {
     var harness = Harness.init(backing.allocator());
     var history = harness.newHistory(test_harness.levelStateWithEntities(
         backing.allocator(),
-        // Dead player (entity 0) → the view-derived mission_fail overlay.
+        // Dead player (entity 0) → the mission_fail overlay (the death
+        // handler opened the stack slot; the view belts on the dead
+        // player).
         &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 }, .max_health = 20, .current_health = 0 }},
         &three_by_three,
     ));
@@ -395,6 +403,9 @@ test "escape: mission fail exits the mission" {
         .level_count = 1,
         .current_level_index = 1,
     };
+    // The death handler's slot write (it normally rides the recorded death
+    // event; forced directly here like the fixture states above).
+    history.current_state.ui_surfaces.openSurface(.mission_fail);
     test_harness.runToIdle(&history);
 
     // Escape ≡ the overlay's Exit Mission button: the player_exit_mission
@@ -427,14 +438,16 @@ test "escape: mission complete continues (dismisses the overlay)" {
     ));
     test_harness.runToIdle(&history);
 
-    // The overlay is view-derived from last_completed_mission (live it shows
-    // in the hub post-mission; the chain only reads the field). Escape ≡ the
-    // Continue button: dismiss_mission_complete lands on the undo timeline
-    // and clears the field.
-    history.current_state.last_completed_mission = .{
+    // The overlay pairs its payload with a stack slot (live: the
+    // completing start_hub / end_validation write both via
+    // setCompletedMission; forced directly here like the fixture states
+    // above). Escape pops the slot through the pop rung's mission routing:
+    // ≡ the Continue button - dismiss_mission_complete lands on the undo
+    // timeline and clears payload + slot together.
+    history.current_state.setCompletedMission(.{
         .name = "beginnings",
         .path = "campaigns/main_campaign/missions/beginnings",
-    };
+    });
     pressEscape(&history);
     try testing.expect(history.current_state.last_completed_mission == null);
     try testing.expectEqual(@as(usize, 1), history.event_history.items.len);

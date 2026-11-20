@@ -330,6 +330,26 @@ test "death: player (entity 0) drops nothing" {
     try testing.expectEqual(@as(usize, 0), history.current_state.level.?.ground_items.len);
 }
 
+test "death: the player's death opens the mission_fail overlay slot, pause-exempt" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 }, .current_health = 0, .max_health = 10 }},
+        &three_by_three,
+    ));
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.mission_fail));
+
+    pushAndRunSub(&history, .{ .death = .{ .entity_index = 0 } });
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.mission_fail));
+    // A stack member the pause gate deliberately IGNORES: the trigger
+    // fires inside a handler, where anyOverlayOpen gating update() would
+    // strand the cascade (the stuck-drain rule, DESIGN → Architecture →
+    // Modal overlays).
+    try testing.expect(!history.current_state.ui_surfaces.anyOverlayOpen());
+}
+
 // ───────────────────────── pickup_items ─────────────────────────
 
 test "pickup_items: transfers a ground stack into inventory until full" {

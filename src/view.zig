@@ -821,9 +821,11 @@ pub fn view(
     // so any overlay opens on top of any other and the emission walks the
     // stack bottom-up. Which surfaces can open on which screen lives in
     // surfaceToggleLegal; transitions closeAll, so the stack only ever
-    // holds surfaces legal for the current screen (the main-menu gates on
-    // the browser + credits below are belt-and-suspenders on that
-    // invariant). The lists behind the browser live on SessionState
+    // holds surfaces legal for the current screen - the mission overlays
+    // are the exception (stack members with NO toggle path; their slots
+    // are written by the completion/death cascades - see their arms below)
+    // (the main-menu gates on the browser + credits below are
+    // belt-and-suspenders on that invariant). The lists behind the browser live on SessionState
     // (scanned from the input path - view stays file-free; see
     // SessionState.editor_local_missions / save_files).
     for (current_state.ui_surfaces.open_overlays) |maybe_surface| {
@@ -967,6 +969,49 @@ pub fn view(
                 ) catch @panic("failed to build world map");
             },
             .full_combat_log => @panic("full combat log view not implemented"),
+            // The mission announcements are ordinary stack MEMBERS for
+            // z-order + Escape (playtest feedback: the tips overlay must
+            // be able to sit over them) but NOT pause surfaces - their
+            // triggers fire inside a handler (the completing cascade, the
+            // death), where the update gate would strand the remaining
+            // cascade events (anyOverlayOpen excludes them - the
+            // stuck-drain rule, DESIGN → Architecture → Modal overlays).
+            // Belted on the payload / the dead player: the stack slot and
+            // the belt are written together (setCompletedMission / the
+            // death handler), so they cannot disagree.
+            .mission_complete => if (current_state.last_completed_mission) |info| {
+                // The validation context (personal best + medal targets +
+                // the overwrite offer) is session-side - built here; view
+                // is file-free, so the write site captured the best. See
+                // DESIGN → Custom Missions & Online Services → Validation
+                // replay.
+                const validation: ?ui.ValidationCompleteContext = if (info.validation) .{
+                    .personal_best_turns = session.validation_personal_best_turns,
+                    .medal_targets = validation_replay.medalTargets(
+                        session.validation_personal_best_turns orelse info.turns_spent,
+                    ),
+                    .overwrite_offered = session.validation_replay_overwrite_offered,
+                } else null;
+                ui.buildMissionComplete(
+                    &ui_elements,
+                    frame_allocator,
+                    font_metrics,
+                    ui.screenRect(),
+                    info,
+                    active_theme,
+                    validation,
+                ) catch @panic("failed to build mission complete overlay");
+            },
+            .mission_fail => if (playerDead(current_state)) {
+                ui.buildMissionFail(
+                    &ui_elements,
+                    frame_allocator,
+                    font_metrics,
+                    ui.screenRect(),
+                    editor_run,
+                    button_color,
+                ) catch @panic("failed to build mission fail overlay");
+            },
             // The middle panels are not stack members (side-by-side
             // layout, not z-order); openSurface never stores them.
             .inventory,
@@ -976,54 +1021,6 @@ pub fn view(
             .entity_inspect,
             => @panic("middle panel in the overlay stack"),
         }
-    }
-
-    // Mission-fail overlay: full-screen modal shown when the player is dead
-    // (derived from level.entities[0].current_health == 0), fixed ABOVE the
-    // overlay stack - death takes precedence over anything the player had
-    // open. The buttons reuse the options_action dispatch. See DESIGN →
-    // Architecture.
-    if (playerDead(current_state)) {
-        ui.buildMissionFail(
-            &ui_elements,
-            frame_allocator,
-            font_metrics,
-            ui.screenRect(),
-            editor_run,
-            button_color,
-        ) catch @panic("failed to build mission fail overlay");
-    }
-
-    // Mission-complete overlay: full-screen modal shown after the player
-    // completes the last level of a mission - in the HUB for campaign
-    // missions, or OVER THE EDITOR as the validation stats screen (the
-    // info's validation flag; end_validation populated it). Derived from
-    // GameState.last_completed_mission (on the undo timeline) so undo/redo
-    // handles it naturally - undo to before completion clears it, redo re-
-    // shows it, dismiss_mission_complete (Continue) clears it on the timeline.
-    // The validation context (personal best + medal targets + the overwrite
-    // offer) is session-side - built here; view is file-free, so the write
-    // site captured the best. Fixed above the overlay stack + the fail
-    // overlay (never co-rendered with it; the order between them is pinned
-    // by the census). See DESIGN → Architecture + DESIGN → Custom Missions
-    // & Online Services → Validation replay.
-    if (current_state.last_completed_mission) |info| {
-        const validation: ?ui.ValidationCompleteContext = if (info.validation) .{
-            .personal_best_turns = session.validation_personal_best_turns,
-            .medal_targets = validation_replay.medalTargets(
-                session.validation_personal_best_turns orelse info.turns_spent,
-            ),
-            .overwrite_offered = session.validation_replay_overwrite_offered,
-        } else null;
-        ui.buildMissionComplete(
-            &ui_elements,
-            frame_allocator,
-            font_metrics,
-            ui.screenRect(),
-            info,
-            active_theme,
-            validation,
-        ) catch @panic("failed to build mission complete overlay");
     }
 
     // Recoverable error popup: modal, centered, drawn on top of all other
@@ -1421,11 +1418,14 @@ fn buildMiddlePanels(
 }
 
 /// Whether the player is dead in the current level (entity 0 health == 0).
-/// Used by view() to render the mission_fail overlay and by update()/gameLoop
-/// to pause event processing. Derived from GameState (not a flag) so it's
-/// automatically undo-safe: undoing past the death restores health, clearing
-/// the overlay. Returns false outside a level or when the level has no entities.
-pub fn playerDead(current_state: *const GameState) bool {
+/// The mission_fail overlay's RENDER BELT: the stack slot (written by the
+/// death handler) decides z-order + Escape, and this check keeps the view
+/// honest - the two are written together, so a belt that disagrees with
+/// the slot is a drift the view never draws. Derived from GameState (not a
+/// flag), so it's automatically undo-safe: undoing past the death restores
+/// health, clearing the overlay. Returns false outside a level or when the
+/// level has no entities.
+fn playerDead(current_state: *const GameState) bool {
     if (current_state.level) |level| {
         if (level.entities.len > 0) return level.entities[0].current_health == 0;
     }
@@ -6378,16 +6378,16 @@ test "main menu: credits draws ON TOP of the options menu (painter order)" {
 
 // Z-ORDER CENSUS (DESIGN → Modal overlays → the z-order ladder): forced
 // frames asserting the DYNAMIC z-order property - the stackable overlays
-// emit in OPEN order (the overlay stack walked bottom-up; any overlay can
-// open on top of any other), with the mission complete/fail announcements
-// fixed above the stack and the error popup / top bar / tooltip / FPS
+// (mission announcements included - they are ordinary members) emit in
+// OPEN order (the overlay stack walked bottom-up; any overlay can open
+// on top of any other), with the error popup / top bar / tooltip / FPS
 // label above everything. The frames deliberately open their surfaces in
 // DIFFERENT orders (neither matches a fixed ladder), so a regression to
 // any fixed emission order fails here. The Escape chain closes the stack
 // topmost-first; this census is what keeps the two from drifting apart
 // again - both a silent view() reorder and a chain-arm reorder without
 // the emission following fail here.
-test "z-order census: overlays emit in open order; announcements + chrome fixed above" {
+test "z-order census: overlays emit in open order, announcements included; chrome fixed above" {
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
     const arena = backing.allocator();
@@ -6532,9 +6532,9 @@ test "z-order census: overlays emit in open order; announcements + chrome fixed 
     // from frame 1), with the world map opened LAST (top of the stack -
     // also the map-over-options-menu pairing from the campaign-editor 2c
     // rider). Open order: tips < options menu < campaign browser < settings
-    // < world map (raised to top); then the fixed rungs: mission-fail < mission-complete
-    // (the pinned never-co-rendered order) < error popup < top bar < FPS
-    // label. The load-save browser + credits are main-menu-gated and
+    // < world map (raised to top) < mission-fail < mission-complete (the
+    // announcements as stack members, opened last) < error popup < top bar
+    // < FPS label. The load-save browser + credits are main-menu-gated and
     // absent here.
     {
         const dead_player = types.Entity{
@@ -6543,7 +6543,6 @@ test "z-order census: overlays emit in open order; announcements + chrome fixed 
             .current_health = 0,
         };
         var level_state = test_harness.levelStateWithEntities(arena, &.{dead_player}, &.{});
-        level_state.last_completed_mission = .{ .name = "census mission", .path = "missions/census" };
         level_state.campaign = .{
             .name = "Census",
             .uuid = "census",
@@ -6564,6 +6563,15 @@ test "z-order census: overlays emit in open order; announcements + chrome fixed 
         // open), so RAISE it through the toggle seam (a covered overlay
         // raises instead of closing).
         level_state.ui_surfaces.toggle(.world_map);
+        // The mission announcements ride the stack as MEMBERS (the
+        // playtest-feedback rework): opened after the raised map, so they
+        // sit above it - complete above fail, the never-co-rendered
+        // pair's open order. The fail slot is the death handler's write
+        // (forced directly, like every other census forcing); the
+        // complete slot + payload go through setCompletedMission, the
+        // pairing every live write site uses.
+        level_state.ui_surfaces.openSurface(.mission_fail);
+        level_state.setCompletedMission(.{ .name = "census mission", .path = "missions/census" });
         session.setPendingError(arena, "census frame");
         session.input_state.mouse_screen_position = .{ .x = @floatFromInt(hover.x), .y = @floatFromInt(hover.y) };
 
@@ -6615,15 +6623,74 @@ test "z-order census: overlays emit in open order; announcements + chrome fixed 
         try std.testing.expect(options_menu < campaign_browser);
         try std.testing.expect(campaign_browser < settings_screen);
         try std.testing.expect(settings_screen < world_map);
-        // The announcements sit fixed ABOVE the whole stack (complete
-        // above fail: the pinned never-co-rendered order), then the
-        // always-on-top chrome.
+        // The announcements ride the stack (opened after the map, so
+        // above it; complete above fail), then the always-on-top chrome.
         try std.testing.expect(world_map < mission_fail);
         try std.testing.expect(mission_fail < mission_complete);
         try std.testing.expect(mission_complete < error_popup);
         try std.testing.expect(error_popup < top_bar);
         try std.testing.expect(top_bar < fps);
     }
+}
+
+test "mission-complete announcement: overlays opened later draw above it (the tips pain point)" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var harness = test_harness.Harness.init(arena);
+    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+
+    // The playtest report: tips opened from the top bar while the
+    // mission-complete announcement was up rendered BENEATH it (the old
+    // fixed-above-the-stack order made the announcement unbeatable). As
+    // stack members the announcements take their slot in the open order -
+    // tips opened AFTER draws above, and the top bar stays clickable
+    // above both (the `?` is how the tips got opened in the first place).
+    var level_state = test_harness.levelStateWithEntities(
+        arena,
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 }, .current_health = 10, .max_health = 10 }},
+        &.{},
+    );
+    level_state.setCompletedMission(.{ .name = "census mission", .path = "missions/census" });
+    level_state.ui_surfaces.openSurface(.tips);
+
+    const firstButton = struct {
+        fn find(elements: []const ui.UiElement, action: types.Action) usize {
+            for (elements, 0..) |element, index| {
+                if (element != .button) continue;
+                if (element.button.action == action) return index;
+            }
+            @panic("marker button not found");
+        }
+    }.find;
+
+    var session = state.SessionState{};
+    const view_state = view(
+        &level_state,
+        &session,
+        .{ .input_bindings = &.{} },
+        harness.color_theme_definitions,
+        &harness.weapon_type_definitions,
+        &[_][]const u8{"tips pain"},
+        .{
+            .camera = computeCamera(&level_state, 1.0, null, null),
+            .camera_zoom = 1.0,
+            .event_history = &.{},
+            .level_start_index = null,
+            .current_event_index = 0,
+            .frame_allocator = arena,
+            .font_metrics = font_metrics,
+            .sprite_bounds = .{},
+            .can_undo = false,
+            .can_redo = false,
+        },
+    );
+    const elements = view_state.ui_elements;
+    const mission_complete = firstButton(elements, .continue_after_mission);
+    const tips_back = firstButton(elements, .open_tips);
+    const top_bar = firstButton(elements, .undo);
+    try std.testing.expect(mission_complete < tips_back);
+    try std.testing.expect(tips_back < top_bar);
 }
 
 test "outlineStripePhase: steps at animation_fps, wraps per cycle" {
@@ -6931,6 +6998,12 @@ test "surface-screen census: surfaceToggleLegal mirrors the view's emission cont
                     else => false,
                 },
                 .campaign_browser, .world_map, .inventory, .gear, .skills, .full_combat_log => screen == .level or screen == .hub,
+                // The mission overlays have no probe entries (no toggle
+                // path - the full_combat_log precedent), so these arms are
+                // unreachable in the walk below; they exist for the
+                // switch's exhaustiveness and record the real openers.
+                .mission_complete => screen == .hub or screen == .editor,
+                .mission_fail => screen == .level,
                 // The vendor panel opens only from the upgrade-vendor NPC
                 // (hub-only) and renders no toggle button of its own - no
                 // probe entry, the full_combat_log precedent.
@@ -7074,4 +7147,16 @@ test "surface-screen census: surfaceToggleLegal mirrors the view's emission cont
     try std.testing.expect(history.surfaceToggleLegal(.hub, .full_combat_log));
     history.current_state.screen = .main_menu;
     try std.testing.expect(!history.surfaceToggleLegal(.main_menu, .full_combat_log));
+
+    // The mission overlays ride the stack but have no toggle path, so the
+    // census's probe shape (force-open a toggle's close affordance) does
+    // not apply to them - the full_combat_log precedent. Their no-toggle
+    // contract is asserted on the legality side: every screen rejects
+    // the bare toggle (they open from the completion/death cascades and
+    // close via their own orchestrators - see surfaceToggleLegal).
+    inline for (@typeInfo(state_mod.Screen).@"enum".field_names) |field_name| {
+        const screen = @field(state_mod.Screen, field_name);
+        try std.testing.expect(!history.surfaceToggleLegal(screen, .mission_complete));
+        try std.testing.expect(!history.surfaceToggleLegal(screen, .mission_fail));
+    }
 }

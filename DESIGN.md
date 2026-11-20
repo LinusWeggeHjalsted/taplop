@@ -1908,27 +1908,26 @@ load and picks up the renamed action's default binding).
 `handleEscapeKey` (input_handlers.zig) consumes it as a generic
 "close the topmost overlay" chain: a walk down `escape_ladder`, a
 topmost-first ordered array of `EscapeRung` values. With the overlay
-stack, the chain collapsed to FOUR rungs - the per-surface ladder
-(tips, browser, settings, ...) is gone because the stack already knows
-which overlay is topmost:
+stack (mission announcements included - they are ordinary members now),
+the chain is TWO rungs - the per-surface ladder (tips, browser,
+settings, ...) is gone because the stack already knows which overlay is
+topmost:
 
-1. **Mission complete** (custom, view-derived `last_completed_mission`)
-   - fires the overlay's Continue button's `dismiss_mission_complete` +
-   drain. (Never co-rendered with mission fail - complete shows in the
-   hub/editor, fail on a level; the order between them is cosmetic and
-   pinned by the census.)
-2. **Mission fail** (custom, view-derived `playerDead`) - fires the
-   overlay's Exit Mission button's orchestrator (`player_exit_mission`
-   + drain). Dead outside a level screen absorbs Escape outright (the
-   chain must not fall through to opening the options menu).
-3. **Pop the overlay stack** (custom) - closes the TOPMOST open entry of
+1. **Pop the overlay stack** (custom) - closes the TOPMOST open entry of
    `open_overlays`: whatever was opened last, the same surface that
    draws on top (slot order IS z-order - the view's emission and the
    chain now read the same slot, so they cannot disagree). The close is
    the recorded `player_toggle_ui_surface` (the same event the surface's
-   own buttons push), so Escape ≡ clicking its Back button.
+   own buttons push), so Escape ≡ clicking its Back button - EXCEPT the
+   mission announcements, which ride the stack but close through their
+   own orchestrators, never a bare toggle: mission_complete pops as its
+   Continue button (`dismiss_mission_complete`), mission_fail as its
+   Exit Mission button (`player_exit_mission` + drain; dead outside a
+   level screen - a stale bit the live flows can't produce - absorbs
+   Escape outright so the chain never falls through to the options menu
+   over a dead player's game).
 
-4. **Close the rightmost middle panel** (custom) - the middle panels
+2. **Close the rightmost middle panel** (custom) - the middle panels
    are not stack members (side-by-side layout, not z-order), so the
    stack rung does not see them; this rung closes the RIGHTMOST open
    panel (open order = display order, so rightmost = most recently
@@ -1944,13 +1943,15 @@ The walk closes the first open rung; every rung empty opens the options
 menu on ANY screen (the main-menu variant carries its own entries - see
 below).
 
-**No coverage list to drift.** Every stackable surface is closed by
-rung 3 and every middle panel by rung 4 automatically; the derived tests
-in input_tests_escape.zig walk the `UiSurfaceId` and `MiddlePanelId`
-enums themselves (the stack walk skips the middle panels by
-`@hasField`, the panel walk covers each panel alone, and an
-overlay-over-panels test pins the rung order), so a new surface or
-panel gets its Escape coverage the moment it is added. This is the
+**No coverage list to drift.** Every plain stackable surface is closed
+by the pop rung and every middle panel by the panel rung automatically;
+the derived tests in input_tests_escape.zig walk the `UiSurfaceId` and
+`MiddlePanelId` enums themselves (the stack walk skips the middle panels
+by `@hasField` and the mission surfaces - they route to their own
+orchestrators with context requirements, so the dedicated mission tests
+pin their pops; the panel walk covers each panel alone, and an
+overlay-over-panels test pins the rung order), so a new surface or panel
+gets its Escape coverage the moment it is added. This is the
 machine-walked-truth rule (AGENTS → Build & Test) applied to the chain:
 the census pins the view side, the derived walks pin the escape side,
 and the z-order agreement can no longer drift silently. (The earlier
@@ -5355,16 +5356,17 @@ order fails the build:
 2. Drag ghost (mid-drag only - no modal is reachable then)
 3. The overlay stack, in open order: options menu, load-save browser,
    credits, tips, settings screen, editor browser, world map, full
-   combat log - whichever order they were opened in
-4. Mission-fail overlay, then mission-complete / validation stats (the
-   announcements, fixed ABOVE the stack - death/completion take
-   precedence over anything the player had open; complete above fail is
-   the pinned never-co-rendered order)
-5. Error popup (the most-modal surface)
-6. Global top bar (options/undo/redo/tips `?` - clickable above every
+   combat log, and the mission announcements (fail, complete) -
+   whichever order they were opened in. The announcements are ORDINARY
+   stack members (playtest feedback: the tips overlay had to be able to
+   sit over the mission complete / defeat screens, which the old
+   fixed-above-the-stack order made impossible); they land on top at
+   the moment they appear, and anything opened after draws above them.
+4. Error popup (the most-modal surface)
+5. Global top bar (options/undo/redo/tips `?` - clickable above every
    modal by design)
-7. Hover tooltip (passive, non-blocking)
-8. FPS diagnostic label (non-blocking; spatially below the top bar)
+6. Hover tooltip (passive, non-blocking)
+7. FPS diagnostic label (non-blocking; spatially below the top bar)
 
 The full combat log has no view yet (and no open path); when it lands it
 joins the stack like every other overlay - the dispatch loop in view() is
@@ -5383,15 +5385,19 @@ stack-pop rung).
 
 Full-screen modal overlays - the options menu, the error popup, the
 mission-fail overlay, the mission-complete overlay - share a structure:
-`view()` builds them when a condition is true (a SessionState flag, a
-GameState field, or `pending_error`), the full-screen 9-slice panel is
-`blocks_input: true` so `hitTest` shields the UI behind it, and the overlay
-buttons carry `Action`s that dispatch via `handleAnytimeInput` (before any
-`update()` gate) so they work while the world is paused.
+`view()` builds them when their trigger is true (an open stack slot, or
+`pending_error`), the full-screen 9-slice panel is `blocks_input: true` so
+`hitTest` shields the UI behind it, and the overlay buttons carry
+`Action`s that dispatch via `handleAnytimeInput` (before any `update()`
+gate) so they work while the world is paused. The mission overlays' arms
+are BELTED on their payload (the view renders mission_complete only when
+`last_completed_mission` is set, mission_fail only when the player is
+dead) - the belt and the stack slot are written together, so the two
+cannot disagree.
 
 **What an open overlay blocks - and what it doesn't.** Every
-full-screen overlay (`UiSurfaceState.anyOverlayOpen`) is a pause, not an
-input vacuum, and they all pause identically (the options-menu rule
+full-screen PAUSE overlay (`UiSurfaceState.anyOverlayOpen`) is a pause, not
+an input vacuum, and they all pause identically (the options-menu rule
 generalized): GAMEPLAY input (skill slots, swap weapons, drag/camera/
 idle input) is gated, the animation clock + wait timer freeze, and events
 already on the stack stay locked at their depth until the overlay closes.
@@ -5403,7 +5409,10 @@ anytime path too, drained to the stack baseline by
 (inventory/gear/skills/inspect/world-map keybinds) via their dispatch
 hoisted above the pause gate. Any overlay can open on top of any other
 (the stack model); Escape pops the topmost first. The gate is the pause
-rule, not a z-order rule.
+rule, not a z-order rule - and the mission overlays are deliberately
+EXEMPT from it (`anyOverlayOpen` skips them: their triggers fire inside a
+handler, where the gate would strand the cascade - rule 1 below). They
+ride the stack for z-order + Escape but never pause the game.
 
 **Two rules, learned the hard way:**
 
@@ -5415,31 +5424,39 @@ rule, not a z-order rule.
    `handleAnytimeInput` (before the gate), and `pending_error` exits
    the drain via the `load_error` break (not via the gate). The mission
    overlays are different: their triggers are set INSIDE a handler
-   (`end_level` sets `last_completed_mission`; the `attack` handler sets
-   `player.health == 0` and pushes `death`). A top-of-`update()` gate would
+   (`end_level` → `start_hub` sets `last_completed_mission` + opens the
+   stack slot via `setCompletedMission`; the `death` handler opens the
+   fail slot after the killing `attack`). A top-of-`update()` gate would
    block the remaining cascade events from draining - the player gets stuck
    mid-transition, and the unprocessed event keeps `event_stack.len > 0` so
    the render gate's `drain_in_progress` skips `view()` entirely (no overlay,
-   no sound). The mission overlays DON'T gate `update()`; they rely on the
-   `blocks_input` panel + idle-input self-gating (idle input only runs in
-   player turn phases; a dead player or a just-completed mission isn't in
-   one). If a future modal's trigger is set inside a handler, don't gate -
-   or gate only the idle-input/drag branch, not `processEvent`.
+   no sound). So the mission overlays are stack members EXEMPT from the
+   gate: `anyOverlayOpen` skips them by classification (the slots still
+   ride `open_overlays` for z-order + Escape), and the overlays rely on
+   the `blocks_input` panel + idle-input self-gating (idle input only runs
+   in player turn phases; a dead player or a just-completed mission isn't
+   in one). If a future modal's trigger is set inside a handler, exempt
+   it from the gate the same way - or gate only the idle-input/drag
+   branch, not `processEvent`.
 
 2. **Derive modal overlays from undoable state when possible, so undo/redo
-   handles them naturally.** mission_fail derives from
-   `level.entities[0].current_health == 0` (GameState) - undo restores
-   health, the overlay vanishes. mission_complete derives from
+   handles them naturally.** mission_fail's undoable trigger is the dead
+   player (`level.entities[0].current_health == 0`, GameState) - undo
+   restores health, the overlay vanishes (the stack slot closes with the
+   snapshot restore). mission_complete's is
    `last_completed_mission: ?MissionCompleteInfo` (GameState field, on the
    undo timeline) - the info rides the `end_level → end_mission → start_hub`
    cascade as an optional field on those events; `start_hub` sets the
    GameState field; Continue pushes a `dismiss_mission_complete` event that
-   clears it (on the timeline - undo re-shows, redo dismisses). Both fall
-   out of undo/redo without special-case cleanup. Contrast: a SessionState
-   flag (off the timeline) survives undo and needs manual clearing - that
-   was the first mission_complete implementation, and the overlay stayed
-   open on undo. Prefer the GameState-derived approach when the trigger is
-   already in undoable state.
+   clears it (on the timeline - undo re-shows, redo dismisses). The stack
+   SLOTS pair with these triggers at every write site (`setCompletedMission`
+   for complete - payload + slot together; the death handler for fail), so
+   the undo timeline moves both at once. Both fall out of undo/redo without
+   special-case cleanup. Contrast: a SessionState flag (off the timeline)
+   survives undo and needs manual clearing - that was the first
+   mission_complete implementation, and the overlay stayed open on undo.
+   Prefer the GameState-derived approach when the trigger is already in
+   undoable state.
 
 ### Level Editor (core + UI + save/export + editor browser landed)
 
@@ -7321,10 +7338,16 @@ reset they need.
 
 `pending_error` (SessionState) is deliberately NOT a surface - the
 recoverable-error popup is environmental, not player action (see Error
-Handling). The mission-complete overlay stays payload-carrying GameState
-(`last_completed_mission` + `dismiss_mission_complete`); the mission-fail
-overlay stays DERIVED (`playerDead`) - both already satisfy the rule's
-goal, so they keep their existing shapes.
+Handling). The mission overlays ARE stack members (UiSurfaceId
+mission_complete / mission_fail - slots in `open_overlays`, z-order +
+Escape like every overlay; playtest feedback: tips must be able to sit
+over the announcements), but their slots are written by the
+completion/death cascades, not by player toggles, and they are EXEMPT
+from the pause gate (`anyOverlayOpen` skips them - the triggers fire
+inside handlers, the stuck-drain rule). Their undoable triggers stay on
+GameState (`last_completed_mission`, the dead player) and the slots pair
+with them at every write site (`setCompletedMission`, the death handler)
+- so undo/redo + replay move payload and slot together.
 
 ### Entity inspect
 

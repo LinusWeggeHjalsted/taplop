@@ -863,10 +863,13 @@ pub const GameState = struct {
 
     /// Info for the mission-complete overlay, set by `start_hub` when the
     /// hub entry follows a mission completion (carried through end_mission →
-    /// start_hub). Null on a normal hub entry (new game, load save, abandon
-    /// mission, editor exit). On the undo timeline (GameState) so undo/redo
-    /// handles the overlay naturally. Cleared by `dismiss_mission_complete`
-    /// (the Continue button). See DESIGN → Architecture.
+    /// start_hub), or by `end_validation` for the editor's stats screen.
+    /// Null on a normal hub entry (new game, load save, abandon mission,
+    /// editor exit). On the undo timeline (GameState) so undo/redo handles
+    /// the overlay naturally. Cleared by `dismiss_mission_complete` (the
+    /// Continue button). The overlay's stack slot pairs with the payload
+    /// via `setCompletedMission` - every write site goes through it. See
+    /// DESIGN → Architecture.
     last_completed_mission: ?types.MissionCompleteInfo = null,
 
     /// Class-1 semantic surface state - what UI is open. On the undo timeline
@@ -880,6 +883,23 @@ pub const GameState = struct {
     /// for the old screen but is not in scope for the new one.
     /// Also clears the event stack to prevent dangling events from the
     /// previous screen (e.g. level events lingering after exit to menu).
+    /// Set or clear the mission-complete overlay: the payload AND its
+    /// overlay-stack slot move together (the view belts the render on the
+    /// payload, Escape routes the pop to `dismiss_mission_complete`, and
+    /// the two must never diverge). Every payload write site goes through
+    /// here. EXCEPTION: a site whose handler still calls `transitionScreen`
+    /// AFTER this (the end_validation restore) must re-open the surface
+    /// after the transition - closeAll wipes the slot; the re-open site
+    /// carries its own comment.
+    pub fn setCompletedMission(self: *GameState, info: ?types.MissionCompleteInfo) void {
+        self.last_completed_mission = info;
+        if (info != null) {
+            self.ui_surfaces.openSurface(.mission_complete);
+        } else {
+            self.ui_surfaces.close(.mission_complete);
+        }
+    }
+
     pub fn transitionScreen(self: *GameState, new_screen: Screen) void {
         self.event_stack = &.{};
 
@@ -3365,6 +3385,13 @@ pub const GameStateHistory = struct {
             // inspect toggle is a recorded no-op the view can never draw
             // (pinned by the surface-screen census).
             .entity_inspect => screen == .level,
+            // The mission overlays are stack members but never toggle
+            // surfaces: they open from the completion/death cascades and
+            // close via their own orchestrators (Escape routes their pop
+            // to dismiss_mission_complete / player_exit_mission, never a
+            // bare toggle). No live path can produce this event shape, so
+            // reject it on every screen (pinned by the census tail).
+            .mission_complete, .mission_fail => false,
         };
     }
 
@@ -4016,7 +4043,7 @@ test "transitionScreen closes every UI surface" {
         .level = null,
         .hub = null,
         .ui_surfaces = .{
-            .open_overlays = .{ .options_menu, null, null, null, null, null, null, null, null },
+            .open_overlays = .{ .options_menu, null, null, null, null, null, null, null, null, null, null },
             .open_middle_panels = .{ .inventory, .skills, null, null, null },
             .inspected_entity_index = 3,
         },
@@ -4375,6 +4402,31 @@ test "isPlayerAction: whitelist accepts player-pushable events" {
     try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .player_cancel_skill }));
     try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .{ .move_player = .{ .destination = .{ .x = 0, .y = 0 } } } }));
     try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .{ .interact_with_npc = .{ .npc_index = 0 } } }));
+}
+
+test "setCompletedMission pairs the payload with the overlay slot" {
+    var game_state = GameState{
+        .screen = .hub,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+    game_state.setCompletedMission(.{ .name = "pairing", .path = "missions/pairing" });
+    try std.testing.expect(game_state.last_completed_mission != null);
+    try std.testing.expect(game_state.ui_surfaces.isSurfaceOpen(.mission_complete));
+    // The mission surfaces never trip the pause gate (their triggers fire
+    // inside handlers - the update-gate trap).
+    try std.testing.expect(!game_state.ui_surfaces.anyOverlayOpen());
+
+    game_state.setCompletedMission(null);
+    try std.testing.expect(game_state.last_completed_mission == null);
+    try std.testing.expect(!game_state.ui_surfaces.isSurfaceOpen(.mission_complete));
 }
 
 test "readReconstructionFileOptional: live read + absent marker, replay serve, lazy-disk fallback" {

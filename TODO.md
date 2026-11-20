@@ -182,33 +182,6 @@ its fix lands (DONE.md is the record).
       instead of rAF, which is the AudioWorklet-class structural fix
       already deferred to the hosting milestone (Platform Layer above).
       Lean: (a) now; (b) rides the existing deferred item.
-- **Mission complete / fail overlays should be normal fullscreen
-      overlays** (report: the tips window can't sit over them). Today
-      both are emitted ABOVE the overlay stack in view() (fixed order:
-      stack → mission fail → mission complete → error popup → top
-      bar), so tips opened from the top-bar `?` (the top bar renders
-      above everything, so the click lands) draws BENEATH the mission
-      overlay - invisible and unclickable. The report asks for full
-      overlay-stack membership (slot order = z-order, Escape pops
-      topmost). Design tension to settle: both overlays are
-      deliberately VIEW-DERIVED (fail from `playerDead`, complete from
-      `last_completed_mission`) so undo/redo handles them, and their
-      triggers fire INSIDE a handler - the DESIGN → Architecture →
-      Modal overlays rule says such modals must not gate `update()`
-      (the stuck-drain lesson). As stack members they'd join
-      `anyOverlayOpen()` (the update gate + anim-clock pause) and
-      reopen that trap unless they stay gate-exempt. Options:
-      (a) minimal - keep the derived triggers + payloads, only change
-      view()'s EMISSION order so the mission overlays render below the
-      overlay stack (any overlay, opened before or after, draws above;
-      escape rungs unchanged, ~5 lines, zero input/timeline changes);
-      (b) full membership - the completing cascade pushes them onto
-      `open_overlays` (the surface bit rides the same events that set
-      the payload; dismissal stays `dismiss_mission_complete` /
-      `player_exit_mission`), gate membership excludes them (the
-      pop_overlay_stack rung absorbs escape rungs 1-2; the census +
-      derived escape test extend automatically). OPEN: which; also
-      whether the anim clock should pause behind them either way.
 - **Momentum can be stacked infinitely out of combat.** Momentum
       accrues +1 on EVERY `use_skill` and `move_entity`
       (handlers/level.zig), regardless of combat state, so walking

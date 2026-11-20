@@ -1338,14 +1338,11 @@ fn backUpSettingsFile(history: *GameStateHistory) void {
 /// One rung of `escape_ladder`: what Escape closes when this rung is the
 /// topmost thing open.
 const EscapeRung = union(enum) {
-    /// View-derived from `last_completed_mission`: Escape equals the
-    /// Continue button's `dismiss_mission_complete`.
-    mission_complete,
-    /// View-derived from `playerDead`: Escape equals the Exit Mission
-    /// button's `player_exit_mission`.
-    mission_fail,
     /// The overlay stack: closes the TOPMOST open overlay - the last
     /// opened, the same one that draws on top (slot order IS z-order).
+    /// The mission overlays ride the stack like any member; their pops
+    /// route to their own orchestrators (never a bare toggle) - see the
+    /// arm below.
     pop_overlay_stack,
     /// The middle panels: closes the RIGHTMOST open panel - the last
     /// opened (open order = display order, so rightmost = newest, "from
@@ -1353,23 +1350,22 @@ const EscapeRung = union(enum) {
     close_rightmost_middle_panel,
 };
 
-/// The Escape chain, topmost-first: the announcements (mission complete
-/// / fail - fixed ABOVE the overlay stack in the view, so they close
-/// before anything the player had open), then the overlay stack top,
-/// then the middle panels rightmost-first, then (every rung empty) the
-/// options menu opens. The middle-panel rung is playtest feedback: the
-/// panels' own toggle keys (I/G/S) stay the direct close path, but
-/// Escape used to open the options menu ON TOP of open panels instead of
-/// dismissing them, which was reported as a pain point. Every stackable
-/// surface is popped by `pop_overlay_stack` and every middle panel by
-/// `close_rightmost_middle_panel` automatically - no hand-maintained
-/// coverage list; the derived tests in input_tests_escape.zig walk the
-/// surface and panel enums alongside the ladder, so a new entry of
-/// either kind is covered the moment it is added. `pub` for
-/// input_tests_escape.zig.
+/// The Escape chain, topmost-first: the overlay stack top, then the
+/// middle panels rightmost-first, then (every rung empty) the options
+/// menu opens. The mission overlays ride the stack (they are ordinary
+/// members for z-order + popping - playtest feedback: the tips overlay
+/// had to sit OVER the mission complete / defeat announcements, which
+/// the old fixed-above-the-stack emission order made impossible), and
+/// the middle-panel rung is playtest feedback too: the panels' own
+/// toggle keys (I/G/S) stay the direct close path, but Escape used to
+/// open the options menu ON TOP of open panels instead of dismissing
+/// them. Every stackable surface is popped by `pop_overlay_stack` and
+/// every middle panel by `close_rightmost_middle_panel` automatically -
+/// no hand-maintained coverage list; the derived tests in
+/// input_tests_escape.zig walk the surface and panel enums alongside the
+/// ladder, so a new entry of either kind is covered the moment it is
+/// added. `pub` for input_tests_escape.zig.
 pub const escape_ladder = [_]EscapeRung{
-    .mission_complete,
-    .mission_fail,
     .pop_overlay_stack,
     .close_rightmost_middle_panel,
 };
@@ -1385,34 +1381,35 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     // (the swap_weapons interjection discipline).
     for (escape_ladder) |rung| {
         switch (rung) {
-            // Escape equals the overlay's own primary button, never a bare
-            // surface flip: the dismissal records on the undo timeline
-            // (undo re-shows, redo dismisses). Never co-rendered with
-            // mission fail (complete shows in the hub/editor, fail on a
-            // level; the order between them is cosmetic and pinned by the
-            // census).
-            .mission_complete => {
-                if (current.last_completed_mission == null) continue;
-                pushPlayerActionAndDrain(history, .dismiss_mission_complete);
-                return;
-            },
-            // Dead outside a level screen (where playerDead can be set
-            // without a closable overlay) absorbs Escape outright - the
-            // chain must not fall through to opening the options menu.
-            // Undo (processed earlier in handleAnytimeInput) remains the
-            // other escape from the fail state.
-            .mission_fail => {
-                if (!view_mod.playerDead(current)) continue;
-                if (current.screen != .level) return;
-                pushPlayerActionAndDrain(history, .player_exit_mission);
-                return;
-            },
             .pop_overlay_stack => {
                 var topmost_surface: ?types.UiSurfaceId = null;
                 for (surfaces.open_overlays) |maybe_surface| {
                     if (maybe_surface) |open| topmost_surface = open;
                 }
                 const surface = topmost_surface orelse continue;
+                // The mission overlays ride the stack but close through
+                // their own orchestrators, never a bare toggle: Escape
+                // equals the overlay's primary button (the dismissal
+                // records on the undo timeline - undo re-shows, redo
+                // dismisses).
+                switch (surface) {
+                    .mission_complete => {
+                        pushPlayerActionAndDrain(history, .dismiss_mission_complete);
+                        return;
+                    },
+                    // Dead outside a level screen (a stale bit the live
+                    // flows can't produce) absorbs Escape outright - the
+                    // chain must not fall through to opening the options
+                    // menu over a dead player's game. Undo (processed
+                    // earlier in handleAnytimeInput) remains the other
+                    // escape from the fail state.
+                    .mission_fail => {
+                        if (current.screen != .level) return;
+                        pushPlayerActionAndDrain(history, .player_exit_mission);
+                        return;
+                    },
+                    else => {},
+                }
                 pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
                     .surface = surface,
                 } });

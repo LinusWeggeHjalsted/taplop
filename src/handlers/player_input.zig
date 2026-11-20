@@ -259,7 +259,11 @@ pub fn handlePlayerInputEvent(
     switch (pi) {
         // --- Meta: overlay dismiss ---
         .dismiss_mission_complete => {
-            current.last_completed_mission = null;
+            // Payload + stack slot together (setCompletedMission); this
+            // is the one clear that runs on the SAME screen (the hub /
+            // editor the overlay sits on), so the explicit close is
+            // load-bearing - no transition follows to do it.
+            current.setCompletedMission(null);
         },
 
         // --- Meta: continue (main-menu Continue button) ---

@@ -3413,8 +3413,11 @@ pub const max_middle_panels: usize = 5;
 /// Capacity of the overlay stack below: exactly the stackable surface
 /// count (every modal in `UiSurfaceId` minus the middle panels), so the
 /// stack can hold every overlay at once - duplicates are impossible
-/// (`openSurface` is idempotent), so no headroom is needed.
-pub const max_open_overlays: usize = 9;
+/// (`openSurface` is idempotent), so no headroom is needed. Derived from
+/// the two enums, so a new stackable surface grows the capacity with it.
+pub const max_open_overlays: usize =
+    @typeInfo(UiSurfaceId).@"enum".field_names.len -
+    @typeInfo(MiddlePanelId).@"enum".field_names.len;
 
 /// One semantic UI surface the player can open/close - the event
 /// vocabulary for `toggle_ui_surface`. The enum names the surface;
@@ -3435,6 +3438,16 @@ pub const UiSurfaceId = enum {
     gear_upgrading,
     world_map,
     full_combat_log,
+    /// The mission-complete announcement: a stack member for z-order +
+    /// Escape, but NOT a pause surface (its trigger fires inside the
+    /// completing cascade - the anyOverlayOpen exclusion) and NOT a
+    /// toggle surface (the bit pairs with `last_completed_mission` via
+    /// `setCompletedMission`; dismissal is `dismiss_mission_complete`).
+    mission_complete,
+    /// The defeat announcement: same class - the bit is set by the
+    /// player-death handler, dismissal routes to `player_exit_mission`
+    /// (Escape) / the overlay's own restart + exit actions.
+    mission_fail,
 };
 
 /// Class-1 semantic surface state: WHAT UI is open. Lives on GameState
@@ -3499,6 +3512,15 @@ pub const UiSurfaceState = struct {
             .campaign_browser,
             .world_map,
             .full_combat_log,
+            // The mission surfaces ride the stack, so their toggle arm is
+            // the same raise-or-close shape - but no live path ever fires
+            // it (they open from the completion/death cascades and close
+            // via their own orchestrators; surfaceToggleLegal rejects the
+            // toggle on every screen). The arm exists so the switch stays
+            // exhaustive and the membership classification is decided at
+            // the one site the compiler forces.
+            .mission_complete,
+            .mission_fail,
             => {
                 if (self.isOverlaySurfaceOpen(surface)) {
                     if (self.topOverlay() == surface) {
@@ -3533,6 +3555,8 @@ pub const UiSurfaceState = struct {
             .campaign_browser,
             .world_map,
             .full_combat_log,
+            .mission_complete,
+            .mission_fail,
             => self.isOverlaySurfaceOpen(surface),
             .inventory => self.isMiddlePanelOpen(.inventory),
             .gear => self.isMiddlePanelOpen(.gear),
@@ -3542,13 +3566,22 @@ pub const UiSurfaceState = struct {
         };
     }
 
-    /// Whether ANY full-screen overlay is open - the pause test (every
-    /// fullscreen overlay pauses the game exactly like the options menu;
-    /// see DESIGN → UI Framework → Modal overlays). The open overlays
-    /// occupy a contiguous prefix of the stack (the close-compaction
-    /// invariant), so slot 0 is the whole test.
+    /// Whether any PAUSE-GATING full-screen overlay is open - the pause
+    /// test (every fullscreen overlay pauses the game exactly like the
+    /// options menu; see DESIGN → UI Framework → Modal overlays). The
+    /// mission overlays are DELIBERATELY EXEMPT: their triggers fire
+    /// inside a handler (the completing cascade, the death), where the
+    /// pause gate would strand the remaining cascade events - the
+    /// stuck-drain rule, DESIGN → Architecture → Modal overlays. They
+    /// still ride the stack (z-order + Escape); only the gate reads
+    /// through this exemption.
     pub fn anyOverlayOpen(self: *const UiSurfaceState) bool {
-        return self.open_overlays[0] != null;
+        for (self.open_overlays) |maybe_surface| {
+            const surface = maybe_surface orelse continue;
+            if (surface == .mission_complete or surface == .mission_fail) continue;
+            return true;
+        }
+        return false;
     }
 
     /// The right-click inspect verb: a non-null index OPENS (or retargets)
@@ -3570,8 +3603,10 @@ pub const UiSurfaceState = struct {
     /// below routes every surface through here so the compiler owns that
     /// list too (a hand-written `x_open = false` list would silently miss
     /// the newest surface - exactly how the tips surface almost survived
-    /// screen transitions).
-    fn close(self: *UiSurfaceState, surface: UiSurfaceId) void {
+    /// screen transitions). `pub` for the mission-overlay pairing
+    /// (`setCompletedMission`) + the death handler's fail-overlay open's
+    /// counterpart sites; everything else goes through `toggle`/`closeAll`.
+    pub fn close(self: *UiSurfaceState, surface: UiSurfaceId) void {
         switch (surface) {
             .options_menu,
             .settings,
@@ -3582,6 +3617,8 @@ pub const UiSurfaceState = struct {
             .campaign_browser,
             .world_map,
             .full_combat_log,
+            .mission_complete,
+            .mission_fail,
             => self.closeOverlaySurface(surface),
             .inventory => self.closeMiddlePanel(.inventory),
             .gear => self.closeMiddlePanel(.gear),
@@ -3817,7 +3854,7 @@ test "UiSurfaceState.toggle routes each surface id to its representation" {
     // before the combat log, so it sits below it.
     try std.testing.expectEqualSlices(
         ?UiSurfaceId,
-        &.{ .options_menu, .settings, .load_save_menu, .credits, .editor_browser, .campaign_browser, .world_map, .full_combat_log, null },
+        &.{ .options_menu, .settings, .load_save_menu, .credits, .editor_browser, .campaign_browser, .world_map, .full_combat_log, null, null, null },
         &surfaces.open_overlays,
     );
     // isSurfaceOpen agrees with every route above.
@@ -3832,7 +3869,7 @@ test "UiSurfaceState.toggle routes each surface id to its representation" {
     try std.testing.expect(!surfaces.isSurfaceOpen(.full_combat_log));
     try std.testing.expectEqualSlices(
         ?UiSurfaceId,
-        &.{ .options_menu, .settings, .load_save_menu, .credits, .editor_browser, .campaign_browser, .world_map, null, null },
+        &.{ .options_menu, .settings, .load_save_menu, .credits, .editor_browser, .campaign_browser, .world_map, null, null, null, null },
         &surfaces.open_overlays,
     );
 }
@@ -3848,21 +3885,21 @@ test "UiSurfaceState: closing a mid-stack overlay compacts; reopen lands on top"
     surfaces.closeOverlaySurface(.options_menu);
     try std.testing.expectEqualSlices(
         ?UiSurfaceId,
-        &.{ .tips, .world_map, null, null, null, null, null, null, null },
+        &.{ .tips, .world_map, null, null, null, null, null, null, null, null, null },
         &surfaces.open_overlays,
     );
     // Reopening does not recall the old slot - it lands on top.
     surfaces.openSurface(.options_menu);
     try std.testing.expectEqualSlices(
         ?UiSurfaceId,
-        &.{ .tips, .world_map, .options_menu, null, null, null, null, null, null },
+        &.{ .tips, .world_map, .options_menu, null, null, null, null, null, null, null, null },
         &surfaces.open_overlays,
     );
     // openSurface on an already-open surface is a no-op (no duplicate).
     surfaces.openSurface(.tips);
     try std.testing.expectEqualSlices(
         ?UiSurfaceId,
-        &.{ .tips, .world_map, .options_menu, null, null, null, null, null, null },
+        &.{ .tips, .world_map, .options_menu, null, null, null, null, null, null, null, null },
         &surfaces.open_overlays,
     );
 }
@@ -3880,7 +3917,7 @@ test "UiSurfaceState.toggle raises a covered overlay instead of closing it" {
     try std.testing.expect(surfaces.isSurfaceOpen(.tips));
     try std.testing.expectEqualSlices(
         ?UiSurfaceId,
-        &.{ .tips, .world_map, null, null, null, null, null, null, null },
+        &.{ .tips, .world_map, null, null, null, null, null, null, null, null, null },
         &surfaces.open_overlays,
     );
 
@@ -3890,7 +3927,7 @@ test "UiSurfaceState.toggle raises a covered overlay instead of closing it" {
     try std.testing.expect(!surfaces.isSurfaceOpen(.world_map));
     try std.testing.expectEqualSlices(
         ?UiSurfaceId,
-        &.{ .tips, null, null, null, null, null, null, null, null },
+        &.{ .tips, null, null, null, null, null, null, null, null, null, null },
         &surfaces.open_overlays,
     );
 
@@ -3901,7 +3938,7 @@ test "UiSurfaceState.toggle raises a covered overlay instead of closing it" {
     surfaces.toggle(.options_menu);
     try std.testing.expectEqualSlices(
         ?UiSurfaceId,
-        &.{ .tips, .settings, .options_menu, null, null, null, null, null, null },
+        &.{ .tips, .settings, .options_menu, null, null, null, null, null, null, null, null },
         &surfaces.open_overlays,
     );
 

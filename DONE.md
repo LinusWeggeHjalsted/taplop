@@ -425,6 +425,7 @@ working rules).
 - [Playtest feedback 6: the panned camera stays put (pan persistence)](#playtest-feedback-6-the-panned-camera-stays-put-pan-persistence)
 - [Playtest feedback 4: the health-globe tooltip names its stat](#playtest-feedback-4-the-health-globe-tooltip-names-its-stat)
 - [Playtest feedback 3: Escape closes the middle panels, rightmost-first](#playtest-feedback-3-escape-closes-the-middle-panels-rightmost-first)
+- [Playtest feedback 2: the mission announcements are ordinary overlay-stack members](#playtest-feedback-2-the-mission-announcements-are-ordinary-overlay-stack-members)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24671,3 +24672,55 @@ value is not comptime-evaluable for @field - the MiddlePanelId ->
 UiSurfaceId mapping needs `switch (panel) { inline else => |tag|
 @field(...) }` (per-arm comptime tags), the same shape the generated
 lookups use elsewhere.
+
+## Playtest feedback 2: the mission announcements are ordinary overlay-stack members
+
+The report: the tips window could not sit over the mission complete /
+defeat screens - both were emitted fixed ABOVE the overlay stack, so tips
+opened from the (always-clickable) top bar rendered beneath them, invisible
+and unclickable. Settled with the author as full membership (option b over
+the minimal emission-order reorder): the announcements join
+`open_overlays` like every other overlay - they land on top at the moment
+they appear, and anything opened after (tips, settings, ...) draws above
+them and Escape pops in reverse open order.
+
+The load-bearing subtlety (DESIGN → Architecture → Modal overlays rule 1,
+the stuck-drain trap): their triggers fire INSIDE a handler - start_hub
+sets the payload (then pushes build_player_from_data onto the stack!), the
+death handler opens the fail slot mid-cascade. Joining anyOverlayOpen
+(the update gate) would strand those follow-on events. So the mission
+surfaces are stack members EXEMPT from the pause gate: anyOverlayOpen
+skips them by classification; the z-order census + escape chain read the
+slots directly. Every other anyOverlayOpen consumer (anim clock, console
+wait-idle, anytime-input gate) keeps today's behavior by construction.
+
+Mechanics:
+- UiSurfaceId gains mission_complete + mission_fail; max_open_overlays is
+  now DERIVED (enum fields minus middle-panel fields - the hand-maintained
+  9 was exactly the drift the machine-derived rule warns about).
+- The complete slot pairs with the payload at every write site via
+  GameState.setCompletedMission (start_hub, end_validation, start_mission
+  retire, the dismiss handler); the one ordering wrinkle: end_validation's
+  restore runs transitionScreen AFTER the payload set, whose closeAll
+  wipes the slot - the re-open after the transition carries its own
+  comment (the helper doc's stated exception).
+- The fail slot is opened by the death handler (player entity 0), inside
+  the recorded death event - old session logs replay fine (no new events,
+  no schema change).
+- The view arms belt on the payload / the dead player (the belt and slot
+  are written together; playerDead stays as the view-internal belt), and
+  the fixed-order emission blocks are deleted.
+- surfaceToggleLegal rejects the mission toggles on every screen (no live
+  path can produce them; the census tail pins it), and the escape pop rung
+  routes their pops to their own orchestrators (dismiss_mission_complete /
+  player_exit_mission) - never a bare toggle; rungs 1-2 of the old ladder
+  are deleted (the pop rung absorbs them).
+
+Verification: 1126 tests (z-order census re-pinned for membership, the
+new tips-over-announcement z-order test - the reported pain itself,
+setCompletedMission pairing, the death-handler slot + pause exemption,
+escape pops for both announcements) + a console-driven runtime session:
+skip_level through the campaign's first mission → the overlay's slot is
+open_overlays[0] in the hub → the top-bar `?` opens tips as slot [1]
+ABOVE it → Escape pops tips first, then dismisses the announcement
+(payload null, stack empty).

@@ -1217,16 +1217,22 @@ pub fn handleSubLevelEvent(
             const entity = level.entities[death.entity_index];
 
             // Player death: play the defeat sound (side effect,
-            // gated !replaying) and freeze-frame - clear the
-            // remaining event stack so the rest of the enemy turn
-            // doesn't play out. The mission_fail overlay is derived
-            // from player health in view(), so no flag or event is
-            // needed. Undo reconstructs to the pre-enemy-turn idle
-            // point; the death state is derivable from health == 0.
-            // See DESIGN → Architecture.
+            // gated !replaying), freeze-frame - clear the remaining event
+            // stack so the rest of the enemy turn doesn't play out - and
+            // open the mission_fail overlay's stack slot. The slot is set
+            // HERE (inside the recorded death event, so replay reproduces
+            // it); the view still belts the render on the dead player, so
+            // bit and belt cannot disagree. The overlay is a stack member
+            // EXEMPT from the pause gate (anyOverlayOpen) - this handler
+            // runs mid-cascade, where the gate would strand events (the
+            // stuck-drain rule, DESIGN → Architecture → Modal overlays).
+            // Undo reconstructs to the pre-enemy-turn idle point; the
+            // snapshot restore closes the slot with the rest of the
+            // surface state.
             if (death.entity_index == 0) {
                 if (!history.replaying) history.session.queueSound(history.backing_allocator, .defeat);
                 current.event_stack = &.{};
+                current.ui_surfaces.openSurface(.mission_fail);
                 return;
             }
 
