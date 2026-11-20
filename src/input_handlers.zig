@@ -1377,6 +1377,7 @@ const escape_excluded_surfaces = [_]types.UiSurfaceId{
     .gear,
     .skills,
     .entity_inspect,
+    .gear_upgrading,
 };
 
 /// Whether Escape deliberately ignores `surface` (the middle panels).

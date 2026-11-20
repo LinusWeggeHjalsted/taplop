@@ -637,7 +637,11 @@ fn computeTotalValue(item: Item) u32 {
     };
 }
 
-fn getSalvageDefinition(
+/// The salvage definition that prices `item` (weapons by their type, gear
+/// by kind). The ONE item→definition seam - consumed by the salvage-value
+/// computation and the upgrade price fns (upgrade cost splits across the
+/// same wallets salvaging yields - DESIGN → Gear Upgrading).
+pub fn getSalvageDefinition(
     item: Item,
     salvage_definitions: SalvageDefinitions,
 ) SalvageDefinition {

@@ -217,6 +217,7 @@ pub fn openMiddlePanel(history: *GameStateHistory, panel_id: types.MiddlePanelId
                 .gear => .gear,
                 .skills => .skills,
                 .entity_inspect => .entity_inspect,
+                .gear_upgrading => .gear_upgrading,
             },
         } },
         history.current_arena.allocator(),

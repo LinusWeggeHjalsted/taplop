@@ -19,6 +19,7 @@ const file_source_mod = @import("file_source.zig");
 const writers = @import("writers.zig");
 const loaders = @import("loaders.zig");
 const parser = @import("parser.zig");
+const upgrade = @import("upgrade.zig");
 const build_info = @import("build_info");
 
 const FileSource = file_source_mod.FileSource;
@@ -3076,6 +3077,9 @@ pub const GameStateHistory = struct {
                     .player_equip_to_gear => |equip| {
                         self.validateInventoryScreenAndSlot(equip.inventory_slot_index);
                     },
+                    .player_upgrade_item => |purchase| {
+                        self.validateUpgradeLegal(purchase);
+                    },
                     .player_unequip_from_gear => |unequip| {
                         self.validateInventoryScreenAndSlot(unequip.inventory_slot_index);
                     },
@@ -3130,6 +3134,42 @@ pub const GameStateHistory = struct {
             "replay validation: skill {s} not on bar or on cooldown",
             .{@tagName(skill_id)},
         ) catch "replay validation: skill not on bar or on cooldown";
+        self.rejectReplay(msg);
+        return;
+    }
+
+    /// A vendor purchase is legal when the vendor panel is open on the hub,
+    /// the referenced slot holds an item that carries the stat below its
+    /// max, and the wallets cover the rung's split cost. Every half is
+    /// read from the same sources the live panel + handler read (the
+    /// entity's slot, the price fns) - one price definition, so live and
+    /// replay cannot drift.
+    fn isUpgradeLegal(self: *GameStateHistory, purchase: events.UpgradePurchase) bool {
+        if (self.current_state.screen != .hub) return false;
+        if (!self.current_state.ui_surfaces.isMiddlePanelOpen(.gear_upgrading)) return false;
+        const hub = self.current_state.hub orelse return false;
+        const item: types.Item = switch (purchase.item) {
+            .gear => |gear_slot| types.gearSlotItem(&hub.player, gear_slot) orelse return false,
+            .inventory => |slot_index| blk: {
+                if (slot_index >= types.inventory_slot_count) return false;
+                break :blk hub.player.inventory.slots[slot_index] orelse return false;
+            },
+        };
+        const current_value = types.itemStatValue(item, purchase.stat) orelse return false;
+        if (current_value >= types.itemStatMax(purchase.stat)) return false;
+        const definition = functions.getSalvageDefinition(item, self.salvage_definitions);
+        const cost = upgrade.rungCostSplit(self.upgrade_model, purchase.stat, definition, current_value);
+        return upgrade.canAffordMaterials(self.current_state.player_data.materials, cost);
+    }
+
+    fn validateUpgradeLegal(self: *GameStateHistory, purchase: events.UpgradePurchase) void {
+        if (self.isUpgradeLegal(purchase)) return;
+        var buf: [128]u8 = undefined;
+        const msg = std.fmt.bufPrint(
+            &buf,
+            "replay validation: illegal upgrade purchase ({s} on {s})",
+            .{ @tagName(purchase.stat), @tagName(purchase.item) },
+        ) catch "replay validation: illegal upgrade purchase";
         self.rejectReplay(msg);
         return;
     }
@@ -3236,6 +3276,9 @@ pub const GameStateHistory = struct {
             .player_equip_to_gear,
             .player_unequip_from_gear,
             => surfaces.isMiddlePanelOpen(.inventory) and surfaces.isMiddlePanelOpen(.gear),
+            // A vendor purchase's trigger renders in the gear-upgrading
+            // panel (the upgrade buttons - DESIGN → Gear Upgrading).
+            .player_upgrade_item => surfaces.isMiddlePanelOpen(.gear_upgrading),
             // Drag-to-bar (a learned-skill cell → a bar slot): the source
             // renders in the skills panel; the bar always renders.
             .player_assign_utility_skill => surfaces.isMiddlePanelOpen(.skills),
@@ -3281,6 +3324,10 @@ pub const GameStateHistory = struct {
             .world_map,
             .full_combat_log,
             => screen == .level or screen == .hub,
+            // The vendor panel opens only by clicking the upgrade-vendor
+            // NPC (hub-only - no keybind, no button; DESIGN → Gear
+            // Upgrading → The surface).
+            .gear_upgrading => screen == .hub,
             // The inspect panel reads current_state.level (a live
             // inspected entity); the right-click gesture is level-only,
             // and the keyboard toggle on hub renders nothing - a hub
@@ -3908,6 +3955,17 @@ test "actionTriggerSurfaceOpen: the click/drag families need their panels" {
         &current,
         .{ .player_assign_utility_skill = .{ .skill_id = .heal, .slot_index = 4 } },
     ));
+
+    // The vendor panel: a purchase's trigger renders in it alone.
+    try std.testing.expect(!GameStateHistory.actionTriggerSurfaceOpen(
+        &current,
+        .{ .player_upgrade_item = .{ .item = .{ .gear = .main_hand }, .stat = .weapon_damage } },
+    ));
+    current.ui_surfaces.openMiddlePanel(.gear_upgrading);
+    try std.testing.expect(GameStateHistory.actionTriggerSurfaceOpen(
+        &current,
+        .{ .player_upgrade_item = .{ .item = .{ .gear = .main_hand }, .stat = .weapon_damage } },
+    ));
 }
 
 test "transitionScreen closes every UI surface" {
@@ -3928,7 +3986,7 @@ test "transitionScreen closes every UI surface" {
         .hub = null,
         .ui_surfaces = .{
             .open_overlays = .{ .options_menu, null, null, null, null, null, null, null, null },
-            .open_middle_panels = .{ .inventory, .skills, null, null },
+            .open_middle_panels = .{ .inventory, .skills, null, null, null },
             .inspected_entity_index = 3,
         },
     };
@@ -4440,4 +4498,68 @@ test "map acting legality: discovered-or-start (the backtrack rule)" {
         .hub_uuids = &.{"other-discovered"},
     }};
     try std.testing.expect(history.mapHubActingLegal("other", "other-discovered"));
+}
+
+test "isUpgradeLegal: the vendor purchase legality core" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = test_harness.Harness.init(backing.allocator());
+    var history = harness.newHistory(.{
+        .screen = .hub,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = .{ .player = .{
+            .main_hand_weapon = .{ .name = "sword", .weapon_type = .sword, .weapon_damage = 3 },
+        } },
+    });
+    const current = &history.current_state;
+
+    // The expected wallet demand, derived from the same price fns the
+    // legality reads (no pinned numbers).
+    const cost = upgrade.rungCostSplit(
+        history.upgrade_model,
+        .weapon_damage,
+        functions.getSalvageDefinition(
+            .{ .weapon = .{ .name = "sword", .weapon_type = .sword, .weapon_damage = 3 } },
+            history.salvage_definitions,
+        ),
+        3,
+    );
+
+    // Panel closed: illegal whatever the wallets hold.
+    current.player_data.materials = cost;
+    try std.testing.expect(!history.isUpgradeLegal(.{ .item = .{ .gear = .main_hand }, .stat = .weapon_damage }));
+
+    // Panel open + exactly the price: legal.
+    current.ui_surfaces.openMiddlePanel(.gear_upgrading);
+    try std.testing.expect(history.isUpgradeLegal(.{ .item = .{ .gear = .main_hand }, .stat = .weapon_damage }));
+
+    // A wallet one short of the split: illegal.
+    current.player_data.materials.subtract(.{ .metal = 1, .wood = 1, .leather = 1, .cloth = 1, .knowledge = 1 });
+    try std.testing.expect(!history.isUpgradeLegal(.{ .item = .{ .gear = .main_hand }, .stat = .weapon_damage }));
+
+    // Outside the hub screen: illegal (the vendor panel is hub-only).
+    current.player_data.materials = cost;
+    current.screen = .level;
+    try std.testing.expect(!history.isUpgradeLegal(.{ .item = .{ .gear = .main_hand }, .stat = .weapon_damage }));
+    current.screen = .hub;
+
+    // Empty slot, uncarried stat, maxed stat: illegal.
+    try std.testing.expect(!history.isUpgradeLegal(.{ .item = .{ .gear = .amulet }, .stat = .spell_damage }));
+    try std.testing.expect(!history.isUpgradeLegal(.{ .item = .{ .gear = .main_hand }, .stat = .health_bonus }));
+    current.hub.?.player.main_hand_weapon.?.weapon_damage = types.max_weapon_damage;
+    try std.testing.expect(!history.isUpgradeLegal(.{ .item = .{ .gear = .main_hand }, .stat = .weapon_damage }));
+    current.hub.?.player.main_hand_weapon.?.weapon_damage = 3;
+
+    // Inventory refs: in-range + affordable legal; out-of-range illegal.
+    current.hub.?.player.inventory.slots[2] = .{ .weapon = .{ .name = "carried", .weapon_type = .sword, .weapon_damage = 3 } };
+    current.player_data.materials.add(cost);
+    try std.testing.expect(history.isUpgradeLegal(.{ .item = .{ .inventory = 2 }, .stat = .weapon_damage }));
+    try std.testing.expect(!history.isUpgradeLegal(.{ .item = .{ .inventory = types.inventory_slot_count }, .stat = .weapon_damage }));
 }

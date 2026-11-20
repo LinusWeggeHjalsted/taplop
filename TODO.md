@@ -309,12 +309,6 @@ design pass, replacing the generated tail table - the α solve,
 drops-as-pre-bought-rungs, the vendor panel + display settles).
 Implementation underway; slices in dependency order:
 
-- [ ] events + legality + handler: `player_upgrade_item` (PlayerInputEvent
-      orchestrator + `validatePlayerAction` arm over a bool legality
-      helper, gated on the vendor panel being open) → `upgrade_item`
-      (PlayerEvent machinery; entity gear-slot/inventory mutation - the
-      equip/unequip convention, PlayerData syncs on save/transition -
-      + the wallet spend on `player_data.materials`), tests.
 - [ ] `interact_with_npc` wiring (the vendor NPCs are already authored -
       every shipped hub places a `gear_upgrader`): route on npc_type +
       push the panel toggle, re-wire the hub click site + drop the
@@ -643,8 +637,8 @@ Open:
   missing), the button base pair (`button_base_down`/`button_base_up` -
   renamed from the click placeholders), 44 skill layers
   (`sfx/skills/<id>_layer`), button layers (`sfx/buttons/<action>_layer` -
-  optional per action), 3 item layers (`sfx/items/equip_layer`,
-  `salvage_layer`, `learn_skill_layer`), the music stem set (re-export
+  optional per action), 4 item layers (`sfx/items/equip_layer`,
+  `salvage_layer`, `learn_skill_layer`, `upgrade_layer`), the music stem set (re-export
   `ambient` as the base of a sample-aligned stem set + as many
   `ambient_layer_N` as he writes), and the new one-shots (heal/stun/
   knockback/retreat/death/collision/level_complete/aggro). Current files are

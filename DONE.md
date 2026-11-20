@@ -410,6 +410,7 @@ working rules).
 - [The Polpat swap: the official campaign becomes authored, content-agnostic tests](#the-polpat-swap-the-official-campaign-becomes-authored-content-agnostic-tests)
 - [The surface-screen census (the validator-view mirror, machine-checked)](#the-surface-screen-census-the-validator-view-mirror-machine-checked)
 - [Gear upgrading: slice 1 - the wealth-gap price model + config threading](#gear-upgrading-slice-1---the-wealth-gap-price-model--config-threading)
+- [Gear upgrading: slice 2 - the purchase events + legality](#gear-upgrading-slice-2---the-purchase-events--legality)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24153,3 +24154,59 @@ this was found.
 Status note: `upgrade.zig`'s price fns have their consumers in the
 events/legality + panel slices that follow (TODO → Gear Upgrading);
 `starterStatValuesFromGear` is consumed by session_setup now.
+
+## Gear upgrading: slice 2 - the purchase events + legality
+
+The upgrade purchase lands as the equip/salvage family's newest pair:
+`player_upgrade_item` (PlayerInputEvent orchestrator) → `upgrade_item`
+(PlayerEvent machinery), both carrying `events.UpgradePurchase`
+(`{ item: types.UpgradeItemRef (a GearSlot or an inventory index),
+stat }`).
+
+- **Legality**: `isUpgradeLegal` + `validateUpgradeLegal` (the bool-core +
+  rejectReplay-wrapper convention, no-expectPanics) - the vendor panel
+  open ON THE HUB, the referenced slot holds an item carrying the stat
+  below its max, and the wallets cover `upgrade.rungCostSplit`. Every
+  half reads the same sources the panel + handler read (the entity's
+  slot, the price fns over the history-resident model), so live and
+  replay cannot drift. The `actionTriggerSurfaceOpen` gate maps the
+  orchestrator to the `.gear_upgrading` panel; `surfaceToggleLegal`
+  marks the surface hub-only.
+- **The machinery mutates the item ON THE PLAYER ENTITY** (the
+  equip/unequip convention - the author corrected the original design
+  wording, which had the direction backwards: gear/inventory are
+  entity-resident; the `build_player_from_data`/`build_data_from_player`
+  Super pair carries them, with `end_hub` syncing before the hub is
+  discarded). The wallet spend goes to `player_data.materials` via the
+  new saturating `Materials.subtract` - the salvage precedent (materials
+  are deliberately PlayerData-only, no entity field). Guards after the
+  sound cue follow the family's no-op discipline (empty slot, uncarried
+  stat, maxed, out-of-range index, unaffordable - a crafted-log belt).
+- **The surface vocabulary** (`UiSurfaceId`/`MiddlePanelId.gear_upgrading`,
+  `max_middle_panels` 4→5): the compiler-forced arms are the interesting
+  list - `toggle`/`isSurfaceOpen`/`close` on UiSurfaceState,
+  `escape_excluded_surfaces` (the comptime mirror list - middle panels
+  stay out of the Escape chain), the view's `middlePanelWidth` (returns
+  null: the panel builder lands with the panel slice, so an open panel
+  reserves no space yet) + `buildMiddlePanels` (unreachable while the
+  width is null), and the census's `reachable` switch (hub-only; no
+  probe entry - the surface has no toggle button, NPC-click opens it,
+  the full_combat_log precedent).
+- **Shared seams extracted**: `types.gearSlotItem` (the read-side moved
+  out of handlers/player.zig - one definition for the handlers, the
+  legality, and the panel builder to come; the write-side
+  set/clearGearSlot stays handler-private), `functions.getSalvageDefinition`
+  went pub (the one item→salvage-definition mapping behind both salvage
+  value and upgrade price), `types.UpgradeItemRef`.
+- **Sound**: `ItemActionSound.upgrade` - the sound report's enum-tag walk
+  picks up `sfx/items/upgrade_layer` automatically (the report IS the
+  shopping list).
+- **Tests** (1101 passing): five drains (gear-slot purchase with the
+  PlayerData-untouched + cue assertions; inventory purchase; the no-op
+  guards; the orchestrator), the `isUpgradeLegal` core covering every
+  legality half, the `actionTriggerSurfaceOpen` arm, and the full-strip
+  panel test REWORKED - with the capacity now equal to the panel-id
+  count, the old "a fifth panel id cannot be stored" scenario became
+  impossible, so the capacity guard is exercised through a hand-set
+  duplicate array (the close/compact/reopen half stays on a real
+  enum-derived strip).

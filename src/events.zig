@@ -10,7 +10,18 @@ const types = @import("types.zig");
 
 const Vector2 = types.Vector2;
 const SkillId = types.SkillId;
+/// One vendor purchase: the referenced item + the stat being raised (see
+/// DESIGN → Gear Upgrading → The surface). Shared by the
+/// `player_upgrade_item` orchestrator and the `upgrade_item` machinery so
+/// the two can't drift.
+pub const UpgradePurchase = struct {
+    item: UpgradeItemRef,
+    stat: ItemStatField,
+};
+
 const GearSlot = types.GearSlot;
+const ItemStatField = types.ItemStatField;
+const UpgradeItemRef = types.UpgradeItemRef;
 const Materials = types.Materials;
 const EffectId = types.EffectId;
 const DecorationLayer = types.DecorationLayer;
@@ -759,6 +770,13 @@ pub const PlayerEvent = union(enum) {
         gear_slot: GearSlot,
         inventory_slot_index: u32,
     },
+    // Spend the rung's cost from the wallets and raise `stat` by one on the
+    // referenced item ON THE PLAYER ENTITY (the equip/unequip convention -
+    // PlayerData's gear copy syncs on save/screen transition). The legality
+    // half (panel open, item exists, stat applicable, not maxed, affordable)
+    // lives in validatePlayerAction over isUpgradeLegal; the guards here are
+    // the no-op discipline for crafted logs. See DESIGN → Gear Upgrading.
+    upgrade_item: UpgradePurchase,
     // Assign a learned skill to a utility bar slot (0-4), overwriting whatever
     // was there. Skills come from the learned pool, so nothing is swapped back.
     equip_utility_skill: struct {
@@ -2060,6 +2078,12 @@ pub const PlayerInputEvent = union(enum) {
         gear_slot: GearSlot,
         inventory_slot_index: u32,
     },
+    // Buy one point of `stat` on the referenced item at the hub's upgrade
+    // vendor (a gear slot or an inventory slot). Handler pushes
+    // upgrade_item. The vendor panel supplies the trigger, so the
+    // legality gate (validatePlayerAction) requires it open - see
+    // DESIGN → Gear Upgrading → The surface.
+    player_upgrade_item: UpgradePurchase,
     // Drag learned skill → utility bar slot. Handler pushes
     // equip_utility_skill.
     player_assign_utility_skill: struct {

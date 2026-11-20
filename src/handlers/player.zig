@@ -11,6 +11,7 @@ const events = @import("../events.zig");
 const state = @import("../state.zig");
 const utility_skills = @import("../utility_skills.zig");
 const functions = @import("../functions.zig");
+const upgrade_mod = @import("../upgrade.zig");
 const event_push = @import("../event_push.zig");
 const shared = @import("shared.zig");
 
@@ -62,17 +63,7 @@ pub fn salvageRegionOccupiedSlots(
     return occupied.items;
 }
 
-fn gearSlotItem(player: *Entity, gear_slot: types.GearSlot) ?types.Item {
-    return switch (gear_slot) {
-        .main_hand => if (player.main_hand_weapon) |weapon| .{ .weapon = weapon } else null,
-        .off_hand => if (player.off_hand_weapon) |weapon| .{ .weapon = weapon } else null,
-        .amulet => if (player.amulet) |amulet| .{ .amulet = amulet } else null,
-        .coat => if (player.coat) |coat| .{ .coat = coat } else null,
-        .gloves => if (player.gloves) |gloves| .{ .gloves = gloves } else null,
-        .pants => if (player.pants) |pants| .{ .pants = pants } else null,
-        .boots => if (player.boots) |boots| .{ .boots = boots } else null,
-    };
-}
+const gearSlotItem = types.gearSlotItem;
 
 /// Whether `item` can go into `gear_slot`. Shared by the equip/unequip
 /// machinery here and the input-side drag no-op gate (input_gestures.zig)
@@ -374,6 +365,51 @@ pub fn handlePlayerEvent(
 
             // Remove the item from inventory
             slot.* = null;
+        },
+        .upgrade_item => |upgrade| {
+            const player = getPlayerEntity(current, 0);
+            const item: types.Item = switch (upgrade.item) {
+                .gear => |gear_slot| types.gearSlotItem(player, gear_slot) orelse return,
+                .inventory => |slot_index| blk: {
+                    if (slot_index >= types.inventory_slot_count) return;
+                    break :blk player.inventory.slots[slot_index] orelse return;
+                },
+            };
+            const current_value = types.itemStatValue(item, upgrade.stat) orelse return;
+            if (current_value >= types.itemStatMax(upgrade.stat)) return;
+
+            // The cost from the same price fns the legality + panel read
+            // (one price definition - the live/replay asymmetry guard).
+            // The affordability guard is the crafted-log belt: a recorded
+            // purchase was validated affordable at record time.
+            const definition = functions.getSalvageDefinition(item, history.salvage_definitions);
+            const cost = upgrade_mod.rungCostSplit(
+                history.upgrade_model,
+                upgrade.stat,
+                definition,
+                current_value,
+            );
+            if (!upgrade_mod.canAffordMaterials(current.player_data.materials, cost)) return;
+
+            // Sound after the guards: a no-op purchase (crafted logs; the
+            // live buttons only emit for purchasable rungs) must not click.
+            // Item-action cue - see the salvage_item arm.
+            if (!history.replaying) history.session.queueCue(history.backing_allocator, .{
+                .base = .item_base,
+                .layer = .{ .item = .upgrade },
+            });
+
+            // Spend, then mutate the item on the entity (PlayerData's gear
+            // copy syncs on save/screen transition - never here).
+            current.player_data.materials.subtract(cost);
+            const upgraded = types.itemWithStat(item, upgrade.stat, current_value + 1);
+            switch (upgrade.item) {
+                .gear => |gear_slot| {
+                    setGearSlot(player, gear_slot, upgraded);
+                    applyGearChangeSideEffects(current, gear_slot, allocator);
+                },
+                .inventory => |slot_index| player.inventory.slots[slot_index] = upgraded,
+            }
         },
         .equip_item => |equip| {
             const player = getPlayerEntity(current, 0);

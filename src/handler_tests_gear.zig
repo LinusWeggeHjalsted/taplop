@@ -865,3 +865,144 @@ test "handleDrag: re-assigning the skill already in the bar slot never fires" {
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     try testing.expectEqual(@as(?SkillId, .replenish), player(&history).equipped_utility_skills[0]);
 }
+
+// ───────────────────────── upgrade_item ─────────────────────────
+
+// The upgrade model rides the harness (real config: R, the frontier
+// anchors, the shipped α, and starter stats derived from new_player.txt -
+// weapons/spell 3, health 1, minors/speed 0), so the tests derive every
+// expected cost from the same price fns the handler reads (no pinned
+// numbers - content-agnostic by construction).
+const upgrade_mod = @import("upgrade.zig");
+
+test "upgrade_item: gear-slot purchase raises the stat on the entity and spends the wallets" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    player(&history).coat = .{ .name = "Upgradable Coat", .defense_bonus = 0, .health_bonus = 1 };
+
+    const cost = upgrade_mod.rungCostSplit(history.upgrade_model, .health_bonus, history.salvage_definitions.coat, 1);
+    var wallets = cost;
+    wallets.add(.{ .leather = 5, .cloth = 5 }); // comfortably above the price
+    const before = wallets;
+    history.current_state.player_data.materials = wallets;
+
+    pushAndRun(&history, .{ .upgrade_item = .{
+        .item = .{ .gear = .coat },
+        .stat = .health_bonus,
+    } });
+
+    // The entity's piece carries the new value; PlayerData's gear copy is
+    // untouched (it syncs from the entity on save/screen transition, never
+    // in the handler - the fixture never synced one in, so it stays null).
+    try testing.expectEqual(@as(u32, 2), player(&history).coat.?.health_bonus);
+    try testing.expectEqual(@as(?types.Coat, null), history.current_state.player_data.coat);
+    var expected = before;
+    expected.subtract(cost);
+    try testing.expectEqual(expected, history.current_state.player_data.materials);
+
+    // The item-action cue (item_base + the upgrade layer) queued once.
+    try testing.expectEqual(@as(usize, 1), history.session.pending_sounds.items.len);
+    const cue = history.session.pending_sounds.items[0];
+    try testing.expectEqual(types.SoundId.item_base, cue.base);
+    try testing.expect(cue.layer != null and cue.layer.? == .item);
+    try testing.expectEqual(types.ItemActionSound.upgrade, cue.layer.?.item);
+}
+
+test "upgrade_item: inventory purchase upgrades the carried item in place" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    const weapon: Weapon = .{ .name = "carried", .weapon_type = .sword, .weapon_damage = 3 };
+    player(&history).inventory.slots[5] = .{ .weapon = weapon };
+
+    const cost = upgrade_mod.rungCostSplit(
+        history.upgrade_model,
+        .weapon_damage,
+        functions.getSalvageDefinition(.{ .weapon = weapon }, history.salvage_definitions),
+        3,
+    );
+    var wallets = cost;
+    wallets.add(.{ .wood = 50, .metal = 50 });
+    const before = wallets;
+    history.current_state.player_data.materials = wallets;
+
+    pushAndRun(&history, .{ .upgrade_item = .{
+        .item = .{ .inventory = 5 },
+        .stat = .weapon_damage,
+    } });
+
+    try testing.expectEqual(@as(u32, 4), player(&history).inventory.slots[5].?.weapon.weapon_damage);
+    var expected = before;
+    expected.subtract(cost);
+    try testing.expectEqual(expected, history.current_state.player_data.materials);
+}
+
+test "upgrade_item: no-op guards - empty slot, uncarried stat, maxed stat, unaffordable" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    player(&history).coat = .{ .name = "coat", .defense_bonus = 0, .health_bonus = 1 };
+    history.current_state.player_data.materials = .{ .leather = 500, .cloth = 500 };
+    const before = history.current_state.player_data.materials;
+
+    // Empty gear slot (no amulet).
+    pushAndRun(&history, .{ .upgrade_item = .{ .item = .{ .gear = .amulet }, .stat = .spell_damage } });
+    // Stat the kind doesn't carry (a coat has no weapon_damage).
+    pushAndRun(&history, .{ .upgrade_item = .{ .item = .{ .gear = .coat }, .stat = .weapon_damage } });
+    // Maxed stat.
+    player(&history).boots = .{ .name = "boots", .speed_bonus = types.max_boots_speed, .health_bonus = 1 };
+    pushAndRun(&history, .{ .upgrade_item = .{ .item = .{ .gear = .boots }, .stat = .speed_bonus } });
+    // Out-of-range inventory slot.
+    pushAndRun(&history, .{ .upgrade_item = .{ .item = .{ .inventory = types.inventory_slot_count }, .stat = .weapon_damage } });
+
+    // Every guard fired before the cue: no spend, no mutation, no sound.
+    try testing.expectEqual(before, history.current_state.player_data.materials);
+    try testing.expectEqual(@as(u32, 1), player(&history).coat.?.health_bonus);
+    try testing.expectEqual(@as(usize, 0), history.session.pending_sounds.items.len);
+
+    // Unaffordable: the wallets miss the rung's split by one wallet.
+    player(&history).main_hand_weapon = .{ .name = "sword", .weapon_type = .sword, .weapon_damage = 3 };
+    const cost = upgrade_mod.rungCostSplit(
+        history.upgrade_model,
+        .weapon_damage,
+        functions.getSalvageDefinition(.{ .weapon = .{ .name = "sword", .weapon_type = .sword, .weapon_damage = 3 } }, history.salvage_definitions),
+        3,
+    );
+    var short = cost;
+    if (cost.metal > 0) short.metal -= 1 else short.wood -= 1;
+    history.current_state.player_data.materials = short;
+    pushAndRun(&history, .{ .upgrade_item = .{ .item = .{ .gear = .main_hand }, .stat = .weapon_damage } });
+    try testing.expectEqual(@as(u32, 3), player(&history).main_hand_weapon.?.weapon_damage);
+    try testing.expectEqual(short, history.current_state.player_data.materials);
+}
+
+test "player_upgrade_item: the orchestrator pushes the machinery" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    player(&history).main_hand_weapon = .{ .name = "sword", .weapon_type = .sword, .weapon_damage = 3 };
+    const cost = upgrade_mod.rungCostSplit(
+        history.upgrade_model,
+        .weapon_damage,
+        functions.getSalvageDefinition(.{ .weapon = .{ .name = "sword", .weapon_type = .sword, .weapon_damage = 3 } }, history.salvage_definitions),
+        3,
+    );
+    var wallets = cost;
+    wallets.add(.{ .metal = 50, .wood = 50 });
+    history.current_state.player_data.materials = wallets;
+
+    pushInputAndRun(&history, .{ .player_upgrade_item = .{
+        .item = .{ .gear = .main_hand },
+        .stat = .weapon_damage,
+    } });
+
+    try testing.expectEqual(@as(u32, 4), player(&history).main_hand_weapon.?.weapon_damage);
+    var expected = wallets;
+    expected.subtract(cost);
+    try testing.expectEqual(expected, history.current_state.player_data.materials);
+}

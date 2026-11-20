@@ -1771,6 +1771,12 @@ pub fn handlePlayerInputEvent(
                 .inventory_slot_index = unequip.inventory_slot_index,
             } } }}, allocator);
         },
+        .player_upgrade_item => |purchase| {
+            // The legality (panel open, item carries the stat, not maxed,
+            // affordable) is validated at record time; the machinery
+            // re-runs its own no-op guards.
+            pushEvents(current, &.{.{ .player_event = .{ .upgrade_item = purchase } }}, allocator);
+        },
         .player_swap_inventory_items => |swap| {
             pushEvents(current, &.{.{ .player_event = .{ .swap_inventory_items = .{
                 .slot_a_index = swap.slot_a_index,

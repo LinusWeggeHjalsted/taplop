@@ -59,6 +59,7 @@ pub const ItemActionSound = enum {
     equip,
     salvage,
     learn_skill,
+    upgrade,
 };
 
 /// The specific half of a layered cue (the LAYER, resolved to a file by
@@ -2106,6 +2107,14 @@ pub const GearSlot = enum {
     boots,
 };
 
+/// An item targeted by a vendor-panel purchase: an equipped gear slot or
+/// an inventory slot index. The upgrade events' item reference (see
+/// DESIGN → Gear Upgrading → The surface).
+pub const UpgradeItemRef = union(enum) {
+    gear: GearSlot,
+    inventory: u32,
+};
+
 /// The slot's display name (the inspector's entry labels, and the "New X"
 /// default item names). pub: shared by the ui builder + the input handlers'
 /// default-item construction.
@@ -2822,6 +2831,18 @@ pub const Materials = struct {
         self.cloth +|= other.cloth;
         self.knowledge +|= other.knowledge;
     }
+
+    /// Saturating subtract (spends clamp at zero rather than wrapping) -
+    /// the upgrade purchase's wallet spend. Purchases are validated
+    /// affordable before recording, so the clamp is a crafted-log belt,
+    /// not a live path.
+    pub fn subtract(self: *Materials, other: Materials) void {
+        self.wood -|= other.wood;
+        self.metal -|= other.metal;
+        self.leather -|= other.leather;
+        self.cloth -|= other.cloth;
+        self.knowledge -|= other.knowledge;
+    }
 };
 
 test "Materials.add saturates at u32 max" {
@@ -2836,6 +2857,22 @@ test "Materials.add saturates at u32 max" {
     try std.testing.expectEqual(@as(u32, 3), materials.leather);
     try std.testing.expectEqual(@as(u32, 0), materials.cloth);
     try std.testing.expectEqual(@as(u32, 0), materials.knowledge);
+}
+
+/// The item equipped in `gear_slot` on the entity, or null when the slot
+/// is empty. The ONE read-side definition of "what sits in this slot" -
+/// shared by the equip/unequip machinery, the upgrade legality + handler,
+/// and the panel builders (the write-side stays in the handlers).
+pub fn gearSlotItem(player: *const Entity, gear_slot: GearSlot) ?Item {
+    return switch (gear_slot) {
+        .main_hand => if (player.main_hand_weapon) |weapon| .{ .weapon = weapon } else null,
+        .off_hand => if (player.off_hand_weapon) |weapon| .{ .weapon = weapon } else null,
+        .amulet => if (player.amulet) |amulet| .{ .amulet = amulet } else null,
+        .coat => if (player.coat) |coat| .{ .coat = coat } else null,
+        .gloves => if (player.gloves) |gloves| .{ .gloves = gloves } else null,
+        .pants => if (player.pants) |pants| .{ .pants = pants } else null,
+        .boots => if (player.boots) |boots| .{ .boots = boots } else null,
+    };
 }
 
 pub const SalvageSplit = struct {
@@ -3318,9 +3355,10 @@ pub const MiddlePanelId = enum {
     gear,
     skills,
     entity_inspect,
+    gear_upgrading,
 };
 
-pub const max_middle_panels: usize = 4;
+pub const max_middle_panels: usize = 5;
 
 /// Capacity of the overlay stack below: exactly the stackable surface
 /// count (every modal in `UiSurfaceId` minus the middle panels), so the
@@ -3344,6 +3382,7 @@ pub const UiSurfaceId = enum {
     gear,
     skills,
     entity_inspect,
+    gear_upgrading,
     world_map,
     full_combat_log,
 };
@@ -3425,6 +3464,7 @@ pub const UiSurfaceState = struct {
             .inventory => self.toggleMiddlePanel(.inventory),
             .gear => self.toggleMiddlePanel(.gear),
             .skills => self.toggleMiddlePanel(.skills),
+            .gear_upgrading => self.toggleMiddlePanel(.gear_upgrading),
             .entity_inspect => {
                 self.toggleMiddlePanel(.entity_inspect);
                 self.inspected_entity_index = null;
@@ -3447,6 +3487,7 @@ pub const UiSurfaceState = struct {
             .inventory => self.isMiddlePanelOpen(.inventory),
             .gear => self.isMiddlePanelOpen(.gear),
             .skills => self.isMiddlePanelOpen(.skills),
+            .gear_upgrading => self.isMiddlePanelOpen(.gear_upgrading),
             .entity_inspect => self.isMiddlePanelOpen(.entity_inspect),
         };
     }
@@ -3495,6 +3536,7 @@ pub const UiSurfaceState = struct {
             .inventory => self.closeMiddlePanel(.inventory),
             .gear => self.closeMiddlePanel(.gear),
             .skills => self.closeMiddlePanel(.skills),
+            .gear_upgrading => self.closeMiddlePanel(.gear_upgrading),
             .entity_inspect => {
                 self.closeMiddlePanel(.entity_inspect);
                 self.inspected_entity_index = null;
@@ -3639,60 +3681,66 @@ test "UiSurfaceState.toggleMiddlePanel: open order is display order; reopen land
     surfaces.toggleMiddlePanel(.inventory);
     surfaces.toggleMiddlePanel(.skills);
     try std.testing.expectEqual(
-        Panels{ .inventory, .skills, null, null },
+        Panels{ .inventory, .skills, null, null, null },
         surfaces.open_middle_panels,
     );
 
     // Closing a middle panel compacts the rest (contiguous prefix).
     surfaces.toggleMiddlePanel(.inventory);
     try std.testing.expectEqual(
-        Panels{ .skills, null, null, null },
+        Panels{ .skills, null, null, null, null },
         surfaces.open_middle_panels,
     );
 
     // Reopening appends rightmost - it does not recall its pre-close slot.
     surfaces.toggleMiddlePanel(.inventory);
     try std.testing.expectEqual(
-        Panels{ .skills, .inventory, null, null },
+        Panels{ .skills, .inventory, null, null, null },
         surfaces.open_middle_panels,
     );
 
     // Closing the rightmost panel leaves the prefix intact.
     surfaces.toggleMiddlePanel(.inventory);
     try std.testing.expectEqual(
-        Panels{ .skills, null, null, null },
+        Panels{ .skills, null, null, null, null },
         surfaces.open_middle_panels,
     );
     surfaces.toggleMiddlePanel(.skills);
     try std.testing.expectEqual(
-        Panels{ null, null, null, null },
+        Panels{ null, null, null, null, null },
         surfaces.open_middle_panels,
     );
 }
 
-test "UiSurfaceState.toggleMiddlePanel: a full panel strip ignores a new open" {
+test "UiSurfaceState.toggleMiddlePanel: a full panel strip closes, compacts, and reopens" {
     const Panels = [max_middle_panels]?MiddlePanelId;
     var surfaces = UiSurfaceState{};
-    for ([_]MiddlePanelId{ .inventory, .gear, .skills, .entity_inspect }) |panel_id| {
-        surfaces.toggleMiddlePanel(panel_id);
+
+    // The capacity guard: a full strip ignores a new open. The capacity
+    // equals the id count, so every real panel id FITS the strip - the
+    // guard is exercised through a hand-set array (duplicates in the raw
+    // slots; live toggles keep the strip unique).
+    surfaces.open_middle_panels = .{ .inventory, .inventory, .gear, .gear, .skills };
+    surfaces.openMiddlePanel(.entity_inspect);
+    try std.testing.expectEqual(
+        Panels{ .inventory, .inventory, .gear, .gear, .skills },
+        surfaces.open_middle_panels,
+    );
+
+    // A full strip of distinct ids (derived from the enum) still closes,
+    // compacts, and reopens into the freed tail slot.
+    surfaces = .{};
+    inline for (@typeInfo(MiddlePanelId).@"enum".field_names) |field_name| {
+        surfaces.toggleMiddlePanel(@field(MiddlePanelId, field_name));
     }
-    // All four are open - a fifth panel id cannot be stored, so this
-    // close-then-reopen pair must not clobber anything.
     surfaces.toggleMiddlePanel(.inventory);
     try std.testing.expectEqual(
-        Panels{ .gear, .skills, .entity_inspect, null },
+        Panels{ .gear, .skills, .entity_inspect, .gear_upgrading, null },
         surfaces.open_middle_panels,
     );
     surfaces.toggleMiddlePanel(.inventory);
     try std.testing.expectEqual(
-        Panels{ .gear, .skills, .entity_inspect, .inventory },
-        surfaces.open_middle_panels,
-    );
-    // The strip is full again; toggling a panel that is already open still
-    // closes it, and the freed slot is usable.
-    surfaces.toggleMiddlePanel(.entity_inspect);
-    try std.testing.expectEqual(
-        Panels{ .gear, .skills, .inventory, null },
+        Panels{ .gear, .skills, .entity_inspect, .gear_upgrading, .inventory },
         surfaces.open_middle_panels,
     );
 }
@@ -3712,7 +3760,7 @@ test "UiSurfaceState.toggle routes each surface id to its representation" {
     try std.testing.expectEqual(@as(?u32, null), surfaces.inspected_entity_index);
     try std.testing.expectEqualSlices(
         ?MiddlePanelId,
-        &.{ .inventory, .gear, null, null },
+        &.{ .inventory, .gear, null, null, null },
         &surfaces.open_middle_panels,
     );
     // Slot order IS open order (bottom-first); the world map opened
@@ -3836,7 +3884,7 @@ test "UiSurfaceState.inspectEntity opens, retargets, and closes" {
     try std.testing.expectEqual(@as(?u32, 4), surfaces.inspected_entity_index);
     try std.testing.expectEqualSlices(
         ?MiddlePanelId,
-        &.{ .entity_inspect, null, null, null },
+        &.{ .entity_inspect, null, null, null, null },
         &surfaces.open_middle_panels,
     );
     // Close.

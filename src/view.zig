@@ -963,6 +963,7 @@ pub fn view(
             .inventory,
             .gear,
             .skills,
+            .gear_upgrading,
             .entity_inspect,
             => @panic("middle panel in the overlay stack"),
         }
@@ -1244,6 +1245,10 @@ fn middlePanelWidth(
             if (level.entities[entity_index].current_health == 0) break :blk null;
             break :blk ui.entity_inspect_panel_width;
         },
+        // The vendor panel's builder lands with the panel slice (TODO →
+        // Gear Upgrading): a null width means an open panel reserves no
+        // space, and the build arm below is never reached.
+        .gear_upgrading => null,
     };
 }
 
@@ -1377,6 +1382,9 @@ fn buildMiddlePanels(
                     weapon_type_definitions,
                 );
             },
+            // Unreachable while middlePanelWidth returns null for this
+            // panel; the builder lands with the panel slice.
+            .gear_upgrading => {},
         }
         cursor_x += panel_width + ui.ui_gap;
     }
@@ -5244,7 +5252,7 @@ test "middle panels occupied width: gaps only between rendered panels" {
     };
 
     // Two rendered panels: one ui_gap between them.
-    level_state.ui_surfaces.open_middle_panels = .{ .inventory, .skills, null, null };
+    level_state.ui_surfaces.open_middle_panels = .{ .inventory, .skills, null, null, null };
     try std.testing.expectEqual(
         ui.inventory_panel_width + ui.ui_gap + ui.skills_panel_width,
         middlePanelsOccupiedWidth(&level_state, font_metrics),
@@ -5253,7 +5261,7 @@ test "middle panels occupied width: gaps only between rendered panels" {
     // A dead inspect target renders nothing, so it contributes neither
     // width nor a gap on either side.
     level_state.ui_surfaces.inspected_entity_index = 1;
-    level_state.ui_surfaces.open_middle_panels = .{ .inventory, .entity_inspect, .skills, null };
+    level_state.ui_surfaces.open_middle_panels = .{ .inventory, .entity_inspect, .skills, null, null };
     try std.testing.expectEqual(
         ui.inventory_panel_width + ui.ui_gap + ui.skills_panel_width,
         middlePanelsOccupiedWidth(&level_state, font_metrics),
@@ -5292,7 +5300,7 @@ test "camera view region: bars bound vertically, panels bound horizontally" {
     }, full);
 
     // Panels open: the region starts at the occupied right edge.
-    level_state.ui_surfaces.open_middle_panels = .{ .inventory, null, null, null };
+    level_state.ui_surfaces.open_middle_panels = .{ .inventory, null, null, null, null };
     const occupied = cameraViewRegion(&level_state, font_metrics, 1.0).?;
     try std.testing.expectEqual(ui.inventory_panel_width, occupied.x);
     try std.testing.expectEqual(types.reference_width - ui.inventory_panel_width, occupied.width);
@@ -6880,6 +6888,10 @@ test "surface-screen census: surfaceToggleLegal mirrors the view's emission cont
                     else => false,
                 },
                 .campaign_browser, .world_map, .inventory, .gear, .skills, .full_combat_log => screen == .level or screen == .hub,
+                // The vendor panel opens only from the upgrade-vendor NPC
+                // (hub-only) and renders no toggle button of its own - no
+                // probe entry, the full_combat_log precedent.
+                .gear_upgrading => screen == .hub,
                 // The inspect panel reads current_state.level (a live
                 // inspected entity); the right-click gesture is level-only,
                 // and the keyboard toggle on hub renders nothing.
