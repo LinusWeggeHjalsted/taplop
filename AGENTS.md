@@ -391,10 +391,14 @@ WEB COMPILES ≠ RUNS). `zig build` first.
   report, then click (the 4-5c lesson: a restructure moved the "+" cell).
 - A drive that can trigger a popup must still EXIT - check the exit
   code, not just the output (the hung-run lesson).
-- Piped runs write REAL FILES into `~/.local/share/taplop/` (the persistent
-  dir; `$XDG_DATA_HOME/taplop` when set).
-  Clean up your own drive artifacts only (check mtime - the author's
-  campaigns live there too).
+- Piped runs write REAL FILES into the persistent dir
+  (`~/.local/share/taplop/`; `$XDG_DATA_HOME/taplop` when set) - the
+  author's PERSONAL files live there. ALWAYS drive with a scratch dir
+  (`--data-dir /tmp/taplop-drive`, or `$TAPLOP_DATA`) so drives never
+  touch the real one (the hard way: a cleanup glob after a
+  personal-dir drive once deleted the author's saves). Never
+  broad-glob the real dir - check mtimes before removing anything
+  there.
 
 ### The vocabulary (agent-relevant semantics)
 
