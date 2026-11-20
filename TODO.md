@@ -209,20 +209,6 @@ its fix lands (DONE.md is the record).
       pop_overlay_stack rung absorbs escape rungs 1-2; the census +
       derived escape test extend automatically). OPEN: which; also
       whether the anim clock should pause behind them either way.
-- **Escape should close open middle panels (from the right) before
-      opening the options menu.** The exclusion is deliberate +
-      comptime-pinned (`escape_excluded_surfaces` mirrors the
-      MiddlePanelId set; DESIGN → Input → Escape overlay chain says
-      "revisit if playtesting asks" - playtest asked). Fix shape: a new
-      rung after `pop_overlay_stack` that closes the RIGHTMOST open
-      panel (open order = display order, so rightmost = most recently
-      opened - "from the right" per the report) via the same recorded
-      `player_toggle_ui_surface` push the panel's own toggle key
-      fires; the stack pops first (topmost z-order), then panels
-      right-to-left, then options menu opens. The comptime mirror
-      flips to pin the middle panels as INCLUDED (or is deleted in
-      favor of the derived escape test walking them). DESIGN's
-      exclusion-mirror paragraph updates with the flip.
 - **Momentum can be stacked infinitely out of combat.** Momentum
       accrues +1 on EVERY `use_skill` and `move_entity`
       (handlers/level.zig), regardless of combat state, so walking

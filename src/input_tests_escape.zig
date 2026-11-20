@@ -2,8 +2,9 @@
 //! `handleAnytimeInput`'s `escape` arm): Escape closes the topmost open
 //! overlay - the announcements first (mission complete / fail, fixed
 //! above the stack), then the TOP of the overlay stack (the last opened,
-//! the same one that draws on top - any overlay, any stacking order); a
-//! derived test walks the surface enum itself, so a new stackable surface
+//! the same one that draws on top - any overlay, any stacking order),
+//! then the RIGHTMOST open middle panel. Derived tests walk the surface
+//! and panel enums themselves, so a new stackable surface or middle panel
 //! gets its layered-close coverage automatically. With nothing open,
 //! Escape opens the options menu on ANY screen (the main-menu variant
 //! carries its own entries). See DESIGN → Input → Escape overlay chain.
@@ -80,7 +81,10 @@ test "escape: every stackable surface closes alone, derived from the surface enu
     // topmost-overlay tests below cover it as the surface under test).
     inline for (@typeInfo(types.UiSurfaceId).@"enum".field_names) |field_name| {
         const surface = @field(types.UiSurfaceId, field_name);
-        if (comptime input_handlers.escapeExcluded(surface)) continue;
+        // The middle panels are not stack members (side-by-side layout,
+        // not z-order); their Escape coverage is the derived panel walk
+        // below.
+        if (comptime @hasField(types.MiddlePanelId, field_name)) continue;
         if (surface == .options_menu or surface == .world_map) continue;
 
         history.current_state.ui_surfaces.openSurface(.options_menu);
@@ -97,6 +101,70 @@ test "escape: every stackable surface closes alone, derived from the surface enu
         // timeline).
         history.current_state.ui_surfaces.closeAll();
     }
+}
+
+test "escape: every middle panel closes alone, derived from the panel enum" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
+        &three_by_three,
+    ));
+    test_harness.runToIdle(&history);
+
+    // Derived expectations, panel edition: the walk covers every
+    // MiddlePanelId (opened via the direct-write seam, like the stack walk
+    // above forces its state), so a new panel is exercised the moment it
+    // is added to the enum.
+    inline for (@typeInfo(types.MiddlePanelId).@"enum".field_names) |field_name| {
+        const panel = @field(types.MiddlePanelId, field_name);
+        history.current_state.ui_surfaces.closeAll();
+        history.current_state.ui_surfaces.openMiddlePanel(panel);
+        pressEscape(&history);
+        try testing.expect(!history.current_state.ui_surfaces.isMiddlePanelOpen(panel));
+    }
+}
+
+test "escape: panels close rightmost-first, under any open overlay, then the options menu" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
+        &three_by_three,
+    ));
+    test_harness.runToIdle(&history);
+
+    // The reported pain point end to end: with two panels open, Escape
+    // walks them rightmost-first (the report's "from the right") and only
+    // opens the options menu once every panel is closed.
+    history.current_state.ui_surfaces.openMiddlePanel(.inventory);
+    history.current_state.ui_surfaces.openMiddlePanel(.skills);
+    pressEscape(&history);
+    try testing.expect(!history.current_state.ui_surfaces.isMiddlePanelOpen(.skills));
+    try testing.expect(history.current_state.ui_surfaces.isMiddlePanelOpen(.inventory));
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
+
+    pressEscape(&history);
+    try testing.expect(!history.current_state.ui_surfaces.isMiddlePanelOpen(.inventory));
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
+
+    pressEscape(&history);
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
+
+    // An open overlay outranks the panels (it draws on top, so it closes
+    // first): the world map over both panels falls before either panel.
+    history.current_state.ui_surfaces.closeAll();
+    history.current_state.ui_surfaces.openMiddlePanel(.inventory);
+    history.current_state.ui_surfaces.openMiddlePanel(.skills);
+    history.current_state.ui_surfaces.openSurface(.world_map);
+    pressEscape(&history);
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.world_map));
+    try testing.expect(history.current_state.ui_surfaces.isMiddlePanelOpen(.skills));
+    try testing.expect(history.current_state.ui_surfaces.isMiddlePanelOpen(.inventory));
 }
 
 test "escape: pops the topmost overlay regardless of kind (the map over the menu)" {

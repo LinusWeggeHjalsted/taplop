@@ -1347,72 +1347,32 @@ const EscapeRung = union(enum) {
     /// The overlay stack: closes the TOPMOST open overlay - the last
     /// opened, the same one that draws on top (slot order IS z-order).
     pop_overlay_stack,
+    /// The middle panels: closes the RIGHTMOST open panel - the last
+    /// opened (open order = display order, so rightmost = newest, "from
+    /// the right" as the playtest report phrased it). One panel per press.
+    close_rightmost_middle_panel,
 };
 
 /// The Escape chain, topmost-first: the announcements (mission complete
 /// / fail - fixed ABOVE the overlay stack in the view, so they close
-/// before anything the player had open), then the overlay stack top.
-/// `handleEscapeKey` walks it and closes the first open rung; every rung
-/// empty opens the options menu. The old per-surface coverage gate is
-/// gone with the stack: every stackable surface is popped by the
-/// `pop_overlay_stack` rung automatically, and the comptime check below
-/// pins the exclusion list to the middle-panel set so the one remaining
-/// decision (stack member vs middle panel) cannot drift. `pub` for
-/// input_tests_escape.zig, which derives its layered-close test by
-/// walking the surface enum alongside it.
+/// before anything the player had open), then the overlay stack top,
+/// then the middle panels rightmost-first, then (every rung empty) the
+/// options menu opens. The middle-panel rung is playtest feedback: the
+/// panels' own toggle keys (I/G/S) stay the direct close path, but
+/// Escape used to open the options menu ON TOP of open panels instead of
+/// dismissing them, which was reported as a pain point. Every stackable
+/// surface is popped by `pop_overlay_stack` and every middle panel by
+/// `close_rightmost_middle_panel` automatically - no hand-maintained
+/// coverage list; the derived tests in input_tests_escape.zig walk the
+/// surface and panel enums alongside the ladder, so a new entry of
+/// either kind is covered the moment it is added. `pub` for
+/// input_tests_escape.zig.
 pub const escape_ladder = [_]EscapeRung{
     .mission_complete,
     .mission_fail,
     .pop_overlay_stack,
+    .close_rightmost_middle_panel,
 };
-
-/// Surfaces deliberately NOT closed by Escape: the middle panels close
-/// via their own toggle keys (I/G/S); revisit if playtesting asks for
-/// Escape to close them too (DESIGN → Input → Escape overlay chain).
-/// The comptime check below pins this list to the `MiddlePanelId` set in
-/// BOTH directions - an entry that is not a middle panel, or a middle
-/// panel missing from the list, fails the build.
-const escape_excluded_surfaces = [_]types.UiSurfaceId{
-    .inventory,
-    .gear,
-    .skills,
-    .entity_inspect,
-    .gear_upgrading,
-};
-
-/// Whether Escape deliberately ignores `surface` (the middle panels).
-/// `pub` for input_tests_escape.zig's derived walk over the surface enum.
-pub fn escapeExcluded(surface: types.UiSurfaceId) bool {
-    for (escape_excluded_surfaces) |excluded| {
-        if (excluded == surface) return true;
-    }
-    return false;
-}
-
-comptime {
-    @setEvalBranchQuota(10_000);
-    for (escape_excluded_surfaces) |excluded| {
-        if (!@hasField(types.MiddlePanelId, @tagName(excluded))) {
-            @compileError(std.fmt.comptimePrint(
-                "UiSurfaceId '{s}' is in escape_excluded_surfaces but is not a middle panel; the list must mirror the MiddlePanelId set exactly (see DESIGN → Input → Escape overlay chain)",
-                .{@tagName(excluded)},
-            ));
-        }
-    }
-    for (@typeInfo(types.MiddlePanelId).@"enum".field_names) |field_name| {
-        const surface = @field(types.UiSurfaceId, field_name);
-        var found = false;
-        for (escape_excluded_surfaces) |excluded| {
-            if (excluded == surface) found = true;
-        }
-        if (!found) {
-            @compileError(std.fmt.comptimePrint(
-                "middle panel '{s}' is missing from escape_excluded_surfaces; the list must mirror the MiddlePanelId set exactly (see DESIGN → Input → Escape overlay chain)",
-                .{field_name},
-            ));
-        }
-    }
-}
 
 fn handleEscapeKey(history: *GameStateHistory) void {
     const current = &history.current_state;
@@ -1455,6 +1415,25 @@ fn handleEscapeKey(history: *GameStateHistory) void {
                 const surface = topmost_surface orelse continue;
                 pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
                     .surface = surface,
+                } });
+                return;
+            },
+            // The panel's own recorded toggle (the same event its I/G/S
+            // shortcut pushes; the entity-inspect arm also drops the
+            // panel's target). The UiSurfaceId and MiddlePanelId names
+            // coincide by construction - the surface state's exhaustive
+            // switches keep them in lockstep.
+            .close_rightmost_middle_panel => {
+                var rightmost_panel: ?types.MiddlePanelId = null;
+                for (surfaces.open_middle_panels) |maybe_panel| {
+                    if (maybe_panel) |open| rightmost_panel = open;
+                }
+                const panel = rightmost_panel orelse continue;
+                const panel_surface: types.UiSurfaceId = switch (panel) {
+                    inline else => |tag| @field(types.UiSurfaceId, @tagName(tag)),
+                };
+                pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                    .surface = panel_surface,
                 } });
                 return;
             },

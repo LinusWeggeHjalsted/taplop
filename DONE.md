@@ -424,6 +424,7 @@ working rules).
 - [Rename to taplop + the GitHub migration](#rename-to-taplop--the-github-migration)
 - [Playtest feedback 6: the panned camera stays put (pan persistence)](#playtest-feedback-6-the-panned-camera-stays-put-pan-persistence)
 - [Playtest feedback 4: the health-globe tooltip names its stat](#playtest-feedback-4-the-health-globe-tooltip-names-its-stat)
+- [Playtest feedback 3: Escape closes the middle panels, rightmost-first](#playtest-feedback-3-escape-closes-the-middle-panels-rightmost-first)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24640,3 +24641,33 @@ or any other pool (the report). Now "{d} / {d} health", matching the
 adjacent momentum indicator's "{d} momentum" (the established shape).
 The entity-inspect Current Health row was already labeled and is
 unchanged.
+
+## Playtest feedback 3: Escape closes the middle panels, rightmost-first
+
+The middle panels were deliberately excluded from the Escape chain
+(their I/G/S toggles the close path; DESIGN said "revisit if playtesting
+asks") - playtesting asked: Escape opened the options menu ON TOP of
+open panels, reported as a pain point.
+
+The chain gained a fourth rung, after pop_overlay_stack:
+close_rightmost_middle_panel. The overlay stack pops first (topmost
+z-order), then panels walk rightmost-first (open order = display order
+- rightmost = most recently opened, "from the right" per the report),
+one panel per press, then the options menu opens. Each close is the
+panel's own recorded player_toggle_ui_surface (the same event its
+shortcut key pushes; the entity-inspect arm drops the panel target).
+
+The exclusion mirror is GONE (escape_excluded_surfaces + escapeExcluded
++ the comptime two-direction pin deleted): with every surface
+escape-closeable there is no list to keep honest, and the coverage is
+derived instead - input_tests_escape.zig's stack walk skips middle
+panels by @hasField, a new panel walk covers every MiddlePanelId alone,
+and an overlay-over-panels test pins the rung order. New panels are
+covered automatically the moment they are added (the machine-walked-truth
+rule, same posture as before with the pinned fact inverted).
+
+One Zig lesson (already cost a build cycle): @tagName on a RUNTIME enum
+value is not comptime-evaluable for @field - the MiddlePanelId ->
+UiSurfaceId mapping needs `switch (panel) { inline else => |tag|
+@field(...) }` (per-arm comptime tags), the same shape the generated
+lookups use elsewhere.

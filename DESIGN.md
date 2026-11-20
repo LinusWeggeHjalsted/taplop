@@ -1908,7 +1908,7 @@ load and picks up the renamed action's default binding).
 `handleEscapeKey` (input_handlers.zig) consumes it as a generic
 "close the topmost overlay" chain: a walk down `escape_ladder`, a
 topmost-first ordered array of `EscapeRung` values. With the overlay
-stack, the chain collapsed to THREE rungs - the per-surface ladder
+stack, the chain collapsed to FOUR rungs - the per-surface ladder
 (tips, browser, settings, ...) is gone because the stack already knows
 which overlay is topmost:
 
@@ -1928,23 +1928,35 @@ which overlay is topmost:
    the recorded `player_toggle_ui_surface` (the same event the surface's
    own buttons push), so Escape ≡ clicking its Back button.
 
+4. **Close the rightmost middle panel** (custom) - the middle panels
+   are not stack members (side-by-side layout, not z-order), so the
+   stack rung does not see them; this rung closes the RIGHTMOST open
+   panel (open order = display order, so rightmost = most recently
+   opened - "from the right" as the playtest report phrased it), one
+   panel per press, via that panel's own recorded
+   `player_toggle_ui_surface` (the same event its I/G/S shortcut
+   pushes; the entity-inspect arm also drops the panel's target).
+   Playtest feedback: Escape used to open the options menu ON TOP of
+   open panels - reported as a pain point. The shortcut keys remain the
+   direct close path; Escape is the walk-down.
+
 The walk closes the first open rung; every rung empty opens the options
 menu on ANY screen (the main-menu variant carries its own entries - see
 below).
 
-**The exclusion mirror.** The one per-surface decision left is stack
-member vs middle panel: the middle panels (inventory/gear/skills/
-entity_inspect) are deliberately NOT closed by Escape (their per-panel
-toggles I/G/S are the close path; revisit if playtesting asks). A
-comptime check pins `escape_excluded_surfaces` to the `MiddlePanelId`
-set in BOTH directions - an entry that is not a middle panel, or a
-middle panel missing from the list, fails the build - and the bucketing
-itself is compiler-forced by `UiSurfaceState`'s exhaustive switches. The
-derived test in input_tests_escape.zig walks every stackable surface
-for its layered-close coverage automatically. This is the
+**No coverage list to drift.** Every stackable surface is closed by
+rung 3 and every middle panel by rung 4 automatically; the derived tests
+in input_tests_escape.zig walk the `UiSurfaceId` and `MiddlePanelId`
+enums themselves (the stack walk skips the middle panels by
+`@hasField`, the panel walk covers each panel alone, and an
+overlay-over-panels test pins the rung order), so a new surface or
+panel gets its Escape coverage the moment it is added. This is the
 machine-walked-truth rule (AGENTS → Build & Test) applied to the chain:
-the census pins the view side, the mirror pins the escape side, and the
-z-order agreement can no longer drift silently.
+the census pins the view side, the derived walks pin the escape side,
+and the z-order agreement can no longer drift silently. (The earlier
+shape - a comptime-pinned `escape_excluded_surfaces` list mirroring the
+`MiddlePanelId` set - died with the exclusion itself when playtesting
+asked for the panels to join the chain.)
 
 The error popup is more-modal still but never reaches the chain: the
 `pending_error` gate at the top of `handleAnytimeInput` consumes
