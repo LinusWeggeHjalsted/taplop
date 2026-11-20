@@ -304,6 +304,19 @@ session + the ButtonPayload migration):
   the runtime checklist lives in TODO (macOS native port). Persistent dir
   on mac: `~/Library/Application Support/ziglop/` - see DESIGN → File
   System & IO → Persistent path.
+- Windows build: `zig build -Dtarget=x86_64-windows-gnu` cross-compiles from
+  the Linux box (Zig's bundled MinGW - no Windows toolchain needed),
+  producing zig-out/bin/ziglop.exe (+ .pdb) alongside the native exe.
+  The supported floor is Windows 10+, 64-bit (the stack would likely run
+  on 7 SP1 - GLFW 3.5's own floor - but that is an unstated bonus, not a
+  claim; the reasoning: DONE.md, "windows port: the cross-build + the
+  wine smoke"). WINDOWS COMPILES ≠ WINDOWS RUNS (the mac lesson, third
+  platform): `printf 'help\nquit\n' | wine zig-out/bin/ziglop.exe`
+  smoke-tests boot + the console channel + GL-under-Mesa from the Linux
+  box, but real validation is the Win10 checklist (TODO → Platform Layer
+  → Windows port). The exe is CONSOLE-subsystem: double-clicking opens a
+  terminal window next to the game - expected for dev builds; the
+  distribution-time subsystem choice is tracked in that TODO item.
 - **CONSOLE COMPILES ≠ CONSOLE RUNS** (the same lesson, at home): the
   console channel's stdout/TTY behavior is invisible to the headless
   suite - no test can see a prompt, a boot hint, or output interleaving.

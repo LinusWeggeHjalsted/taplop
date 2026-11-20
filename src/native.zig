@@ -69,7 +69,7 @@ pub fn main(init: std.process.Init.Minimal) void {
     // here, and shipped-content reads check here first for player mods.
     const data_dir_override = parseStringFlag(init.args, allocator, "--data-dir");
     const replay_path = parseStringFlag(init.args, allocator, "--replay");
-    const diagnostics_requested = parseBoolFlag(init.args, "--diagnostics");
+    const diagnostics_requested = parseBoolFlag(init.args, allocator, "--diagnostics");
     // The resolved path outlives the Dir handle: it's stored on the session
     // for user-facing messages (the Export Save tooltip). Process-lifetime
     // allocation, never freed.
@@ -200,7 +200,7 @@ fn parseStringFlag(
     allocator: std.mem.Allocator,
     name: []const u8,
 ) ?[]u8 {
-    var iter = std.process.Args.Iterator.init(args);
+    var iter = std.process.Args.Iterator.initAllocator(args, allocator) catch return null;
     defer iter.deinit();
     _ = iter.next(); // skip program name
     while (iter.next()) |arg| {
@@ -222,9 +222,15 @@ fn parseStringFlag(
 }
 
 /// Whether a boolean flag (`--name`) is present in argv. No value form -
-/// presence is the whole meaning. Used for `--diagnostics`.
-fn parseBoolFlag(args: std.process.Args, name: []const u8) bool {
-    var iter = std.process.Args.Iterator.init(args);
+/// presence is the whole meaning. Used for `--diagnostics`. The
+/// allocator-taking iterator init is the cross-platform form (`init`
+/// compiles only on non-Windows native targets).
+fn parseBoolFlag(
+    args: std.process.Args,
+    allocator: std.mem.Allocator,
+    name: []const u8,
+) bool {
+    var iter = std.process.Args.Iterator.initAllocator(args, allocator) catch return false;
     defer iter.deinit();
     _ = iter.next(); // skip program name
     while (iter.next()) |arg| {

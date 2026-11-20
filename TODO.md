@@ -578,6 +578,25 @@ Open:
   - [ ] Deferred to the demo/distribution milestone: codesigning +
         notarization (needs an Apple Developer ID), universal binary
         (x86_64 + aarch64 via lipo), Homebrew/cask.
+- **Windows port** - the cross-build + wine smoke are DONE (DONE.md,
+  "windows port: the cross-build + the wine smoke"); supported floor
+  Windows 10+, 64-bit (7 SP1 likely-runs but unstated). REMAINING:
+  - [ ] **Runtime validation on real hardware** (the friend's Win10
+        machine; compile ≠ run, the mac lesson). Checklist: exe launches
+        from Explorer (a console window opens alongside - console
+        subsystem, expected); main menu renders with readable SDF text
+        (the outline shader on the Windows GL driver); window resize:
+        letterbox + pointer mapping stay in sync; audio device opens +
+        sfx/music play; a save round-trip into `%LOCALAPPDATA%\ziglop`
+        (plain Explorer-visible path); crash-dump write works;
+        `--data-dir` flag + `$ZIGLOP_DATA` override still work; the
+        console channel piped (`ziglop.exe < cmds.txt` - commands work,
+        prompts silent) and via a real console (interactive).
+  - **Distribution-time decisions (deferred to the demo milestone):**
+        the console-vs-GUI subsystem choice (console today - a terminal
+        window opens on double-click; the GUI subsystem would need the
+        console channel to AttachConsole on demand), an .exe icon, and a
+        `release.sh` windows arm (builds after mac in the `all` order).
 - 9-slice REFINEMENT: corners now render SQUARE 1:1 on any panel size
   (fixed - see DONE.md); remaining gap is edges + center STRETCHED, not
   tiled. Spec wants tiling - only matters once patterned panel art ships

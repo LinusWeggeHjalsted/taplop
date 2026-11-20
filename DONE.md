@@ -683,6 +683,7 @@ working rules).
 - [Gear upgrading: item rows at the inventory-slot height](#gear-upgrading-item-rows-at-the-inventory-slot-height)
 - [Gear upgrading: cost counts in the icon corners + the 128 purchase strip](#gear-upgrading-cost-counts-in-the-icon-corners--the-128-purchase-strip)
 - [Persistent path: the XDG data dir on Linux, the Windows default decided, one shared resolution site](#persistent-path-the-xdg-data-dir-on-linux-the-windows-default-decided-one-shared-resolution-site)
+- [Windows port: the cross-build + the wine smoke](#windows-port-the-cross-build--the-wine-smoke)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24714,3 +24715,44 @@ Three changes in one settle, prompted by the Windows-port planning:
 rule, per-OS shapes, the missing-env errors); 1116 pass. Doc
 references across AGENTS/DESIGN/TODO updated in the same commit
 (DONE's history entries keep the old path - it is the record).
+
+## Windows port: the cross-build + the wine smoke
+
+The Windows port's first slice: the exe now cross-compiles from the
+Linux box with a single code fix. The platform was already almost
+wired - build.zig rides `standardTargetOptions` (the same seam the
+macOS target uses), every platform-specific build step is os.tag-gated
+(xcode_frameworks lazy+mac-only, the .so-strip step linux-only,
+raylib_zig's own linkWindows assembling `-lopengl32 -lwinmm -lgdi32`),
+and the evdev guard self-gates to Linux (its import site already
+documented the mac cross-build as a no-op). The persistent-path
+`.windows` arm landed the commit before (DONE.md, "persistent path").
+
+The ONE compile error: `std.process.Args.Iterator.init` carries a
+Windows-only comptime gate in std ("use initAllocator instead") - the
+no-allocator form reads argv directly via the C main signature, which
+Windows does not provide. native.zig's two flag parsers
+(`parseStringFlag`/`parseBoolFlag`) switched to the allocator-taking
+`initAllocator` form (std's own recommended cross-platform shape;
+on failure the parsers return their not-found value - the flags are
+optional conveniences, not load-bearing).
+
+Support floor SETTLED: Windows 10+, 64-bit (`x86_64-windows-gnu`).
+The stack itself would likely run on 7 SP1 - raylib 6.0's bundled GLFW
+3.5 declares "Windows 7 and later", MinGW's CRT targets the Win7 ABI,
+and nothing in our code needs newer - but that stays an unstated
+bonus, not a claim: Win7/8.1 are security-EOL, their GPU drivers are
+frozen at vendor-abandonment versions (our one real requirement,
+GL 3.3 core, becomes a per-machine lottery), Steam's client itself
+requires Win10+, and the one real machine we can validate on is a
+Win10 box. Claim what you test.
+
+Wine smoke (wine 11.21, host Mesa): the exe boots, opens a GL window,
+and the console channel works end to end - `help` prints, `report ui`
+lists the rendered main-menu buttons (Continue correctly absent on a
+fresh scratch dir), `dump history.session.persistent_dir_path` returns
+the `$ZIGLOP_DATA` override (a `Z:/` path), the persistent dir is
+created and written (`logs/`), and `quit` exits 0. The exe is
+CONSOLE-subsystem (a terminal window accompanies a double-click) - the
+distribution-time subsystem choice is tracked in TODO → Platform
+Layer → Windows port, along with the real-hardware checklist.
