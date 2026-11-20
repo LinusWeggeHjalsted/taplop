@@ -415,6 +415,7 @@ working rules).
 - [Gear upgrading: slice 4 - the vendor panel](#gear-upgrading-slice-4---the-vendor-panel)
 - [Gear upgrading: the polish pass (growth curve + panel layout)](#gear-upgrading-the-polish-pass-growth-curve--panel-layout)
 - [Gear upgrading: the wheel captures the whole vendor panel](#gear-upgrading-the-wheel-captures-the-whole-vendor-panel)
+- [Gear upgrading: item rows at the inventory-slot height](#gear-upgrading-item-rows-at-the-inventory-slot-height)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24369,3 +24370,15 @@ constant-derived). Tests: the region unit test (bounds match, in/out
 points, null on no emission) + the wheel-routing test over a real
 built-panel emission (pointer in the UPGRADE column scrolls; clamps at
 the top; outside the panel untouched).
+
+## Gear upgrading: item rows at the inventory-slot height
+
+The author's follow-up polish: the item-list rows (and their section
+header strips, which share the uniform pitch) dropped from the
+panel-button height (160) to the inventory-slot height (128) - the item
+icons sit edge-to-edge in their rows. The vertical-centering
+expressions were kept (not hardcoded to 0) so a future row-height
+change re-centers automatically; the right column's purchase strip
+keeps the panel-button height. The scroll test's window math derives
+from the same pitch, so the taller window (10 visible rows) tracked
+with no pin updates.

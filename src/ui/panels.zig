@@ -706,7 +706,12 @@ pub fn buildVendorPanel(
         try entries.append(allocator, .{ .item = entry });
     }
 
-    const row_pitch = panel_button_height + ui_gap;
+    // The item rows sit at the inventory-slot height (the icons fit
+    // edge-to-edge); the purchase strip below keeps the panel-button
+    // height. Uniform pitch (header strips share the row height) keeps
+    // the scroll window row-based.
+    const vendor_row_height = inventory_slot_size;
+    const row_pitch = vendor_row_height + ui_gap;
     const visible_rows: usize = @intCast(@max(0, @divFloor(list_column.height, row_pitch)));
     const total_rows = entries.items.len;
     const max_scroll_row: i32 = @intCast(total_rows -| @min(total_rows, visible_rows));
@@ -726,7 +731,7 @@ pub fn buildVendorPanel(
             .x = list_column.x,
             .y = list_column.y + @as(i32, @intCast(index - first)) * row_pitch,
             .width = rows_width,
-            .height = panel_button_height,
+            .height = vendor_row_height,
         };
         switch (entry) {
             .header => |label| {
@@ -744,7 +749,7 @@ pub fn buildVendorPanel(
                     .text = label,
                     .screen_position = .{
                         .x = cell.x + ui_gap,
-                        .y = cell.y + @divFloor(panel_button_height - gear_stat_font_size, 2),
+                        .y = cell.y + @divFloor(vendor_row_height - gear_stat_font_size, 2),
                     },
                     .font_size = gear_stat_font_size,
                     .blocks_input = false,
@@ -775,7 +780,7 @@ pub fn buildVendorPanel(
                     .sprite_id = itemIconSpriteId(row_item.item),
                     .screen_position = .{
                         .x = cell.x + ui_gap,
-                        .y = cell.y + @divFloor(panel_button_height - inventory_slot_size, 2),
+                        .y = cell.y + @divFloor(vendor_row_height - inventory_slot_size, 2),
                     },
                     .width = inventory_slot_size,
                     .height = inventory_slot_size,
@@ -788,7 +793,7 @@ pub fn buildVendorPanel(
                     .text = types.itemName(row_item.item),
                     .screen_position = .{
                         .x = cell.x + ui_gap + inventory_slot_size + ui_gap,
-                        .y = cell.y + @divFloor(panel_button_height - gear_stat_font_size, 2),
+                        .y = cell.y + @divFloor(vendor_row_height - gear_stat_font_size, 2),
                     },
                     .font_size = gear_stat_font_size,
                     .blocks_input = false,
@@ -2757,7 +2762,7 @@ test "buildVendorPanel: the item list windows and clamps its scroll" {
     // Only the VISIBLE window's rows are emitted (the browser row model).
     const visible_rows: usize = @intCast(@divFloor(
         bounds.height - middle_panel_header_height - 2 * ui_gap,
-        panel_button_height + ui_gap,
+        inventory_slot_size + ui_gap,
     ));
     const rows = try vendorRowButtons(allocator, elements.items);
     try std.testing.expectEqual(visible_rows, rows.len);
