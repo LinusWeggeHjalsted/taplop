@@ -98,3 +98,10 @@ scripts/web.sh --release=fast      # ReleaseFast web build
 scripts/web.sh --release=safe      # ReleaseSafe
 scripts/web.sh emrun --release=fast # serve a release build
 ```
+
+### Deploying the web build
+
+`scripts/pages.sh` publishes the release web build to the `gh-pages` branch
+(the GitHub Pages serving source): it builds `--release=fast`, renames the
+html to `index.html`, and force-pushes the branch as one rewritten commit -
+the ~16 MB of binaries never enter the repo's main history.

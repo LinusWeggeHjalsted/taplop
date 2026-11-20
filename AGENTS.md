@@ -270,6 +270,13 @@ session + the ButtonPayload migration):
   emsdk-noise filtering (like `scripts/test.sh` does for tests) - prefer it
   over the raw commands. The old `wasm32-freestanding` + JS-renderer target
   was removed - do not reintroduce it.
+- GitHub Pages deploy: the serving source is the `gh-pages` orphan branch -
+  `scripts/pages.sh` (clean-tree + stamp gated, the release.sh pattern)
+  builds the release artifact, renames the html to `index.html` (Pages
+  serves it for the bare directory URL), and force-pushes the branch as ONE
+  rewritten commit. The ~16 MB of binaries never enter master's history
+  (the machine-generated-artifacts-untracked policy applied to the deploy
+  artifact).
 - Release builds: `scripts/release.sh [native|web|mac|all]` - gates on a
   fully-clean tree, builds with `--cache-poison=poisoned` (configure
   re-runs, so the `game_version` stamp reflects the tree's state at THIS
