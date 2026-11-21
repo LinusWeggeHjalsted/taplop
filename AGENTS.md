@@ -292,8 +292,13 @@ session + the ButtonPayload migration):
   (a `page_allocator` segfault landed with the TTF wiring and nothing
   surfaced it; see DONE.md, "Web black screen"). When a change touches the
   platform seam (`src/raylib/`, `web.zig`, build.zig wiring, anything
-  shader- or allocation-adjacent), spend the 30 seconds: `scripts/web.sh
-  emrun` and confirm the main menu loads. Runtime web bugs can be debugged
+  shader- or allocation-adjacent), spend the 30 seconds: serve the build
+  (`zig build emrun`, or any static server over `zig-out/web/`) and DRIVE
+  the page through the web console channel - `window.taplopConsole(
+  'help\nreport ui\n')` then `window.taplopConsoleOutput()` is the
+  minimal smoke, and full UI flows are drivable the same way (AGENTS →
+  Running the Game → Driving the web build; the main-menu-loads eyeball
+  is the weaker fallback). Runtime web bugs can be debugged
   WITHOUT a browser: `node zig-out/web/taplop.js` runs the emcc output
   headlessly - `std.debug.print` works there, so early-boot code paths
   (anything before GL init) can be probed like a native CLI. That
@@ -859,7 +864,9 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
 - `src/native.zig` - native exe entry (raylib); `src/web.zig` - web (emscripten)
   exe entry (the in-memory persistent mount + emscripten main-loop driver +
   the Import Game re-boot + the web audio queue watchdog - see DESIGN →
-  Platform Seam → Web audio onset latency);
+  Platform Seam → Web audio onset latency - + the web console channel's
+  wiring: the marker poll, the feeder call, the mailbox delivery, the JS
+  shims - see DESIGN → Input → Console input → Web console seam);
   `src/raylib/backend.zig` - the raylib platform backend (window/clock/
   render target/render driver, the duck-typed `RaylibBackend` interface) +
   `src/raylib/input_poll.zig` (the key/mouse mapping tables + the per-frame
@@ -918,10 +925,11 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   the per-rung cost over the wealth curve, the salvage-ratio split, the
   starter-stat derivation): pure integer/rational math over the
   history-resident `types.UpgradeModel`. See DESIGN → Gear Upgrading.
-- `src/console.zig` - the console input channel (stdin - see DESIGN →
-  Input → Console input): the command parser, the SPSC reader→game queue,
-  the per-frame command drain + PlatformInput merge, the applyAction fold,
-  and the dump routing. Raylib-free.
+- `src/console.zig` - the console input channel (native stdin + the web
+  JS seam - see DESIGN → Input → Console input): the command parser, the
+  SPSC reader→game queue, the per-frame command drain + PlatformInput
+  merge, the applyAction fold, the dump routing, and the web halves (the
+  output sink + the no-spin line feeder). Raylib-free.
 - `src/dump_walker.zig` - `dump <path>` reflection over the live object
   graph: a path is a Zig member-access expression (fields, union tags,
   indexes) evaluated read-only against the FrameState root. Never follows
@@ -1071,7 +1079,11 @@ stay here in AGENTS; this map is the seam between the two.
   natural-stack replay verification, player-action legality validation,
   explicit tiebreak conventions.
 - **Input** - DESIGN → Input: modifier-subset binding match, engine-owned
-  key repeat, settings persistence + binding overlay, debounced writes.
+  key repeat, settings persistence + binding overlay, debounced writes,
+  console input (the scripted input channel - native stdin + the web JS
+  seam, the web build's driving surface). Key: `src/input.zig`,
+  `src/console.zig` (the shared pipeline), `src/native.zig` (reader
+  thread) + `src/web.zig` (shims + feeder) at the platform seams.
 - **Error handling** - DESIGN → Error Handling: unrecoverable vs
   recoverable, the popup surface, three recoverable contexts, B-simple
   recording, crash dump.
