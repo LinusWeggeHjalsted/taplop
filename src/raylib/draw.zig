@@ -539,7 +539,10 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
 
 /// Draw a precomputed OUTER edge-outline mask over `destination`, tinted with
 /// `highlight_color`. Used by highlighted UI elements (Button/Image) to
-/// ring the sprite silhouette. Falls back to a rectangle outline when
+/// ring the sprite silhouette; the mask canvas is padded by its band (see
+/// generateOutlineMask) so tight-margin art cannot clip the halo, and the
+/// destination here inflates by the same drawn band. Falls back to a
+/// rectangle outline when
 /// the sprite or its mask is unavailable (e.g. a placeholder magenta
 /// box) so the hover highlight still reads. Both paths draw through the
 /// outline stripe shader (the marching flip between the highlight tint
@@ -710,7 +713,8 @@ fn drawHighlightOutline(backend: *RaylibBackend, sprite_id: []const u8, destinat
     // outline width at every element size. The scale is
     // destination/source width; a missing sprite degrades to the
     // rectangle fallback below (scale irrelevant).
-    const drawn_scale: f32 = if (backend.textures.getTexture(sprite_id)) |texture|
+    const sprite_texture = backend.textures.getTexture(sprite_id);
+    const drawn_scale: f32 = if (sprite_texture) |texture|
         destination.width / @as(f32, @floatFromInt(texture.width))
     else
         1.0;
@@ -721,13 +725,29 @@ fn drawHighlightOutline(backend: *RaylibBackend, sprite_id: []const u8, destinat
         rl.drawRectangleLinesEx(destination, @floatFromInt(types.outline_thickness), toRaylibColor(highlight_color, 255));
         return;
     };
+    // The mask canvas is PADDED by its band (see generateOutlineMask) so
+    // the halo never clips at the sprite's own edge - the sprite region
+    // maps back onto its exact original rect, and the halo lands in the
+    // padding around it. The band is read back from the mask's own dims
+    // (texture width + 2*band) rather than re-derived, so this draw and
+    // the mask generator cannot disagree on the padding.
+    const mask_source_width: i32 = mask.width;
+    const sprite_source_width: i32 = if (sprite_texture) |texture| texture.width else mask_source_width;
+    const band_source_pixels: i32 = @divTrunc(mask_source_width - sprite_source_width, 2);
+    const drawn_band: f32 = @as(f32, @floatFromInt(band_source_pixels)) * drawn_scale;
+    const inflated_destination = rl.Rectangle{
+        .x = destination.x - drawn_band,
+        .y = destination.y - drawn_band,
+        .width = destination.width + drawn_band * 2,
+        .height = destination.height + drawn_band * 2,
+    };
     const source = rl.Rectangle{
         .x = 0,
         .y = 0,
         .width = @floatFromInt(mask.width),
         .height = @floatFromInt(mask.height),
     };
-    rl.drawTexturePro(mask, source, destination, .{ .x = 0, .y = 0 }, 0, toRaylibColor(highlight_color, 255));
+    rl.drawTexturePro(mask, source, inflated_destination, .{ .x = 0, .y = 0 }, 0, toRaylibColor(highlight_color, 255));
 }
 
 /// Draw a precomputed INNER edge-outline mask for `sprite_id` over its

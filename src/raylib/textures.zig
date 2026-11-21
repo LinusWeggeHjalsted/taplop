@@ -665,15 +665,37 @@ pub const TextureStore = struct {
         const colors = try rl.loadImageColors(image);
         defer rl.unloadImageColors(colors);
 
-        const pixel_count: usize = @intCast(width * height);
-        // opaque_mask[i] = 1 if the source pixel is opaque, else 0.
+        // The OUTER halo band lives in transparent pixels AROUND the
+        // silhouette, and the sprite's own canvas can run out of room - art
+        // whose silhouette nears its edge (the medal: 4px margins against
+        // an 8px band) clips the outer half of the halo. The mask canvas
+        // grows by the band on every side so the halo NEVER clips; the
+        // draw site inflates the destination by the same drawn band (the
+        // sprite region maps back onto its exact original rect - see
+        // drawHighlightOutline). INNER masks mark pixels INSIDE the
+        // silhouette, which always fit - no padding (the occlusion rim
+        // stays canvas-sized).
+        const pad: i32 = if (side == .outer) thickness else 0;
+        const mask_width: i32 = width + pad * 2;
+        const mask_height: i32 = height + pad * 2;
+        const pixel_count: usize = @intCast(mask_width * mask_height);
+        // opaque_mask[i] = 1 if the source pixel is opaque, else 0 - the
+        // sprite embedded at the pad offset in the grown canvas.
         const opaque_mask = try self.allocator.alloc(u8, pixel_count);
         defer self.allocator.free(opaque_mask);
-        for (colors, 0..) |c, i| opaque_mask[i] = if (c.a > 16) 1 else 0;
+        @memset(opaque_mask, 0);
+        for (colors, 0..) |c, i| {
+            if (c.a > 16) {
+                const source_x: i32 = @intCast(@mod(i, @as(usize, @intCast(width))));
+                const source_y: i32 = @intCast(@divTrunc(i, @as(usize, @intCast(width))));
+                const mask_index = @as(usize, @intCast((source_y + pad) * mask_width + (source_x + pad)));
+                opaque_mask[mask_index] = 1;
+            }
+        }
 
-        const buf = try self.dilateToMask(opaque_mask, width, height, thickness, side);
+        const buf = try self.dilateToMask(opaque_mask, mask_width, mask_height, thickness, side);
         defer self.allocator.free(buf);
-        return self.rgbaBufToTexture(buf, width, height);
+        return self.rgbaBufToTexture(buf, mask_width, mask_height);
     }
 
     /// Dilate `opaque_mask` (1 = opaque, 0 = transparent) with a DISK

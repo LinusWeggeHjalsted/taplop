@@ -596,7 +596,17 @@ picker's bars all reference the same constant, and the silhouette-hugging
 halo masks COMPENSATE for the drawn scale - the band is generated at
 `ceil(outline_thickness / drawn_scale)` SOURCE px (one mask per (sprite,
 band) in the outline cache, keyed by a flat `"{sprite}|{band}"` string), so
-the DRAWN band is the constant width at every element size. The occlusion
+the DRAWN band is the constant width at every element size. The halo
+mask's canvas is PADDED by its band on every side (generateOutlineMask):
+the band lives in transparent pixels AROUND the silhouette, and art whose
+silhouette nears its own canvas edge (the mission-complete medal: 4px
+margins against the 8px band) would clip the outer half of the halo
+otherwise. The padded region maps to an equally inflated destination at
+the draw site (drawHighlightOutline reads the band back from the mask's
+own dims), so the sprite region lands on its exact original rect and the
+halo draws into the surrounding UI - outline art never needs breathing
+room. INNER masks (the occlusion rim) stay canvas-sized - they mark
+pixels inside the silhouette, which always fit. The occlusion
 inset stays source-px-scaled BY DESIGN (a world-scaled shadow, not the
 outline family).
 

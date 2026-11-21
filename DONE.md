@@ -436,6 +436,7 @@ working rules).
 - [Mission-complete overlay polish, round 2 (author request)](#mission-complete-overlay-polish-round-2-author-request)
 - [Tooltip text report (the wording-review inventory)](#tooltip-text-report-the-wording-review-inventory)
 - [Mission-complete medal row - the real art + the best-achieved spotlight](#mission-complete-medal-row---the-real-art--the-best-achieved-spotlight)
+- [Padded outline masks - the medal-highlight halo cutoff fix](#padded-outline-masks---the-medal-highlight-halo-cutoff-fix)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -25097,3 +25098,33 @@ Verification: 1137 tests (the validation test asserts gold spotlighted
 for a 4-turn/pb-3 run, the campaign test bronze for 25/10, and a new
 scenario asserts no highlight when nothing is achieved) + the campaign
 completion drive with the real texture loading (exit 0).
+
+## Padded outline masks - the medal-highlight halo cutoff fix
+
+The mission-complete best-achieved medal's edge highlight looked cutoff
+at the sprite's edges. Diagnosis: the highlight is the same
+drawHighlightOutline halo the turn-step icons and skill buttons use (no
+separate procedure), but the halo BAND is generated inside the sprite's
+own canvas - transparent pixels around the silhouette - and the medal
+art has 4px margins against the 8px band, so the outer half of the halo
+fell off the canvas. The turn-step icons carry 10-12px margins, which is
+why they read flush. (The skill button itself was silently clipping by
+1px: 7px margins, same 8px band.)
+
+The general fix, not an art fix: `generateOutlineMask` now builds the
+OUTER mask on a canvas PADDED by the band on every side, so the halo can
+never clip regardless of the art's margins, and `drawHighlightOutline`
+reads the band back from the mask's own dims (mask width = texture width
++ 2*band) and inflates the destination by the same drawn band - the
+sprite region maps onto its exact original rect, the halo lands in the
+surrounding UI. INNER masks (the occlusion rim) stay canvas-sized (they
+mark pixels inside the silhouette, which always fit); the composite
+inset path and the baked-arrow masks are untouched.
+
+A platform-seam change, so both runtime gates ran: the native completion
+drive (the highlighted medal renders the padded mask; exit 0) + the web
+emrun smoke (build + serve + the page boots, Module calledRun, rAF at
+~60fps).
+
+Verification: 1137 tests (headless suite; the raylib seam itself is
+excluded from it - the runtime drives are the real gate for this class).
