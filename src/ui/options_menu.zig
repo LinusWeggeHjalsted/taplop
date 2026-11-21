@@ -109,8 +109,10 @@ pub fn buildOptionsMenu(
     // restored on exit), so an export mid-run would write the throwaway
     // run data as a campaign save. Also hidden on the main menu - no
     // game is in progress (empty/throwaway player_data); Load Save is
-    // that screen's save workflow. `save_game` is button-only (no
-    // keybind), so hiding the button removes the path entirely.
+    // that screen's save workflow. `save_game` also ships on the
+    // ctrl+S chord (game context), so hiding the button leaves the
+    // chord - the consumption arm's editor-run gate blocks that path
+    // for the run's throwaway data.
     if (current_screen != .editor and current_screen != .campaign_editor and
         current_screen != .hub_editor and
         current_screen != .main_menu and editor_run == null)

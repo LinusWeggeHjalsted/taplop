@@ -1874,6 +1874,7 @@ test "translateInput: ctrl+S is save_campaign on the campaign editor set, save_e
         .{ .input = .{ .key = "KeyS" }, .modifiers = .{ .ctrl = true }, .action = .save_editor_mission },
         .{ .input = .{ .key = "KeyS" }, .modifiers = .{ .ctrl = true }, .action = .save_campaign },
         .{ .input = .{ .key = "KeyS" }, .modifiers = .{ .ctrl = true }, .action = .save_hub },
+        .{ .input = .{ .key = "KeyS" }, .modifiers = .{ .ctrl = true }, .action = .save_game },
         .{ .input = .{ .key = "KeyN" }, .modifiers = .{ .ctrl = true }, .action = .new_editor_mission },
         .{ .input = .{ .key = "KeyN" }, .modifiers = .{ .ctrl = true }, .action = .new_editor_campaign },
     };
@@ -1920,6 +1921,16 @@ test "translateInput: ctrl+S is save_campaign on the campaign editor set, save_e
         try std.testing.expect(result.anytime.save_hub);
         try std.testing.expect(!result.anytime.save_editor_mission);
         try std.testing.expect(!result.anytime.save_campaign);
+    }
+    // The in-game screen (level + hub): the save_export chord fires, all
+    // three editor saves dormant (their contexts are inactive).
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(chord, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .game = true });
+        try std.testing.expect(result.anytime.options_action == .save_game);
+        try std.testing.expect(!result.anytime.save_editor_mission);
+        try std.testing.expect(!result.anytime.save_campaign);
+        try std.testing.expect(!result.anytime.save_hub);
     }
     // The New pair is split by editor screen (ctrl+N is a fresh mission
     // on the mission editor, a fresh campaign on the campaign editor).

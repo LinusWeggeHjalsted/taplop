@@ -1770,10 +1770,11 @@ pub fn handleAnytimeInput(
                 // player_data is temporary (rebuilt from the editor loadout,
                 // restored on exit), so a save would write the throwaway run
                 // data as a campaign save - the same reason buildOptionsMenu
-                // hides the Export Save button mid-run. `save_game` is
-                // button-only today (no binding ships), so this gate is the
-                // defensive half for a future keybind; the button half lives
-                // in the view.
+                // hides the Export Save button mid-run. The button half of
+                // the gate lives in the view; THIS half is load-bearing for
+                // the ctrl+S chord (game context): a playtest/validation run
+                // makes the screen `.level`, the chord fires, and the run's
+                // throwaway player_data must not land in a campaign save.
                 if (current.editor) |editor| {
                     if (editor.mode != .edit) return;
                 }

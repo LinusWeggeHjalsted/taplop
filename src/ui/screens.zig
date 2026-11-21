@@ -306,7 +306,7 @@ pub const TopBarMapSlot = enum {
 };
 
 /// Build the toast overlay: the message (wrapped to a width guard) on a
-/// small 9-slice panel, dead center of the reference screen. NOT modal -
+/// small 9-slice panel, top middle - flush below the top bar. NOT modal -
 /// `blocks_input` is false everywhere, clicks pass through; the toast is
 /// fire-and-forget and expires by real time (see DESIGN → Error Handling
 /// → Toast surface). Appended before the error popup + top bar in view()
@@ -335,7 +335,9 @@ pub fn buildToast(
 
     const panel_width = content_width + 2 * toast_padding;
     const panel_height = content_height + 2 * toast_padding;
-    const panel_rect = screenRect().placeCenter(panel_width, panel_height);
+    // Top middle, flush below the top bar (the margin is the bar's
+    // height) - out of the gameplay focus the dead-center spot sat in.
+    const panel_rect = screenRect().placeTopCenter(panel_width, panel_height, top_bar_height);
     const panel_pos = panel_rect.position();
 
     try elements.append(allocator, .{
@@ -348,8 +350,8 @@ pub fn buildToast(
         },
     });
 
-    // Center each wrapped line within the panel; the block is vertically
-    // centered by placeCenter already (lines fill it exactly).
+    // Center each wrapped line within the panel (the block sits at the
+    // top already; lines fill the panel exactly).
     const block_top = panel_pos.y + toast_padding;
     for (lines, 0..) |line, line_index| {
         const line_width = font_metrics.measureRowWidth(line, toast_font_size);
@@ -1078,10 +1080,10 @@ test "buildToast emits a centered non-modal panel + the message, never blocking 
     // through), and it is dead center of the reference screen.
     const panel = elements.items[0].nine_slice_panel;
     try std.testing.expect(!panel.blocks_input);
-    // Dead center via the shared placeCenter helper (odd-sized panels
-    // land within a reference pixel of the exact center - the helper's
-    // integer division).
-    const expected_rect = screenRect().placeCenter(panel.width, panel.height);
+    // Top middle, flush below the top bar: centered x, y at the bar's
+    // height (odd-sized panels land within a reference pixel - the
+    // helper's integer division).
+    const expected_rect = screenRect().placeTopCenter(panel.width, panel.height, top_bar_height);
     try std.testing.expectEqual(expected_rect.position(), panel.screen_position);
 
     // The message renders as the labels (the spans concatenate back to

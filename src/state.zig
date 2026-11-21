@@ -591,7 +591,8 @@ pub const SessionState = struct {
     pending_import_reboot: bool = false,
 
     /// The active toast - a transient one-line success/info notification,
-    /// dead center, auto-expiring (see DESIGN → Error Handling → Toast
+    /// top middle (flush below the top bar), auto-expiring (see DESIGN →
+    /// Error Handling → Toast
     /// surface). Off the undoable GameState, so replay-safe by
     /// construction. Single-slot by design: a new toast overwrites. Bytes
     /// live in the history arena (the setPendingError convention); clear

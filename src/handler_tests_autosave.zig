@@ -455,3 +455,42 @@ test "start_new_game: backs up existing autosave before start_hub clears the sta
     }
     try testing.expect(found);
 }
+
+// The timestamped export's confirmation toast (the options Export Save +
+// its ctrl+S chord both land in the write_save arm): the toast fires on
+// the timestamped write and the AUTOSAVE write in the same cascade never
+// clears or overwrites it (the in-session resume path is not a player
+// action). See DESIGN → Error Handling → Toast surface.
+test "write_save: the timestamped export toasts; the autosave write in the same cascade does not" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
+        &three_by_three,
+    ));
+    runToIdle(&history);
+
+    // The full save_game cascade: sync, the timestamped write (toasts),
+    // then the autosave write (never toasts) - LIFO pop order.
+    event_push.pushPlayerAction(
+        &history.current_state,
+        .{ .save_game = .{ .save_path = "saves/save_TOAST.txt" } },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    try testing.expectEqual(@as(?[]const u8, null), history.session.pending_error);
+    const toast = history.session.active_toast orelse return error.TestUnexpectedResult;
+    try testing.expectEqualStrings("Save exported", toast.text);
+
+    // The write actually landed (the toast is the SUCCESS signal, not a
+    // facade over a swallowed failure).
+    const written = history.file_source.readFile(
+        backing.allocator(),
+        "saves/save_TOAST.txt",
+    ) catch return error.TestUnexpectedError;
+    defer backing.allocator().free(written);
+    try testing.expect(written.len > 0);
+}

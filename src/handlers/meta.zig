@@ -113,6 +113,13 @@ pub fn handleMetaEvent(
             // storage. No-op on native. See DESIGN → File System & IO.
             if (!std.mem.eql(u8, write.save_path, writers.autosave_path)) {
                 file_source_mod.triggerBrowserDownload(allocator, write.save_path, std.fs.path.basename(write.save_path));
+                // The timestamped export's confirmation (the options
+                // Export Save + its ctrl+S chord): the toast covers BOTH
+                // platforms - on web the only other signal is the browser's
+                // download bar, and a blocked download would read as
+                // silence. The autosave write never toasts (it is the
+                // in-session resume path, not a player action).
+                history.session.setToast(history.history_arena.allocator(), "Save exported");
             }
         },
         .backup_autosave => {

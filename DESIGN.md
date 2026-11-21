@@ -2424,7 +2424,9 @@ view's `lineHeight` - see DONE.md.)
 ### Toast surface (transient notifications)
 
 The non-modal counterpart to the error popup: a one-line success/info
-message shown DEAD CENTER for a fixed real-time duration, then gone -
+message shown TOP MIDDLE (flush below the 128p top bar - out of the
+gameplay focus the dead-center spot sat in) for a fixed real-time
+duration, then gone -
 no input gating, no dismissal, no buttons. NOT an error surface and
 deliberately not unified with the popup: the popup is a modal,
 recoverable-FAILURE response the player must acknowledge; a toast is
@@ -6051,8 +6053,10 @@ active, both surfaces label their restart/exit buttons for the RUN
 the mission, and the campaign Export Save button is HIDDEN in the options
 menu - the run's `player_data` is temporary (rebuilt from the editor
 loadout, discarded on exit), so an export mid-run would write throwaway
-data as a campaign save. `save_game` is button-only, so hiding the button
-removes the path entirely. The menu's Exit to Main Menu button keeps its
+data as a campaign save. `save_game` also ships on the ctrl+S chord
+(game context), so the button's hiding is only HALF the gate - the
+consumption arm's editor-run check blocks the chord's half. The menu's
+Exit to Main Menu button keeps its
 label during a run and is truthful: it ends the run + closes the editor
 (see the exit guard above).
 
