@@ -156,26 +156,36 @@ via the session log (logging has landed).
 ## Playtest Feedback (friends' reports, post-GitHub-migration)
 
 Six issues reported by friends playing the shipped builds. Five have
-landed (DONE.md); only the momentum gate remains, with its OPEN
-questions as the discussion agenda.
+landed (DONE.md); only the momentum decay remains - design settled
+below, implementation next.
 
-- **Momentum can be stacked infinitely out of combat.** Momentum
-      accrues +1 on EVERY `use_skill` and `move_entity`
-      (handlers/level.zig), regardless of combat state, so walking
-      back and forth in an enemy-free (or all-unaggroed) level maxes
-      it before the fight. Fix: gate the +1 on `hasActiveEnemies`
-      (types.zig - the alive + aggroed + enemy-team check already
-      shared by the win condition). OPEN: (a) gate all entities or
-      player-only (enemies only act while aggroed, so a uniform gate
-      changes nothing in practice - simpler); (b) combat ENTRY
-      semantics - should aggroing the first enemy RESET momentum
-      ("in-combat resource" reading) or does leftover momentum from a
-      previous fight carry in (the report only asks to stop the
-      out-of-combat faucet)? (c) replay cost: a handler-behavior
-      change breaks strict verification of existing session logs +
-      the SHIPPED campaign validation replays (the Logging & Replay
-      pre-release policy: re-record, no migration) - the re-record is
-      part of this task, not a follow-up.
+- **Momentum decays out of combat (design settled).** Momentum accrues
+      +1 on EVERY `use_skill` and `move_entity` (handlers/level.zig),
+      regardless of combat state, so walking back and forth in an
+      enemy-free (or all-unaggroed) level maxes it before the fight.
+      Settled fix - a DECAY, not a gain gate (the earlier proposal, gating
+      the +1 on `hasActiveEnemies`, is superseded): momentum is
+      recent-combat tempo. A transient Level counter, `turns_since_combat`,
+      initialized AT `momentum_decay_turns` (the pacing constant, 3) so a
+      level's second turn already counts as long since combat - no
+      start-of-level ramp window. At the player's `turn_start` (the same
+      arm as the cooldown / effect-duration ticks): active enemies ->
+      counter 0; else increment-then-check, counter > 3 -> player
+      momentum = 0. Player-only (enemy turns are combat by construction);
+      NOT interceptable (the reset is not a momentum gain, so it stays
+      outside the future Tier B momentum-gain transform hook).
+      Consequences: a fight opened out of combat always starts at
+      converted momentum 0 (grinding is structurally dead, not merely
+      disincentivized - the reset at turn N+1's start precedes any
+      engagement action on that turn), and a finished fight's momentum
+      carries exactly 3 full turns, wiped at the 4th turn start. Slice
+      parts: the field + the `turn_start` arm + turnflow tests + the
+      SHIPPED Polpat validation replays revalidated under the new math
+      (the checking replay recomputes use_skill live, so a
+      stale-momentum recording diverges; the Logging & Replay pre-release
+      policy: re-record, no migration - re-record only the missions that
+      diverge) + the stale DESIGN AI-threat Daze example (a removed
+      skill) fixed.
 
 ## Skill Logic
 

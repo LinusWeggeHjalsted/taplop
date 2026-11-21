@@ -5026,7 +5026,7 @@ the game cheating):
   conversion beats a flat 20% when the hit is coming). `computeMinRange`
   (moved to ai_threat.zig from the level handler) deliberately still counts
   every usable skill - min answers "when can I act", max answers "how far
-  can I hurt"; a control-only enemy (e.g. Daze) should stop and cast from
+  can I hurt"; a control-only enemy should stop and cast from
   its range, not walk adjacent first. To reach this math from a skill
   priority fn, `priority_fn` receives the session's
   `weapon_type_definitions` (slot resolution needs the mapping - the same
