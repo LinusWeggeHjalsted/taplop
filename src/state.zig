@@ -189,6 +189,21 @@ pub fn freeEditorDecorationRegistry(
     if (registry.len > 0) allocator.free(registry);
 }
 
+/// One transient toast notification (see DESIGN → Error Handling → Toast
+/// surface): a one-line success/info message, dead center, expiring
+/// against `session_clock` (the pause-independent clock - the toast must
+/// expire in real time even under a modal overlay).
+pub const Toast = struct {
+    text: []const u8,
+    /// The `session_clock` microsecond stamp past which the frame's clock
+    /// site clears the toast.
+    expires_at_session_us: u64,
+};
+
+/// The toast duration - one tweak site (DESIGN → Error Handling → Toast
+/// surface; 1s by shipped default).
+pub const toast_duration_us: u64 = std.time.us_per_s;
+
 pub const SessionState = struct {
     /// Sentinel for `save_files_last_scan_us` - no scan has run yet this
     /// session.
@@ -575,6 +590,14 @@ pub const SessionState = struct {
     /// See DESIGN → File System & IO → Web storage model + game_zip.zig.
     pending_import_reboot: bool = false,
 
+    /// The active toast - a transient one-line success/info notification,
+    /// dead center, auto-expiring (see DESIGN → Error Handling → Toast
+    /// surface). Off the undoable GameState, so replay-safe by
+    /// construction. Single-slot by design: a new toast overwrites. Bytes
+    /// live in the history arena (the setPendingError convention); clear
+    /// drops the pointer.
+    active_toast: ?Toast = null,
+
     /// Copy `msg` into the durable history arena and set it as the pending
     /// error. Overwrites (leaks) any prior message. The caller passes
     /// `history_arena.allocator()` so the message outlives `current_arena`
@@ -599,6 +622,41 @@ pub const SessionState = struct {
     /// The pending error message, or null when no popup is shown.
     pub fn pendingError(self: *const SessionState) ?[]const u8 {
         return self.pending_error;
+    }
+
+    /// Set the toast (overwrites any prior - single-slot by design; the
+    /// cases are rare and never simultaneous). Bytes are duped into the
+    /// durable history arena (the setPendingError convention: outlives
+    /// current_arena compaction, never individually freed). Forces a
+    /// render so the appearance shows under render gating.
+    pub fn setToast(
+        self: *SessionState,
+        allocator: std.mem.Allocator,
+        message: []const u8,
+    ) void {
+        self.active_toast = .{
+            .text = allocator.dupe(u8, message) catch
+                @panic("failed to allocate toast text"),
+            .expires_at_session_us = self.session_clock + toast_duration_us,
+        };
+        self.force_render_next = true;
+    }
+
+    /// Clear the toast (expiry, or overwrite via setToast); the bytes
+    /// live in the history arena, so this drops the pointer.
+    pub fn clearToast(self: *SessionState) void {
+        self.active_toast = null;
+    }
+
+    /// Clear the toast if its time has passed - the frame's clock site
+    /// calls this right after advancing `session_clock`. Returns whether
+    /// a toast was cleared, so the caller forces the render that shows
+    /// the disappearance under render gating. A null toast is a no-op.
+    pub fn expireToast(self: *SessionState) bool {
+        const toast = self.active_toast orelse return false;
+        if (self.session_clock < toast.expires_at_session_us) return false;
+        self.clearToast();
+        return true;
     }
 
     /// Append a plain one-shot sound (a base-only cue) to the pending
@@ -4194,6 +4252,60 @@ test "SessionState pending error: overwrite replaces the message" {
 
     try std.testing.expectEqualStrings("second error with more detail", session.pendingError().?);
     session.clearPendingError();
+}
+
+test "SessionState toast: set stamps the expiry, expire clears after the duration" {
+    const allocator = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+
+    var session: SessionState = .{};
+    // No toast: expire is a no-op that clears nothing.
+    try std.testing.expect(!session.expireToast());
+
+    session.setToast(arena.allocator(), "Imported 12 files");
+    try std.testing.expectEqualStrings("Imported 12 files", session.active_toast.?.text);
+    // The expiry is stamped against the current clock + the one duration
+    // constant, and the appearance forces a render (render gating must
+    // not swallow it).
+    try std.testing.expectEqual(
+        session.session_clock + toast_duration_us,
+        session.active_toast.?.expires_at_session_us,
+    );
+    try std.testing.expect(session.force_render_next);
+    // Before the stamp: the toast stays.
+    try std.testing.expect(!session.expireToast());
+
+    session.session_clock += toast_duration_us;
+    try std.testing.expect(session.expireToast());
+    try std.testing.expect(session.active_toast == null);
+    // And idempotent thereafter.
+    try std.testing.expect(!session.expireToast());
+}
+
+test "SessionState toast: single-slot overwrite re-stamps against the current clock" {
+    const allocator = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+
+    var session: SessionState = .{};
+    session.setToast(arena.allocator(), "first toast");
+    session.session_clock += 500_000;
+    session.setToast(arena.allocator(), "second toast");
+
+    // The later toast wins (single-slot by design), its expiry stamped
+    // against the ADVANCED clock, not the first stamp.
+    try std.testing.expectEqualStrings("second toast", session.active_toast.?.text);
+    try std.testing.expectEqual(
+        session.session_clock + toast_duration_us,
+        session.active_toast.?.expires_at_session_us,
+    );
+    // The first stamp alone does not expire it.
+    session.session_clock += 500_000;
+    try std.testing.expect(!session.expireToast());
+
+    session.clearToast();
+    try std.testing.expect(session.active_toast == null);
 }
 
 test "SessionState sound queue: queue + drain returns sounds in order" {

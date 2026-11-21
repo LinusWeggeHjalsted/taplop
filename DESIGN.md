@@ -44,6 +44,7 @@ next session meets it as a surprise instead of a known.
   - [Console input (stdin - a scripted input channel, TAS-shaped)](#console-input-stdin---a-scripted-input-channel-tas-shaped)
 - [Error Handling](#error-handling)
   - [Recoverable error surface (the popup)](#recoverable-error-surface-the-popup)
+  - [Toast surface (transient notifications)](#toast-surface-transient-notifications)
   - [Three contexts for recoverable failures](#three-contexts-for-recoverable-failures)
   - [B-simple (per-dispatch recording, not transactional)](#b-simple-per-dispatch-recording-not-transactional)
   - [Crash dump (panic → session log)](#crash-dump-panic--session-log)
@@ -2419,6 +2420,53 @@ originally built with a pixel offset that predated every other scroller in
 the game: the wheel sign was flipped, the window was drawn at its
 unscrolled y, and the input step unit (a hardcoded 56px) didn't match the
 view's `lineHeight` - see DONE.md.)
+
+### Toast surface (transient notifications)
+
+The non-modal counterpart to the error popup: a one-line success/info
+message shown DEAD CENTER for a fixed real-time duration, then gone -
+no input gating, no dismissal, no buttons. NOT an error surface and
+deliberately not unified with the popup: the popup is a modal,
+recoverable-FAILURE response the player must acknowledge; a toast is
+fire-and-forget, and unifying them would graft acknowledgment
+semantics onto a surface that must never block. Its reason for
+existing is the "success is silent" class: a successful import
+re-boot, a completed export download, a campaign save or validate -
+flows that previously completed with no visible change, so a real
+failure was indistinguishable from success (found when the OS-zip
+import bug shipped silently BEHIND a successful re-boot).
+
+- **State** is the popup's shape on the same home:
+  `SessionState.active_toast: ?Toast` (off the undoable GameState, so
+  replay-safe by construction), `Toast = { text: []const u8,
+  expires_at_session_us: u64 }`. Single-slot by design: a new toast
+  OVERWRITES (successes are rare and never simultaneous in practice;
+  a stack would be fit for a game this size). Text is duped into the
+  durable history arena by `setToast` - the `setPendingError`
+  convention, overwrite leaks the prior, clear drops the pointer.
+- **Lifetime** is `session_clock` - the pause-independent clock that
+  exists for exactly this class: a toast must expire in real time even
+  while a modal overlay is open (the import toast appears over the
+  post-re-boot main menu). `setToast` stamps
+  `session_clock + toast_duration_us` (1s, the one tweak constant);
+  the frame's clock site clears it when expired and forces a render so
+  the disappearance shows under render gating. The handler fires
+  `force_render_next` on set for the same reason.
+- **Firing sites** are handler writes - success sites call
+  `setToast` with facts they already hold ("Imported N files"). No
+  event, no recording: a toast is bookkeeping, not gameplay.
+- **The re-boot bridge** (the import toast): the re-boot replaces the
+  session wholesale, and the web DRIVER is the only thing that
+  survives the swap - so the bridge is one driver rule: a toast set on
+  the dying session carries to its replacement. `rebootSession`
+  captures the text (one dupe - the teardown frees the old session's
+  bytes) before `freeSessionSetup`, then re-plants it on the fresh
+  session after `bootSession`, RE-STAMPING the expiry (the new
+  session's clock restarts; the old stamp would never fire). The
+  import handler stays uniform with every other firing site (it sets
+  the toast on the current session like anyone else); no boot flag, no
+  `createSessionSetup` parameter (first boot never has one - a
+  `?param` null at exactly one call site).
 
 ### Three contexts for recoverable failures
 

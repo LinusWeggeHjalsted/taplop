@@ -211,6 +211,7 @@ pub const vendorPanelScrollRegion = ui_panels.vendorPanelScrollRegion;
 pub const buildEntityInspectPanel = ui_panels.buildEntityInspectPanel;
 pub const buildSkillsPanel = ui_panels.buildSkillsPanel;
 pub const buildErrorPopup = ui_screens.buildErrorPopup;
+pub const buildToast = ui_screens.buildToast;
 pub const buildWorldMap = ui_world_map.buildWorldMap;
 pub const mapToScreen = ui_campaign_geometry.mapToScreen;
 pub const deriveEdgeGeometry = ui_campaign_geometry.deriveEdgeGeometry;

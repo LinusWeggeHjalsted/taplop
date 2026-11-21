@@ -669,6 +669,15 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // an up-to-date clock. See DESIGN → Input + DESIGN → Animation.
     history.session.session_clock +%= delta_microseconds;
 
+    // A showing toast whose time has passed: consume it here (the one
+    // clock site) and force the render that shows the disappearance
+    // (render gating would otherwise keep the expired toast on screen
+    // until something else draws). See DESIGN → Error Handling → Toast
+    // surface.
+    if (history.session.expireToast()) {
+        history.session.force_render_next = true;
+    }
+
     // Drain: call update() repeatedly until the stack empties, a wait
     // activates, or the drain budget elapses - whichever comes first. update()
     // handles one event OR one idle input per call (plus anytime input, drag,

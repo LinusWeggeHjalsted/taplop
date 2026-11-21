@@ -66,6 +66,15 @@ const error_popup_max_body_height: i32 = 1600;
 const error_scrollbar_width: i32 = ui_element.scrollbar_width;
 const error_scrollbar_gap: i32 = ui_element.scrollbar_gap;
 
+// Toast sizing - the transient notification's visual constants (see
+// DESIGN → Error Handling → Toast surface): one wrapped message block on
+// a small 9-slice panel, dead center. Same wrap machinery as the error
+// popup, no scrolling (messages are short; the wrap is only a width
+// guard).
+const toast_max_width: i32 = 1280;
+const toast_padding: i32 = 24;
+const toast_font_size: i32 = 56;
+
 /// Build a modal, centered, scrollable error popup showing `message` with
 /// a Dismiss button. Appended last in view() so it draws on top of
 /// everything; the panel's `blocks_input = true` halts hit-testing within
@@ -295,6 +304,70 @@ pub const TopBarMapSlot = enum {
     /// via the scope rule).
     campaign_map_mission,
 };
+
+/// Build the toast overlay: the message (wrapped to a width guard) on a
+/// small 9-slice panel, dead center of the reference screen. NOT modal -
+/// `blocks_input` is false everywhere, clicks pass through; the toast is
+/// fire-and-forget and expires by real time (see DESIGN → Error Handling
+/// → Toast surface). Appended before the error popup + top bar in view()
+/// so both draw above it.
+pub fn buildToast(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    message: []const u8,
+) !void {
+    const lines = try wrapRow(
+        allocator,
+        font_metrics,
+        try spanRow(allocator, text(message)),
+        toast_font_size,
+        toast_max_width - 2 * toast_padding,
+    );
+
+    var content_width: i32 = 0;
+    for (lines) |line| {
+        const line_width = font_metrics.measureRowWidth(line, toast_font_size);
+        if (line_width > content_width) content_width = line_width;
+    }
+    const line_height = lineHeight(toast_font_size);
+    const content_height: i32 = @intCast(lines.len * @as(usize, @intCast(line_height)));
+
+    const panel_width = content_width + 2 * toast_padding;
+    const panel_height = content_height + 2 * toast_padding;
+    const panel_rect = screenRect().placeCenter(panel_width, panel_height);
+    const panel_pos = panel_rect.position();
+
+    try elements.append(allocator, .{
+        .nine_slice_panel = .{
+            .sprite_id = tooltip_panel_sprite,
+            .screen_position = panel_pos,
+            .width = panel_width,
+            .height = panel_height,
+            .blocks_input = false,
+        },
+    });
+
+    // Center each wrapped line within the panel; the block is vertically
+    // centered by placeCenter already (lines fill it exactly).
+    const block_top = panel_pos.y + toast_padding;
+    for (lines, 0..) |line, line_index| {
+        const line_width = font_metrics.measureRowWidth(line, toast_font_size);
+        var x = panel_pos.x + @divTrunc(panel_width - line_width, 2);
+        const y = block_top + @as(i32, @intCast(line_index)) * line_height;
+        for (line) |span| {
+            try elements.append(allocator, .{ .text_label = .{
+                .text = span.text,
+                .screen_position = .{ .x = x, .y = y },
+                .color = span.color,
+                .font_size = toast_font_size,
+                .bold = false,
+                .blocks_input = false,
+            } });
+            x += font_metrics.measureSpanWidth(span, toast_font_size);
+        }
+    }
+}
 
 pub fn buildGlobalTopBar(
     elements: *UiElementList,
@@ -987,6 +1060,42 @@ test "buildErrorPopup emits a modal panel, header, body, and a Dismiss button" {
         else => {},
     };
     try std.testing.expect(found_dismiss);
+}
+
+test "buildToast emits a centered non-modal panel + the message, never blocking input" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+    var elements: UiElementList = .empty;
+    try buildToast(&elements, arena.allocator(), metrics, "Imported 12 files");
+
+    // Panel + the message's spans (wrapRow emits word/space spans - the
+    // popup body's shape).
+    try std.testing.expect(elements.items.len > 1);
+
+    // The panel is NOT modal (the toast is fire-and-forget - clicks pass
+    // through), and it is dead center of the reference screen.
+    const panel = elements.items[0].nine_slice_panel;
+    try std.testing.expect(!panel.blocks_input);
+    // Dead center via the shared placeCenter helper (odd-sized panels
+    // land within a reference pixel of the exact center - the helper's
+    // integer division).
+    const expected_rect = screenRect().placeCenter(panel.width, panel.height);
+    try std.testing.expectEqual(expected_rect.position(), panel.screen_position);
+
+    // The message renders as the labels (the spans concatenate back to
+    // it), every label non-blocking and inside the panel bounds.
+    var rendered: std.ArrayList(u8) = .empty;
+    defer rendered.deinit(std.testing.allocator);
+    for (elements.items[1..]) |element| {
+        const label = element.text_label;
+        try std.testing.expect(!label.blocks_input);
+        try std.testing.expect(label.screen_position.x >= panel.screen_position.x);
+        try std.testing.expect(label.screen_position.y >= panel.screen_position.y);
+        try rendered.appendSlice(std.testing.allocator, label.text);
+    }
+    try std.testing.expectEqualStrings("Imported 12 files", rendered.items);
 }
 
 test "buildErrorPopup: short message - no scrollbar, scroll offset clamped to 0" {

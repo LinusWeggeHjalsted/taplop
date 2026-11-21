@@ -78,6 +78,28 @@ Test by running `zig build run` and clicking through.
 - **Combat-log UI** - render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
   "Combat Log" below.
+- **Toast system (transient success notifications - design settled,
+  DESIGN → Error Handling → Toast surface)** - the non-modal popup
+  counterpart: dead-center one-line messages for successes that are
+  today silent. First firing sites: import success (post-re-boot, via
+  the driver bridge), export's "zip prepared for download", campaign
+  save + validate. Slices:
+  - [ ] 1. The surface: `active_toast` + `Toast` + `setToast`
+        (history-arena dupe, the `setPendingError` convention) +
+        the frame's expiry check (session_clock site, clear + force
+        render) + the view/draw element (dead center, above gameplay,
+        below the error popup) + `toast_duration_us` (1s, one tweak
+        constant). Headless state tests + a drive check for visuals.
+  - [ ] 2. Firing sites + the re-boot bridge: `importGameFolder`
+        success (count in hand), the export completion, campaign save +
+        validate successes (each already knows its facts); web.zig
+        `rebootSession` captures + re-plants (re-stamped expiry).
+  - [ ] 3. Docs wrap: AGENTS/DONE entries; browser-drive the import
+        flow end-to-end asserting the toast appears on the fresh
+        session's main menu (the original complaint, finally
+        assertable). Deletes the Import/Export-silence NEXT UP bullet
+        below - its export leg is this task's firing site, its import
+        leg is the bridge.
 - **Import/Export Game success is silent (the "nothing happens" class,
   found as the OS-zip import bug's mask)** - the pre-fix import
   SUCCEEDED (nested shadow tree, session re-boot) and the screen looked

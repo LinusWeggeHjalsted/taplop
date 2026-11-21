@@ -1028,6 +1028,15 @@ pub fn view(
         }
     }
 
+    // Toast: a transient one-line notification, dead center - above
+    // gameplay, below the error popup + top bar. Pure over
+    // SessionState.active_toast. See DESIGN → Error Handling → Toast
+    // surface.
+    if (session.active_toast) |toast| {
+        ui.buildToast(&ui_elements, frame_allocator, font_metrics, toast.text) catch
+            @panic("failed to build toast");
+    }
+
     // Recoverable error popup: modal, centered, drawn on top of all other
     // UI (including tooltips). Pure over SessionState.pending_error. See
     // DESIGN → Error Handling.
