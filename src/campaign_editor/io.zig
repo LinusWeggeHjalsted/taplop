@@ -1202,6 +1202,10 @@ pub fn saveHubEditor(history: *GameStateHistory) void {
             .{skipped_exits},
         ) catch @panic("failed to format the skip warning");
         surfaceSaveError(history, message);
+    } else {
+        // The clean save's confirmation (the skip-warning path above
+        // already speaks - a toast behind its popup would be noise).
+        history.session.setToast(history.history_arena.allocator(), "Hub saved");
     }
 }
 

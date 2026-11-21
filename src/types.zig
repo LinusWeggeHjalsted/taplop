@@ -717,7 +717,7 @@ pub const Action = enum {
     // Opens/closes the editor browser - the tabbed full-screen modal
     // (one tab per editor kind, default Mission) that owns browsing AND
     // creating editor content. Emitters: the main-menu Editor button, the
-    // browser's Back button, the editor options-menu Open Mission button,
+    // browser's Back button, the editor options-menu Open Browser button,
     // and the ctrl+O binding (editor context - the keybind path stays
     // editor-scoped; the button path also works from the main menu, where
     // the consumption site accepts both screens). See DESIGN →

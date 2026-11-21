@@ -170,7 +170,7 @@ pub fn buildOptionsMenu(
         // if in doubt; ctrl+S is cheap). Also on ctrl+O (the binding
         // ships in default_settings.txt).
         buttons[button_count] = .{
-            .label = "Open Mission",
+            .label = "Open Browser",
             .action = .toggle_editor_browser,
             .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(
                 "Ctrl+O - browse your saved missions and the official ones",
@@ -227,7 +227,7 @@ pub fn buildOptionsMenu(
     // where applicable): the browser (campaign switching - the kind tabs
     // incl. Campaign) + a fresh campaign. Save/Export land with the save
     // slice (3e); Revalidate is mission-editor-specific. The mission
-    // browser's Open Mission entry maps to the same browser action here
+    // browser's Open Browser entry maps to the same browser action here
     // (both kinds are reachable from its tabs).
     if (current_screen == .campaign_editor) {
         // The campaign save (also ctrl+S, the binding coexisting with the

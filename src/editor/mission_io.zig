@@ -256,6 +256,10 @@ pub fn saveEditorMission(history: *GameStateHistory) ?[]const u8 {
         .uuid = memo_uuid,
         .dir_path = dir_path,
     };
+    // A save otherwise reads as silence (the screen does not change);
+    // the confirmation, same as the campaign save's. The campaign-context
+    // branch toasts at its own success return below.
+    history.session.setToast(history.history_arena.allocator(), "Mission saved");
     return dir_path;
 }
 
@@ -328,6 +332,9 @@ fn saveCampaignContextMission(
     //    save. A fork/minted target stays invisible by design.
     if (!campaign_io.saveCampaignGraphAtMissionSave(history, campaign)) return null;
 
+    // The hand-off save's confirmation (this verb saved a mission into
+    // the campaign - the standalone branch's toast, same wording).
+    history.session.setToast(history.history_arena.allocator(), "Mission saved");
     return durable.dupe(u8, target.dir_path) catch
         @panic("failed to dupe the campaign mission dir path");
 }

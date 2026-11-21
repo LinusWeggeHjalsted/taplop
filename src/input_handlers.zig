@@ -1606,7 +1606,7 @@ pub fn handleAnytimeInput(
 
     if (anytime.toggle_editor_browser) {
         // The editor browser (the main-menu Editor button, the options-menu
-        // Open Mission button, the browser's Back button, ctrl+O). Reachable
+        // Open Browser button, the browser's Back button, ctrl+O). Reachable
         // on the editor + main-menu screens; every other screen no-ops (the
         // save_editor_mission discipline).
         if (editorBrowserReachableScreen(&history.current_state)) {

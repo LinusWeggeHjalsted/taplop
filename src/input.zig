@@ -341,7 +341,7 @@ pub const AnytimeInput = struct {
     /// pauses the game. Null when no overlay button was clicked this tick.
     options_action: ?types.Action = null,
     /// Open/close the editor browser (the main-menu Editor button, the
-    /// options-menu Open Mission button, the browser's Back button, and
+    /// options-menu Open Browser button, the browser's Back button, and
     /// the ctrl+O binding). The consumption site accepts the three
     /// editor screens + the main menu; the keybind ships editor-context,
     /// so on the main menu only the button path can set this.

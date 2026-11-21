@@ -3099,6 +3099,13 @@ test "saveHubEditor: the drill-in save self-serves a fresh campaign's identity (
     // and writeFile mkdir-p materializes the dirs.
     campaign_editor_io.saveHubEditor(&history);
     try testing.expect(history.session.pending_error == null);
+    // The clean save's confirmation toast (the skip-warning path would
+    // popup instead - see the fn).
+    {
+        const hub_toast = history.session.active_toast orelse
+            return error.TestUnexpectedResult;
+        try testing.expectEqualStrings("Hub saved", hub_toast.text);
+    }
     const campaign_memo = campaign_editor_io.campaignSaveMemoFor(&history, types.campaign_save_memo_handle).?;
     const campaign_dir = try arena.dupe(u8, campaign_memo.dir);
     const campaign_uuid = try arena.dupe(u8, campaign_memo.uuid);
@@ -3141,6 +3148,13 @@ test "saveHubEditor: the drill-in save self-serves a fresh campaign's identity (
     const hub_memo_after = campaign_editor_io.campaignSaveMemoFor(&history, 0).?;
     try testing.expectEqualStrings(hub_dir, hub_memo_after.dir);
     try testing.expectEqual(@as(usize, 1), (try harness.file_source.listCampaigns(arena)).len);
+
+    // The full save's confirmation overwrote the drill-in save's "Hub
+    // saved" - single-slot, last-wins by design (the more recent verb is
+    // the more specific one).
+    const saved_toast = history.session.active_toast orelse
+        return error.TestUnexpectedResult;
+    try testing.expectEqualStrings("Campaign saved", saved_toast.text);
 }
 
 test "saveHubEditor: an official-origin hub save forks (the root carry) and the later full save heals it" {

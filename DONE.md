@@ -444,6 +444,7 @@ working rules).
 - [Console pointer decoupling - the merge no longer re-applies the scripted position on every command frame](#console-pointer-decoupling---the-merge-no-longer-re-applies-the-scripted-position-on-every-command-frame)
 - [Dump-walker struct summaries - slice elements and struct fields render their first fields inline](#dump-walker-struct-summaries---slice-elements-and-struct-fields-render-their-first-fields-inline)
 - [Toast system slices 2-3 - the firing sites + the re-boot bridge](#toast-system-slices-2-3---the-firing-sites--the-re-boot-bridge)
+- [Mission + hub save toasts; the "Open Mission" label rename](#mission--hub-save-toasts-the-open-mission-label-rename)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -25365,3 +25366,25 @@ kept: a hand-rolled STORE zip's central-directory record needs its
 local-header-offset field - the missing 4 bytes made the entry name
 read back fused with the EOCD magic, and the import's own error
 message named it instantly.
+
+## Mission + hub save toasts; the "Open Mission" label rename
+
+The editor save family completes: mission saves (both branches - the
+standalone editor's save AND the campaign-context hand-off save, which
+is the same verb through a different target) toast "Mission saved", the
+hub drill-in save toasts "Hub saved" on the clean path only - the
+skip-warning path (unsaved exit markers) keeps its popup and gets no
+toast behind it. The single-slot overwrite does the right thing in the
+multi-save flows: a drill-in save followed by a full campaign save shows
+"Campaign saved" (the more recent, more specific verb), pinned in the
+drill-in save test with the overwrite itself asserted.
+
+The mission editor's options menu carried a legacy label: "Open
+Mission" for the editor-browser toggle - while the campaign + hub
+editors' menus called the SAME action "Open Browser". Renamed to match
+(the five code comments naming the old label went with it).
+
+No new wiring: both saves were already input-layer side effects with
+success sites holding everything needed - the toasts are one
+setToast each, and the save-first callers (validate/export) see the
+same "Mission saved" their campaign sibling does.
