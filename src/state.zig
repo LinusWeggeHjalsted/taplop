@@ -202,7 +202,7 @@ pub const Toast = struct {
 
 /// The toast duration - one tweak site (DESIGN → Error Handling → Toast
 /// surface; 1s by shipped default).
-pub const toast_duration_us: u64 = std.time.us_per_s;
+const toast_duration_us: u64 = std.time.us_per_s;
 
 pub const SessionState = struct {
     /// Sentinel for `save_files_last_scan_us` - no scan has run yet this
@@ -644,7 +644,7 @@ pub const SessionState = struct {
 
     /// Clear the toast (expiry, or overwrite via setToast); the bytes
     /// live in the history arena, so this drops the pointer.
-    pub fn clearToast(self: *SessionState) void {
+    fn clearToast(self: *SessionState) void {
         self.active_toast = null;
     }
 
