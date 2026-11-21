@@ -433,6 +433,7 @@ working rules).
 - [Mission-complete medal row - slice 1: the mission-start author-turns capture](#mission-complete-medal-row---slice-1-the-mission-start-author-turns-capture)
 - [Mission-complete medal row - slice 2: the surface (both variants)](#mission-complete-medal-row---slice-2-the-surface-both-variants)
 - [Mission-complete overlay polish (author request, playtester feedback)](#mission-complete-overlay-polish-author-request-playtester-feedback)
+- [Mission-complete overlay polish, round 2 (author request)](#mission-complete-overlay-polish-round-2-author-request)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -25030,3 +25031,14 @@ Verification: 1135 tests (the two medal tests assert the swapped row
 order + the "in N turns" suffix; the player_overwrite_clone drain test
 asserts the offer retires) + the full campaign completion drive (new
 game -> exit -> mission -> skips -> overlay, medal hovers, exit 0).
+
+## Mission-complete overlay polish, round 2 (author request)
+
+The campaign variant's right column: the header now reads "Material
+harvest of existing clones:" and the harvested material icons render as
+one HORIZONTAL row (right-aligned to the column edge, the five kinds in
+a strip) instead of the vertical stack - matching the "New clone:"
+summary row's horizontal rhythm.
+
+Verification: 1135 tests (the scan's harvest-header match follows the
+new text) + the full campaign completion drive (exit 0).

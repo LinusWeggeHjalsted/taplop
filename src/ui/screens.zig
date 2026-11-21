@@ -735,10 +735,10 @@ pub fn buildMissionComplete(
     //    emitMedalRow.) ──
     const material_right = screen.x + screen.width - ui_gap * 4;
     if (validation == null) {
-        // "Clone material harvest" sub-header + vertical material icon
-        // stack.
+        // "Material harvest of existing clones:" sub-header + horizontal
+        // material icon row (the five kinds right-aligned as one strip).
         const harvest_header_font_size: i32 = 64;
-        const harvest_header_text = "Clone material harvest";
+        const harvest_header_text = "Material harvest of existing clones:";
         const harvest_header_width = font_metrics.measureSpanWidth(text(harvest_header_text), harvest_header_font_size);
         try elements.append(allocator, .{ .text_label = .{
             .text = harvest_header_text,
@@ -747,13 +747,14 @@ pub fn buildMissionComplete(
             .blocks_input = false,
         } });
         const icon_top = content_y + harvest_header_font_size + ui_gap * 2;
+        const harvest_row_width = rowWidth(5, inventory_slot_size, ui_gap);
         try emitMaterialIcons(
             elements,
             allocator,
             font_metrics,
-            .{ .x = material_right - inventory_slot_size, .y = icon_top },
+            .{ .x = material_right - harvest_row_width, .y = icon_top },
             inventory_slot_size,
-            .vertical,
+            .horizontal,
             info.harvested_materials,
             active_theme,
         );
@@ -1228,7 +1229,7 @@ const MissionCompleteScan = struct {
                     found.new_clone_label = true;
                     found.new_clone_y = label.screen_position.y;
                 }
-                if (std.mem.eql(u8, label.text, "Clone material harvest")) found.harvest_header = true;
+                if (std.mem.eql(u8, label.text, "Material harvest of existing clones:")) found.harvest_header = true;
                 if (std.mem.startsWith(u8, label.text, "in ")) found.new_clone_turns_suffix = label.text;
             },
             .button => |button| switch (button.action) {
