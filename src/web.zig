@@ -193,10 +193,29 @@ fn tryResumeWebAudio() void {
 /// included in the discard (an import replaces the session - DESIGN →
 /// File System & IO → Web storage model).
 fn rebootSession(session: *WebSession) void {
+    // A toast set on the dying session carries to its replacement (the
+    // import's "Imported N files" lands on the OLD session's slot,
+    // moments before this swap): capture the text BEFORE the teardown
+    // frees the old history's arena, then re-plant it on the fresh
+    // session, RE-STAMPING the expiry (the new session's clock restarts
+    // at 0; the old stamp would never fire). The driver is the only thing
+    // that survives the swap, so the bridge lives here. Best-effort - an
+    // allocation failure drops the notification, never the boot. See
+    // DESIGN → Error Handling → Toast surface.
+    var carried_toast_text: ?[]u8 = null;
+    if (session.setup.frame_state.history.session.active_toast) |toast| {
+        carried_toast_text = session.allocator.dupe(u8, toast.text) catch null;
+    }
     crash_dump.uninstall();
     session.backend.deinitAudio();
     session_setup.freeSessionSetup(&session.setup);
     bootSession(session);
+    if (carried_toast_text) |text| {
+        // setToast copies into the fresh history arena + stamps against
+        // the fresh clock; the driver's capture copy frees right after.
+        session.setup.frame_state.history.session.setToast(session.allocator, text);
+        session.allocator.free(text);
+    }
     tryResumeWebAudio();
 }
 

@@ -443,6 +443,7 @@ working rules).
 - [Web console channel slices 2-3 - web.zig wiring + the exclusion set](#web-console-channel-slices-2-3---webzig-wiring--the-exclusion-set)
 - [Console pointer decoupling - the merge no longer re-applies the scripted position on every command frame](#console-pointer-decoupling---the-merge-no-longer-re-applies-the-scripted-position-on-every-command-frame)
 - [Dump-walker struct summaries - slice elements and struct fields render their first fields inline](#dump-walker-struct-summaries---slice-elements-and-struct-fields-render-their-first-fields-inline)
+- [Toast system slices 2-3 - the firing sites + the re-boot bridge](#toast-system-slices-2-3---the-firing-sites--the-re-boot-bridge)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -25329,3 +25330,38 @@ the real binary: `dump history.current_state.player_data` now shows
 `inventory: { slots: (96 of ?types.Item) }` where the old code printed
 the type token. AGENTS' drive-authoring workaround bullet (the
 mouse-owned-frame note) deleted with the fix.
+
+## Toast system slices 2-3 - the firing sites + the re-boot bridge
+
+Every success that was silent now toasts: Export Game ("Exported N
+files" - the count in hand at the staging end), Import Game ("Imported
+N files" - set on the DYING session, moments before the re-boot),
+campaign save ("Campaign saved" - the save-first leg of Validate and
+Export overwrites it with its own, more specific toast; single-slot by
+design), campaign export ("Campaign exported"), and campaign validate
+(a clean bill is now the toast "Campaign validated - no findings" -
+UPGRADED from its old MODAL popup, the tracked follow-up its own doc
+comment named; fire-and-forget, nothing to acknowledge). DESIGN →
+Campaigns → the campaign editor's stale "success popup" prose updated
+with it.
+
+The re-boot bridge, as settled: the web driver is the only thing that
+survives the session swap, so it carries the toast -
+`rebootSession` captures the text (one dupe, before the teardown frees
+the old history arena), re-plants it on the fresh session after
+`bootSession`, RE-STAMPING the expiry (the fresh clock restarts at 0;
+the old stamp would never fire - the planted toast observed live with
+`expires_at_session_us: 1000000`). The handler stays uniform with every
+other firing site - no boot flag, no createSessionSetup parameter.
+
+Browser-driven end-to-end against the served build: a fabricated File
+through the EXACT upload-leg chain (FileReader -> staging zip -> the
+import marker), the poll's import, the re-boot, and the console channel
+reading the carried toast back on the fresh session - then a later
+dump reading null, the frame clock having expired it. The original
+Import/Export-silence complaint is finally assertable, and the visual
+capture from the drive sits in the session notes. Drive-fixture lesson
+kept: a hand-rolled STORE zip's central-directory record needs its
+local-header-offset field - the missing 4 bytes made the entry name
+read back fused with the EOCD magic, and the import's own error
+message named it instantly.

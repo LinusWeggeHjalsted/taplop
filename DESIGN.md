@@ -4378,8 +4378,8 @@ The slice-3 interaction design. The state shape is settled separately
   CURRENT content (`validation_replay.checkMissionValidationArtifact`:
   missing, malformed, foreign-uuid, and content-changed all read as
   unvalidated). Findings render through the standard warning popup; a
-  clean campaign gets the success popup (a real toast surface is the
-  tracked follow-up). No Test button (nothing to play in a campaign)
+  clean campaign gets the success TOAST (DESIGN → Error Handling → Toast
+  surface; fire-and-forget, upgraded from the old modal popup). No Test button (nothing to play in a campaign)
   and no Save button (ctrl+S + the options menu are the paths); the
   global top bar's tips `?` hides on this screen for the button's spot
   (the mission editor's rule, second screen). The in-game campaign

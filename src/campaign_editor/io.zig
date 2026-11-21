@@ -793,6 +793,11 @@ pub fn saveCampaignEditor(
     // The session continues under the SAVED identity (a fork's saves hit
     // the fork; a rename's too) - the memo carries it; ALSO the browser
     // lists need a rescan next open (they rescan on open anyway).
+    // A save otherwise reads as silence (the screen does not change);
+    // the toast is the confirmation. A caller that continues into a
+    // bigger flow (Validate, Export) overwrites it with its own, more
+    // specific toast - single-slot by design.
+    history.session.setToast(history.history_arena.allocator(), "Campaign saved");
     return saved_dir;
 }
 
@@ -926,9 +931,8 @@ fn missionMemoExistedBefore(history: *GameStateHistory, handle: u32) bool {
 ///     (`validation_replay.checkMissionValidationArtifact` - a missing or
 ///     stale replay reads as unvalidated)
 /// Findings surface as one popup through the standard warning surface; a
-/// clean campaign gets the success popup (visible feedback that the
-/// click ran - the Revalidate-success precedent; a real toast surface is
-/// the tracked follow-up).
+/// clean campaign gets the success TOAST (fire-and-forget - the
+/// Revalidate-success precedent, upgraded from its old modal popup).
 pub fn validateSavedCampaign(
     history: *GameStateHistory,
     campaign_content_dir: []const u8,
@@ -958,9 +962,11 @@ pub fn validateSavedCampaign(
     validateCampaignMissions(history, sections, campaign, allocator, &warnings);
 
     if (warnings.items.len == 0) {
-        history.session.setPendingError(
+        // The success signal is a toast, not the modal popup it once was
+        // (fire-and-forget: nothing to acknowledge on a clean bill).
+        history.session.setToast(
             history.history_arena.allocator(),
-            "Campaign validated - no findings.",
+            "Campaign validated - no findings",
         );
         return;
     }
@@ -1270,6 +1276,11 @@ pub fn exportCampaignEditor(history: *GameStateHistory) void {
     // Web: offer it as a download (reads it back from the mounted FS);
     // native: a comptime no-op.
     file_source_mod.triggerBrowserDownload(scratch, zip_path, std.fs.path.basename(zip_path));
+
+    // The save-first leg already toasted "Campaign saved"; the export's
+    // own, more specific toast overwrites it (single-slot by design) -
+    // without this, the flow's only signal is the browser download bar.
+    history.session.setToast(history.history_arena.allocator(), "Campaign exported");
 }
 
 /// Consume the campaign-import marker, if present: the picked .zip has

@@ -87,6 +87,14 @@ pub fn exportGameFolder(history: *state.GameStateHistory) void {
         export_download_name,
     );
     history.file_source.deleteFile(file_source_mod.game_export_temp_path) catch {};
+
+    // The only other success signal is the browser's own download bar -
+    // a blocked or missed download reads as silence (the "nothing
+    // happens" class). The toast closes the loop.
+    history.session.setToast(
+        history.history_arena.allocator(),
+        std.fmt.allocPrint(scratch, "Exported {d} files", .{paths.len}) catch "Exported the game folder",
+    );
 }
 
 /// Safety caps for an imported archive (the untrusted-zip rules - DESIGN →
@@ -276,6 +284,13 @@ fn importGameFolder(
     // Success: the re-boot (the web driver's job, at the frame boundary)
     // applies everything the folder now carries - settings, shadow data/
     // trees, and the imported autosave (the main-menu Continue button).
+    // The confirmation toast lands on the DYING session - the re-boot
+    // replaces the session wholesale, and the web driver's bridge carries
+    // it to the fresh one (see DESIGN → Error Handling → Toast surface).
+    history.session.setToast(
+        history.history_arena.allocator(),
+        std.fmt.allocPrint(scratch, "Imported {d} files", .{file_headers.items.len}) catch "Imported the game folder",
+    );
     history.session.pending_import_reboot = true;
 }
 
@@ -420,8 +435,12 @@ test "importGameFolder: overlay - zip wins on same paths, unmentioned kept, shad
 
     importGameFolder(&history, file_source_mod.game_import_temp_path);
 
-    // Success: the re-boot flag is set, no error, the staging temp deleted.
+    // Success: the re-boot flag is set, no error, the staging temp deleted,
+    // and the confirmation toast is on the DYING session's slot (the web
+    // driver's re-boot bridge carries it to the fresh session).
     try std.testing.expect(history.session.pending_import_reboot);
+    const toast = history.session.active_toast orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("Imported 4 files", toast.text);
     try std.testing.expectEqual(@as(?[]const u8, null), history.session.pending_error);
     try std.testing.expect(!history.file_source.fileExists(file_source_mod.game_import_temp_path));
 

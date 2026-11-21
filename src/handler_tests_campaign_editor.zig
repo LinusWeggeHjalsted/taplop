@@ -1496,8 +1496,11 @@ test "validateSavedCampaign: the file-level findings popup + the clean success" 
         return error.TestUnexpectedResult;
 
     campaign_editor_io.validateSavedCampaign(&clean_history, clean_dir);
-    try testing.expectEqualStrings("Campaign validated - no findings.", clean_history.session.pending_error orelse
-        return error.TestUnexpectedResult);
+    // The clean bill is the TOAST, not the old modal popup: fire-and-
+    // forget, nothing to acknowledge.
+    try testing.expectEqual(@as(?[]const u8, null), clean_history.session.pending_error);
+    const toast = clean_history.session.active_toast orelse return error.TestUnexpectedResult;
+    try testing.expectEqualStrings("Campaign validated - no findings", toast.text);
 }
 
 test "saveCampaignEditor: an official-origin campaign forks - fresh identity, whole-dir carry, no shadow" {
