@@ -394,9 +394,11 @@ pub fn build(b: *std.Build) !void {
     web_step.dependOn(emcc_step);
 
     // `zig build emrun` - serve the web build locally and open it in a browser.
+    // The web install dir is `.custom = "web"` above - a subdir of the
+    // install prefix, so the served path is <prefix>/web/taplop.html.
     const emrun_step = try emsdk.emrunStep(
         b,
-        b.graph.path(.install_prefix, "taplop.html"),
+        b.graph.path(.install_prefix, "web/taplop.html"),
         &.{},
     );
     emrun_step.dependOn(emcc_step);
