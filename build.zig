@@ -505,6 +505,28 @@ pub fn build(b: *std.Build) !void {
     gradient_report_run.setCwd(b.path("."));
     const gradient_report_step = b.step("gradient-report", "Generate gradient_report.md (the gradient spacing + seam contrast report)");
     gradient_report_step.dependOn(&gradient_report_run.step);
+
+    // === Tooltip text report (scripts/tooltip_report.sh) ===
+    // A host tool that walks the real tooltip builders over their enums
+    // (every skill / effect / item shape / material kind, example values)
+    // and scans every literal `.tooltip = ` emission site under src/,
+    // writing tooltip_report.md - the complete hover-text inventory for
+    // wording review. Root lives in src/ so it can import types.zig + the
+    // ui facade; the `generated` + `build_info` modules cover the imports.
+    const tooltip_report_exe = b.addExecutable(.{
+        .name = "tooltip_report",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/tooltip_report.zig"),
+            .target = b.resolveTargetQuery(.{}), // always the build host
+            .optimize = .debug,
+        }),
+    });
+    tooltip_report_exe.root_module.addAnonymousImport("generated", .{ .root_source_file = generated_path });
+    tooltip_report_exe.root_module.addImport("build_info", build_info_module);
+    const tooltip_report_run = b.addRunArtifact(tooltip_report_exe);
+    tooltip_report_run.setCwd(b.path("."));
+    const tooltip_report_step = b.step("tooltip-report", "Generate tooltip_report.md (the complete tooltip text inventory)");
+    tooltip_report_step.dependOn(&tooltip_report_run.step);
 }
 
 /// Computes the game_version string at configure time:

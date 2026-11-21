@@ -10,6 +10,7 @@ const types = @import("../types.zig");
 const element = @import("element.zig");
 const lookups = @import("../generated_lookups.zig");
 const Skill = @import("../skill.zig").Skill;
+const EffectDefinition = @import("../effect.zig").Effect;
 
 const Action = types.Action;
 const ScreenPosition = types.ScreenPosition;
@@ -498,6 +499,27 @@ pub fn buildSkillTooltip(allocator: std.mem.Allocator, skill: Skill) !Tooltip {
     };
 }
 
+/// Build an active-effect icon's tooltip (the inspect panel's effect
+/// grid): effect name, description, remaining duration. One
+/// implementation shared by panels.zig's emission and the tooltip report
+/// tool (which walks every EffectId through it, so the report and the
+/// game cannot drift).
+pub fn buildEffectTooltip(
+    allocator: std.mem.Allocator,
+    definition: EffectDefinition,
+    duration: u32,
+) !Tooltip {
+    return .{
+        .header = try spanRow(allocator, text(definition.name)),
+        .body = try allocator.dupe(TooltipRow, &.{
+            try spanRow(allocator, text(definition.description)),
+            try spanRow(allocator, text(
+                try std.fmt.allocPrint(allocator, "Current duration {d}", .{duration}),
+            )),
+        }),
+    };
+}
+
 test "buildSkillTooltip lays out name, description, type, then non-null vars" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -509,6 +531,16 @@ test "buildSkillTooltip lays out name, description, type, then non-null vars" {
     try std.testing.expectEqualStrings("Attack target, dealing 1.5x damage if they have less than half health", tooltip.body[0][0].text);
     try std.testing.expectEqualStrings("Weapon Skill", tooltip.body[1][0].text);
     try std.testing.expectEqualStrings("Range 1", tooltip.body[2][0].text);
+}
+
+test "buildEffectTooltip: name, description, current duration" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const definition = lookups.getEffectDefinition(.stone_form);
+    const tooltip = try buildEffectTooltip(arena.allocator(), definition, 3);
+    try std.testing.expectEqualStrings("Stone Form", tooltip.header.?[0].text);
+    try std.testing.expectEqualStrings(definition.description, tooltip.body[0][0].text);
+    try std.testing.expectEqualStrings("Current duration 3", tooltip.body[1][0].text);
 }
 
 test "buildItemTooltip: weapon shows name, type, damage" {

@@ -434,6 +434,7 @@ working rules).
 - [Mission-complete medal row - slice 2: the surface (both variants)](#mission-complete-medal-row---slice-2-the-surface-both-variants)
 - [Mission-complete overlay polish (author request, playtester feedback)](#mission-complete-overlay-polish-author-request-playtester-feedback)
 - [Mission-complete overlay polish, round 2 (author request)](#mission-complete-overlay-polish-round-2-author-request)
+- [Tooltip text report (the wording-review inventory)](#tooltip-text-report-the-wording-review-inventory)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -25042,3 +25043,41 @@ summary row's horizontal rhythm.
 
 Verification: 1135 tests (the scan's harvest-header match follows the
 new text) + the full campaign completion drive (exit 0).
+
+## Tooltip text report (the wording-review inventory)
+
+`scripts/tooltip_report.sh` -> `zig build tooltip-report`
+(`src/tooltip_report.zig`, the sound/art report pattern) writes the
+gitignored `tooltip_report.md`: every tooltip the game can show, in two
+parts from two kinds of source truth:
+
+- **Part 1 - the real builders walked over their enums** (example
+  values, plain text): every SkillId through `buildSkillTooltip`, every
+  EffectId through a NEW `buildEffectTooltip`, every item shape through
+  `buildItemTooltip` (weapons per WeaponType, gear, tomes both learned
+  states, the comparison shape), and the material count rows harvested
+  by calling the REAL `emitMaterialIcons` and reading the emitted
+  elements back. Enum-keyed - new skills/effects appear automatically.
+- **Part 2 - every literal `.tooltip = ` emission site under src/**
+  (file:line, test blocks excluded): the string literals inside each
+  initializer (format placeholders stay), best-effort extraction over a
+  COMPLETE site inventory - a variable-built site lists its expression
+  and, when a `text(<ident>)` variable has a matching
+  `<ident> = try std.fmt.allocPrint(` above, the feeding format string
+  too (the medals' "{s} Medal - {d} turns" class - the format lives
+  before the initializer, out of the brace region). Nothing is
+  invisible; `@import(` paths inside regions are filtered.
+
+The prerequisite seam: the inspect panel's effect-icon tooltip was
+inline in panels.zig; extracted to `tooltip.buildEffectTooltip`
+(tooltip.zig, re-exported through ui.zig) shared by the panel and the
+report - one implementation, so the report and the game cannot drift
+(the emitMaterialIcons-style builder rule).
+
+Rejected alternative: building every UI surface with dummy state and
+harvesting the UiElementList - a per-surface fixture matrix whose
+completeness nothing machine-checks (the coverage-matrix drift class).
+
+Verification: 1136 tests (new buildEffectTooltip contract test; the
+tool compiles into the headless test tree) + the generated report
+itself (74 literal sites, 38 runtime-built - inspected by hand).

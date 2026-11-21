@@ -143,6 +143,7 @@ pub const positive_color = ui_tooltip.positive_color;
 pub const negative_color = ui_tooltip.negative_color;
 pub const buildItemTooltip = ui_tooltip.buildItemTooltip;
 pub const buildSkillTooltip = ui_tooltip.buildSkillTooltip;
+pub const buildEffectTooltip = ui_tooltip.buildEffectTooltip;
 pub const material_count_font_size = ui_emit.material_count_font_size;
 pub const material_count_inset = ui_emit.material_count_inset;
 pub const cooldown_font_size = ui_emit.cooldown_font_size;

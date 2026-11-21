@@ -34,6 +34,7 @@ session_log_*.txt
 art_report.md
 gradient_report.md
 sound_report.md
+tooltip_report.md
 
 # Dev scratch data dir (--data-dir ./scratch, README) - untracked by design
 scratch/

@@ -1122,15 +1122,7 @@ pub fn buildEntityInspectPanel(
                 .width = small_icon_size,
                 .height = small_icon_size,
                 .color = c_skill_icon,
-                .tooltip = .{
-                    .header = try spanRow(allocator, text(definition.name)),
-                    .body = try allocator.dupe(TooltipRow, &.{
-                        try spanRow(allocator, text(definition.description)),
-                        try spanRow(allocator, text(
-                            try std.fmt.allocPrint(allocator, "Current duration {d}", .{effect.duration}),
-                        )),
-                    }),
-                },
+                .tooltip = try tooltip.buildEffectTooltip(allocator, definition, effect.duration),
             } });
             try emitCornerNumber(elements, allocator, font_metrics, cell, effect.duration, null);
         }
