@@ -2287,11 +2287,12 @@ same recorded events.
   heap-view lifetime under `ALLOW_MEMORY_GROWTH`) for the same result -
   fitting, not belonging. The seam is also the canvas-click workaround's
   missing property: identical everywhere the module runs.
-- **Output is a mailbox - nothing is destroyed unread.** The sink
-  (`ConsoleOutputSink` in console.zig - an ArrayList-backed `Writer`
-  interface) is intra-frame staging; the queue's write sites route
-  through ONE accessor (the sink when wired, else the native stdout
-  `File.Writer` - the concrete-parent rule stays for the file arm).
+- **Output is a mailbox - nothing is destroyed unread.** The sink (std's
+  `std.Io.Writer.Allocating`, wired by pointer into the queue's
+  `output_sink`) is intra-frame staging; the queue's write sites route
+  through ONE accessor (`ConsoleQueue.outputWriter` - the sink when
+  wired, else the native stdout `File.Writer`, whose concrete-parent
+  rule stays).
   DELIVERY HOLDS WHILE THE PREVIOUS DELIVERY IS UNREAD: each frame,
   if the sink is non-empty AND `.console_out` is absent, the web driver
   writes the whole sink to the file and clears it; while the file sits

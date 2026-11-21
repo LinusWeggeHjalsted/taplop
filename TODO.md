@@ -592,14 +592,6 @@ Open:
   full rationale: FS-marker transport over exported wasm fns, mailbox
   output, line feeder instead of the queue's spin, `quit` as a
   noticed no-op).** Slices:
-  - [ ] 1. `console.zig` headless core: `ConsoleOutputSink` (an
-        ArrayList-backed `Writer` the queue's write sites route through,
-        sink-else-stdout via one accessor) + `ConsoleFeeder` (stage raw
-        script text; feed one parsed command per frame below a
-        low-water occupancy; skips + parse errors consume no frame,
-        errors land in the sink) + tests (sink round-trip +
-        take-and-clear; feeder ordering, low-water pause during holds,
-        no-overflow, parse-error capture).
   - [ ] 2. `web.zig` wiring: `WebSession` gains sink + feeder;
         `bootSession` wires the fresh queue (re-boot safe - same site as
         the audio re-wraps) + installs the JS shims via

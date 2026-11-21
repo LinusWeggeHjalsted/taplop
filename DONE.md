@@ -439,6 +439,7 @@ working rules).
 - [Padded outline masks - the medal-highlight halo cutoff fix](#padded-outline-masks---the-medal-highlight-halo-cutoff-fix)
 - [Web listing seam - Dir.iterate is unimplemented on emscripten (Zig 0.17)](#web-listing-seam---diriterate-is-unimplemented-on-emscripten-zig-017)
 - [Import Game: OS compress-folder zips strip the root folder](#import-game-os-compress-folder-zips-strip-the-root-folder)
+- [Web console channel slice 1 - the sink seam + the feeder (console.zig)](#web-console-channel-slice-1---the-sink-seam--the-feeder-consolezig)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -25199,3 +25200,40 @@ checks collapsed into the single filter. A test pins the OS shape
 (`taplop/` prefix + directory records + a `.DS_Store` inside the
 wrapper): the content lands at the persistent-relative paths and
 nothing nests.
+
+## Web console channel slice 1 - the sink seam + the feeder (console.zig)
+
+The headless half of the web console channel (the web build's drivable
+surface - design: DESIGN → Input → Console input → Web console seam):
+the queue's six write sites now route through one accessor
+(`ConsoleQueue.outputWriter` - the web sink when wired, else the native
+stdout File.Writer, null with neither), with `output_sink:
+?*std.Io.Writer.Allocating` on the queue. The planned `ConsoleOutputSink`
+wrapper type was dropped: std's allocating writer IS the sink (init /
+writer / written / clearRetainingCapacity - the full mailbox contract),
+and a wrapper around it would fit, not belong. `ConsoleFeeder` stages
+raw script text and feeds one parsed command per frame below a
+low-water occupancy (8) - the web stand-in for the native reader
+thread, which cannot spin on a full queue (its producer IS the game
+thread; a spin would freeze the tab). Blank/comment lines and parse
+errors consume no frame; parse errors report to the sink like the
+native reader's stderr.
+
+The debugging note worth keeping (now also in AGENTS → Zig Gotchas):
+the feeder's first shape reset the stage inside `nextStagedLine`,
+while the just-returned line slice was still outstanding - 0.17
+ArrayList's `clearRetainingCapacity` POISONS the bytes ("invalidates
+all element pointers"), so every command fed from the script's last
+line handed the parser garbage. Two feeder tests crashed while the
+low-water test passed (its lines never hit the clear) - the
+discriminator was a minimal repro of the slice-return-then-clear
+shape. The reset moved out of the slice-returning fn
+(`resetIfDrained`, called after the parse loop).
+
+Tests: the sink end-to-end (help/inputs/dump driven through
+`applyFrameCommand` with the sink wired, read back via `written` +
+clear), feeder staging/ordering/comment-skipping across two stage
+calls (the marker-poll shape), parse-error capture, and the low-water
+pause (feeds stop AT the mark while nothing drains, resume
+one-for-one below it). Slice 2 (web.zig wiring) makes
+`ConsoleFeeder`'s methods cross-file consumers of web.zig.

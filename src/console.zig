@@ -3,10 +3,12 @@
 //! per-frame drain + PlatformInput merge, the action fold, and the dump
 //! routing (path dumps → dump_walker.zig, pure reflection; the curated
 //! ui/level projections stay here - derived facts that exist as no
-//! stored state). Everything here is raylib-free; the reader thread + stdout
-//! output writer are wired only by the native driver (native.zig) - with no
-//! reader the queue stays empty and the per-frame drain is a no-op (web, or
-//! a native launch without stdin, which is immediate EOF). Injected events
+//! stored state). Everything here is raylib-free; the native driver
+//! (native.zig) wires the reader thread + stdout output writer, the web
+//! driver (web.zig) wires the sink + feeder instead (see DESIGN → Input →
+//! Console input → Web console seam) - with no producer the queue stays
+//! empty and the per-frame drain is a no-op (a native launch without
+//! stdin, which is immediate EOF). Injected events
 //! ride the IDENTICAL pipeline as hardware input (translateInput, held-state
 //! tracking, binding contexts, drains, recorded events), so a console-driven
 //! session is indistinguishable from a played one and its log is a valid
@@ -490,13 +492,20 @@ pub const ConsoleQueue = struct {
     /// A by-value copy taken at pop, before the reader thread can reuse
     /// the slot. Game thread only.
     last_taken_command: ?ConsoleCommand = null,
-    /// Dump output goes here (stdout), wired by the native driver. Without a
-    /// writer there is no reader thread either (web), so a dump can never
-    /// arrive. Stored as the concrete parent (the File.Writer owns its
-    /// interface; the vtable resolves the parent via fieldParentPtr, so an
-    /// interface copy would dangle).
+    /// Dump output goes here (stdout), wired by the native driver. Stored
+    /// as the concrete parent (the File.Writer owns its interface; the
+    /// vtable resolves the parent via fieldParentPtr, so an interface copy
+    /// would dangle). The web driver wires `output_sink` instead - the
+    /// write sites route through `outputWriter`, which prefers the sink.
     output: ?std.Io.File.Writer = null,
     output_buffer: [output_buffer_capacity]u8 = undefined,
+    /// The web console's readable output sink - console output staged in
+    /// memory (std's allocating Writer) instead of stdout, so a driving
+    /// agent can read it back through the `.console_out` delivery (see
+    /// DESIGN → Input → Console input → Web console seam). A pointer to
+    /// driver-owned storage (the sink outlives re-boots, unlike this
+    /// queue, which each boot recreates). Native leaves it null.
+    output_sink: ?*std.Io.Writer.Allocating = null,
     /// A human is typing at the other end - set once by the native driver
     /// at wiring from `isTty(stdin)`. Gates ONLY the console-ready prompt
     /// (see `promptDue`): the channel itself stays always-on by design - a
@@ -564,7 +573,129 @@ pub const ConsoleQueue = struct {
         }
         return command;
     }
+
+    /// The queue's single output seam: the web sink when wired, else the
+    /// native stdout File.Writer (null with neither wired). Every console
+    /// write site routes through here, so web output lands in memory where a
+    /// driving agent can read it back. Flush is a real flush on the file;
+    /// the sink streams unbuffered (zero-capacity buffer), so its flush is
+    /// a no-op.
+    fn outputWriter(self: *ConsoleQueue) ?*std.Io.Writer {
+        if (self.output_sink) |sink| return &sink.writer;
+        if (self.output) |*file_writer| return &file_writer.interface;
+        return null;
+    }
 };
+
+// ============================================================
+// The web feeder (a game-thread producer - no spin)
+// ============================================================
+
+/// The web console's producer: staged script text (raw lines, staged from
+/// the `.console_in` marker file) parsed into the queue at ONE command per
+/// frame. Native has no feeder - its producer is the reader thread, free to
+/// spin on a full queue because it is a separate THREAD. The web producer
+/// IS the game thread: a spin inside the frame callback would freeze the
+/// tab, so the feeder instead pauses at a low-water occupancy and resumes
+/// next frame. Blank/comment lines and parse errors consume no frame (the
+/// scan continues to the next line), so a comment-padded script drains at
+/// full command rate. See DESIGN → Input → Console input → Web console
+/// seam.
+pub const ConsoleFeeder = struct {
+    allocator: std.mem.Allocator,
+    /// Staged script bytes; the unconsumed remainder is
+    /// `staged.items[consumed_offset..]`.
+    staged: std.ArrayList(u8) = .empty,
+    consumed_offset: usize = 0,
+
+    pub fn init(allocator: std.mem.Allocator) ConsoleFeeder {
+        return .{ .allocator = allocator };
+    }
+
+    pub fn deinit(self: *ConsoleFeeder) void {
+        self.staged.deinit(self.allocator);
+    }
+
+    /// Stage more script text (copied; multi-line). Lines split on '\n' at
+    /// feed time, so a partial trailing line just waits for its rest.
+    /// Repeated staging APPENDS after the unconsumed offset, so nothing
+    /// staged is ever lost.
+    pub fn stageScript(self: *ConsoleFeeder, text: []const u8) void {
+        // Fully consumed - a fresh stage resets instead of growing without
+        // bound across a long drive (see resetIfDrained).
+        self.resetIfDrained();
+        self.staged.appendSlice(self.allocator, text) catch
+            @panic("console feeder staging out of memory");
+    }
+
+    /// True while unconsumed script text remains.
+    pub fn hasPending(self: *const ConsoleFeeder) bool {
+        return self.consumed_offset < self.staged.items.len;
+    }
+
+    /// Feed ONE parsed command into the queue, if the queue is below the
+    /// low-water occupancy and a complete line is staged. A no-op while the
+    /// queue is backed up (the drain holds during `wait`s) - the next frame
+    /// resumes. Parse errors land in the sink, the web stand-in for the
+    /// native reader's stderr report.
+    pub fn feedNextCommand(
+        self: *ConsoleFeeder,
+        queue: *ConsoleQueue,
+        sink: *std.Io.Writer.Allocating,
+    ) void {
+        const occupied = queue.write_counter.load(.monotonic) -%
+            queue.read_counter.load(.acquire);
+        if (occupied >= feed_low_water) return;
+        while (self.nextStagedLine()) |line| {
+            const outcome = parseCommandLine(line);
+            switch (outcome) {
+                .skip => continue,
+                .err => {
+                    sink.writer.print("console: {s}\n", .{outcome.errorMessage()}) catch {};
+                    continue;
+                },
+                .command => |command| {
+                    queue.push(command);
+                    self.resetIfDrained();
+                    return;
+                },
+            }
+        }
+        self.resetIfDrained();
+    }
+
+    /// Reset the stage when every staged byte is consumed - OUTSIDE
+    /// `nextStagedLine` deliberately: a staged-line slice is parsed after
+    /// that fn returns, and `clearRetainingCapacity` POISONS the bytes
+    /// (the 0.17 ArrayList "invalidates all element pointers" rule), so
+    /// clearing while a line slice is outstanding hands the parser
+    /// garbage.
+    fn resetIfDrained(self: *ConsoleFeeder) void {
+        if (self.consumed_offset == self.staged.items.len) {
+            self.staged.clearRetainingCapacity();
+            self.consumed_offset = 0;
+        }
+    }
+
+    /// The next complete staged line (without its '\n'), advancing the
+    /// consumed offset past it; null with no complete line left (a partial
+    /// trailing line waits for more staged bytes).
+    fn nextStagedLine(self: *ConsoleFeeder) ?[]const u8 {
+        const rest = self.staged.items[self.consumed_offset..];
+        const newline = std.mem.indexOfScalar(u8, rest, '\n') orelse return null;
+        const line = rest[0..newline];
+        self.consumed_offset += newline + 1;
+        return line;
+    }
+};
+
+/// The feeder's occupancy pause point: while the queue holds this many
+/// unconsumed commands the feeder stays quiet (the drain pops one per
+/// frame, so steady state is one in / one out). Well below the queue's 64
+/// capacity, far above the steady state - headroom for the burst a `wait`
+/// hold can bank without ever approaching the push spin (see
+/// `ConsoleFeeder`).
+const feed_low_water = 8;
 
 // ============================================================
 // The console-ready prompt
@@ -595,9 +726,9 @@ fn promptDue(queue: *const ConsoleQueue, taken: ConsoleCommand) bool {
 /// not a game system). Called by `applyFrameCommand` via `promptDue` and
 /// by the boot announcement below.
 fn printPrompt(queue: *ConsoleQueue) void {
-    if (queue.output) |*output| {
-        output.interface.writeAll("> ") catch return;
-        output.interface.flush() catch return;
+    if (queue.outputWriter()) |output| {
+        output.writeAll("> ") catch return;
+        output.flush() catch return;
     }
 }
 
@@ -607,9 +738,9 @@ fn printPrompt(queue: *ConsoleQueue) void {
 /// prompts are `applyFrameCommand`'s.
 pub fn announceConsoleInput(queue: *ConsoleQueue) void {
     if (!queue.interactive) return;
-    if (queue.output) |*output| {
-        output.interface.writeAll("console input on stdin - type help for the command list\n") catch return;
-        output.interface.flush() catch return;
+    if (queue.outputWriter()) |output| {
+        output.writeAll("console input on stdin - type help for the command list\n") catch return;
+        output.flush() catch return;
     }
     printPrompt(queue);
 }
@@ -913,9 +1044,9 @@ fn writeDump(
     queue: *ConsoleQueue,
     frame_root: anytype,
 ) void {
-    if (queue.output) |*output| {
-        dump_walker.writeDump(&output.interface, frame_root, path);
-        output.interface.flush() catch |err| {
+    if (queue.outputWriter()) |output| {
+        dump_walker.writeDump(output, frame_root, path);
+        output.flush() catch |err| {
             std.debug.print("console dump write failed: {s}\n", .{@errorName(err)});
         };
     }
@@ -931,8 +1062,8 @@ fn writeReport(
     camera: types.Camera,
     camera_zoom: f32,
 ) void {
-    if (queue.output) |*output| {
-        writeReportToWriter(kind, &output.interface, history, ui_elements, camera, camera_zoom);
+    if (queue.outputWriter()) |output| {
+        writeReportToWriter(kind, output, history, ui_elements, camera, camera_zoom);
     }
 }
 
@@ -954,9 +1085,9 @@ const help_column_width = blk: {
 /// examples (the both-ways test parses them, so everything printed here
 /// is a tested-working command line).
 fn writeHelp(queue: *ConsoleQueue) void {
-    if (queue.output) |*output| {
-        writeHelpToWriter(&output.interface);
-        output.interface.flush() catch return;
+    if (queue.outputWriter()) |output| {
+        writeHelpToWriter(output);
+        output.flush() catch return;
     }
 }
 
@@ -990,9 +1121,9 @@ fn writeHelpToWriter(output: *std.Io.Writer) void {
 /// (the same ids the settings bindings name). Machine-walked: the print
 /// cannot lie, and new ids appear automatically.
 fn writeInputs(queue: *ConsoleQueue) void {
-    if (queue.output) |*output| {
-        writeInputsToWriter(&output.interface);
-        output.interface.flush() catch return;
+    if (queue.outputWriter()) |output| {
+        writeInputsToWriter(output);
+        output.flush() catch return;
     }
 }
 
@@ -2302,4 +2433,142 @@ test "takeFrameCommand: the wait-idle hold releases the next command on the flow
     try testing.expect(released.?.action == .escape);
     // The hold is disarmed; later frames take commands unconditionally.
     try testing.expect(queue.takeFrameCommand(false) == null); // the queue is empty
+}
+
+// ============================================================
+// Web console seam: the sink routing + the feeder
+// ============================================================
+
+test "output seam: a wired sink carries help + report output (the web read-back)" {
+    const test_harness = @import("test_harness.zig");
+    var backing = std.heap.ArenaAllocator.init(std_testing.allocator);
+    defer backing.deinit();
+    var harness = test_harness.Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    test_harness.runToIdle(&history);
+
+    var queue: ConsoleQueue = .{};
+    var sink: std.Io.Writer.Allocating = .init(std_testing.allocator);
+    defer sink.deinit();
+    queue.output_sink = &sink;
+
+    queue.push(parseCommandLine("help").command);
+    queue.push(parseCommandLine("inputs").command);
+    history.session.tile_cursor = .{ .x = 2, .y = 3 };
+    queue.push(parseCommandLine("dump history.session.tile_cursor").command);
+    const backend_input = PlatformInput{ .events = &.{}, .viewport = .{ .width = 1280, .height = 1080 } };
+    // The root mirrors the driver's: history by value (the writeDump test's
+    // shape - the walker reads the same fields the FrameState would).
+    const Root = struct { history: GameStateHistory };
+    const root = Root{ .history = history };
+    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+
+    const written = sink.written();
+    try std_testing.expect(std.mem.indexOf(u8, written, "console commands:") != null);
+    try std_testing.expect(std.mem.indexOf(u8, written, "keys (W3C physical-key codes):") != null);
+    try std_testing.expect(std.mem.indexOf(u8, written, "{ x: 2, y: 3 }") != null);
+
+    // Take-and-clear: the delivery consumes exactly what was written.
+    const taken = sink.written();
+    try std_testing.expect(taken.len == written.len);
+    sink.clearRetainingCapacity();
+    try std_testing.expect(sink.written().len == 0);
+}
+
+test "feeder: stages a script and feeds one command per frame" {
+    var queue: ConsoleQueue = .{};
+    var sink: std.Io.Writer.Allocating = .init(std_testing.allocator);
+    defer sink.deinit();
+    var feeder = ConsoleFeeder.init(std_testing.allocator);
+    defer feeder.deinit();
+    try std_testing.expect(!feeder.hasPending());
+
+    // Multi-line staging, split across two stage calls (the second write
+    // appends after the unconsumed remainder - the marker-poll shape).
+    feeder.stageScript("press Escape\n# a comment consumes no frame\n");
+    feeder.stageScript("move 10 20\n");
+    try std_testing.expect(feeder.hasPending());
+
+    // Frame 1: the press.
+    feeder.feedNextCommand(&queue, &sink);
+    try std_testing.expect(queue.takeFrameCommand(true).? == .press);
+    try std_testing.expect(feeder.hasPending());
+
+    // Frame 2: the comment is skipped within the same feed call - the move
+    // feeds on the very next call, no frame spent on the comment.
+    feeder.feedNextCommand(&queue, &sink);
+    const moved = queue.takeFrameCommand(true).?;
+    try std_testing.expect(moved == .move);
+    try std_testing.expectEqual(@as(f32, 10), moved.move.x);
+    try std_testing.expectEqual(@as(f32, 20), moved.move.y);
+
+    // Fully consumed: no pending bytes, and a fresh stage resets instead of
+    // growing (the bounded-drive contract).
+    try std_testing.expect(!feeder.hasPending());
+    feeder.stageScript("wait 1\n");
+    try std_testing.expect(feeder.staged.items.len == "wait 1\n".len);
+    feeder.feedNextCommand(&queue, &sink);
+    try std_testing.expect(queue.takeFrameCommand(true) == null); // the wait arms
+    feeder.feedNextCommand(&queue, &sink);
+    try std_testing.expect(queue.takeFrameCommand(true) == null); // ...and the feeder is empty again
+    try std_testing.expect(!feeder.hasPending());
+}
+
+test "feeder: parse errors land in the sink, the scan continues" {
+    var queue: ConsoleQueue = .{};
+    var sink: std.Io.Writer.Allocating = .init(std_testing.allocator);
+    defer sink.deinit();
+    var feeder = ConsoleFeeder.init(std_testing.allocator);
+    defer feeder.deinit();
+
+    feeder.stageScript("nonsense verb here\npress KeyA\n");
+    feeder.feedNextCommand(&queue, &sink);
+
+    // The bad line consumed no frame - the press is what fed.
+    const command = queue.takeFrameCommand(true).?;
+    try std_testing.expect(command == .press);
+    try std_testing.expectEqualStrings("KeyA", command.press.key.view());
+
+    const written = sink.written();
+    try std_testing.expect(std.mem.indexOf(u8, written, "console: ") != null);
+}
+
+test "feeder: pauses at the low-water occupancy while the drain holds" {
+    var queue: ConsoleQueue = .{};
+    var sink: std.Io.Writer.Allocating = .init(std_testing.allocator);
+    defer sink.deinit();
+    var feeder = ConsoleFeeder.init(std_testing.allocator);
+    defer feeder.deinit();
+
+    // More staged lines than the low-water mark, with nothing draining
+    // (this test never pops the queue - the drain-held shape of a long
+    // `wait idle`).
+    var script: std.ArrayList(u8) = .empty;
+    defer script.deinit(std_testing.allocator);
+    for (0..(feed_low_water + 20)) |i| {
+        script.print(std_testing.allocator, "move {d} 0\n", .{i}) catch unreachable;
+    }
+    feeder.stageScript(script.items);
+
+    // Feed far more times than the queue could hold unguarded: the
+    // occupancy must stop AT the low-water mark, never approach capacity,
+    // and the staged remainder simply waits.
+    for (0..feed_low_water * 2) |_| feeder.feedNextCommand(&queue, &sink);
+    const occupied = queue.write_counter.load(.monotonic) -% queue.read_counter.load(.monotonic);
+    try std_testing.expectEqual(@as(u32, feed_low_water), occupied);
+    try std_testing.expect(occupied < queue.commands.len);
+    try std_testing.expect(feeder.hasPending());
+
+    // The drain releases a few (a popped command per frame), and feeding
+    // resumes one-for-one below the mark.
+    for (0..4) |_| {
+        try std_testing.expect(queue.takeFrameCommand(true) != null);
+    }
+    feeder.feedNextCommand(&queue, &sink);
+    try std_testing.expectEqual(
+        @as(u32, feed_low_water - 3),
+        queue.write_counter.load(.monotonic) -% queue.read_counter.load(.monotonic),
+    );
 }

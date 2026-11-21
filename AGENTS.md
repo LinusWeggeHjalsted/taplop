@@ -568,6 +568,12 @@ survived many sessions this way).
   now also carries a `pointer_stability` SafetyLock field (leak/alias
   tracking), so a manual `.{ .items = ..., .capacity = ... }` literal misses
   it - initialize lists with `.empty` (or add `.pointer_stability = .{}`).
+  `clearRetainingCapacity` POISONS the bytes (`@memset` of `undefined` -
+  std's own doc: "invalidates all element pointers"), so a slice into
+  `items` taken before the clear reads garbage after (found as the web
+  feeder's return-a-line-then-clear shape: every command fed from the
+  script's last line handed the parser garbage; the reset must run after
+  the slice's consumer, not inside the fn that returns it).
 - ArrayList has no `.writer()` - use `.print(allocator, fmt, args)` and `.appendSlice(allocator, items)` directly
 - PriorityQueue: `.empty`, `.push(allocator, item)`, `.pop()`, `.deinit(allocator)`
 - Dir.writeFile takes an options struct: `.{ .sub_path = path, .data = data }`
