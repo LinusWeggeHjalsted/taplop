@@ -3107,9 +3107,9 @@ whose content hash no longer matches the mission - shows "unvalidated"
 (no medals).
 
 **The mission-complete medal row.** Both variants of the mission-complete
-overlay render a row of 4 tinted `ui/medal` sprites (Author, Gold, Silver,
-Bronze - tightest first, the historical text ladder's order), centered
-below the top-middle summary line. One shared graphic, per-rank hardcoded
+overlay render a row of 4 tinted `ui/medal` sprites (Bronze, Silver, Gold,
+Author - loosest first, the author medal crowning the row at the right),
+centered below the top-middle summary line. One shared graphic, per-rank hardcoded
 tints (author-green / gold / silver / bronze). Achieved = this run's
 turns at or under the tier's target (inclusive - matching the author's
 time earns the author medal; the targets are ordered, so an achieved tier

@@ -1463,6 +1463,14 @@ pub fn handlePlayerInputEvent(
             // set (a clone exists + the run was not strictly faster). See
             // DESIGN → Clones (clone system).
             const info = current.last_completed_mission orelse return;
+            // Consuming the offer retires the button (the overlay's
+            // Overwrite Clone disappears once clicked - no dead re-
+            // clickable button with no feedback, the playtester
+            // confusion; the validation variant's Overwrite Replay
+            // behaves the same way). A GameState write inside the
+            // replayed handler - undo restores the offer with the rest
+            // of the timeline.
+            current.last_completed_mission.?.overwrite_offered = false;
             pushEvents(current, &.{.{ .super_event = .{ .save_clone_info = .{
                 .mission_uuid = info.uuid,
                 .mission_name = info.name,

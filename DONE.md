@@ -432,6 +432,7 @@ working rules).
 - [Options menu: the dedicated toggle action (decoupled from Escape) + the open_->toggle_ naming sweep](#options-menu-the-dedicated-toggle-action-decoupled-from-escape--the-open-toggle-naming-sweep)
 - [Mission-complete medal row - slice 1: the mission-start author-turns capture](#mission-complete-medal-row---slice-1-the-mission-start-author-turns-capture)
 - [Mission-complete medal row - slice 2: the surface (both variants)](#mission-complete-medal-row---slice-2-the-surface-both-variants)
+- [Mission-complete overlay polish (author request, playtester feedback)](#mission-complete-overlay-polish-author-request-playtester-feedback)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24999,3 +25000,33 @@ rendered; hovering all four medals exercised the tooltip pass clean
 (exit 0).
 
 Verification: 1135 tests.
+
+## Mission-complete overlay polish (author request, playtester feedback)
+
+Four surface refinements, one coherent batch:
+
+- **Medal row order** reversed: Bronze leftmost, Author rightmost
+  (loosest first - the author medal crowns the row). DESIGN's medal-row
+  paragraph updated to match.
+- **Stat labels**: "Turns taken" (was the odd capitalized "Turns Spent")
+  + decapitalized second words throughout the column ("Tiles moved",
+  "Skills used", "Damage dealt", "Damage taken").
+- **The "New clone:" row** now ends with an "in N turns" suffix after
+  the material icons (the run's turn count - the row reads as one
+  summary line; the whole row re-centers including the suffix).
+- **Overwrite Clone retires on click**: a playtester clicked the
+  offered button again and got no feedback (the second overwrite is a
+  no-op - the clone data was already replaced). The
+  player_overwrite_clone handler now clears
+  `MissionCompleteInfo.overwrite_offered` when consuming the offer, so
+  the button disappears after the first click - the same
+  hide-on-consumption behavior as the validation variant's Overwrite
+  Replay. A GameState write inside the replayed handler (undo restores
+  the offer with the rest of the timeline); the replay-validation gate
+  ("player_overwrite_clone when not offered") already rejects a stale
+  second click.
+
+Verification: 1135 tests (the two medal tests assert the swapped row
+order + the "in N turns" suffix; the player_overwrite_clone drain test
+asserts the offer retires) + the full campaign completion drive (new
+game -> exit -> mission -> skips -> overlay, medal hovers, exit 0).

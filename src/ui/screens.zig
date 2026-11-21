@@ -502,8 +502,9 @@ const medal_gold_color = Color{ .r = 255, .g = 215, .b = 0 };
 const medal_silver_color = Color{ .r = 192, .g = 192, .b = 192 };
 const medal_bronze_color = Color{ .r = 205, .g = 127, .b = 50 };
 
-/// Emit the medal row: 4 medals (Author, Gold, Silver, Bronze - tightest
-/// first, the old text ladder's order), centered on the screen. Targets
+/// Emit the medal row: 4 medals (Bronze, Silver, Gold, Author - loosest
+/// first, the author medal crowning the row at the right), centered on the
+/// screen. Targets
 /// derive from `author_turns` at display time (medalTargets - never
 /// stored). Achieved = this run's turns at or under the tier's target
 /// (inclusive: matching the author's time earns the author medal; the
@@ -524,11 +525,13 @@ fn emitMedalRow(
     active_theme: types.ActiveColorTheme,
 ) !void {
     const targets = validation_replay.medalTargets(author_turns);
+    // Bronze leftmost, Author rightmost (loosest first - the author
+    // medal crowns the row).
     const medals = [_]struct { name: []const u8, color: Color, target: u32 }{
-        .{ .name = "Author", .color = medal_author_color, .target = author_turns },
-        .{ .name = "Gold", .color = medal_gold_color, .target = targets.gold },
-        .{ .name = "Silver", .color = medal_silver_color, .target = targets.silver },
         .{ .name = "Bronze", .color = medal_bronze_color, .target = targets.bronze },
+        .{ .name = "Silver", .color = medal_silver_color, .target = targets.silver },
+        .{ .name = "Gold", .color = medal_gold_color, .target = targets.gold },
+        .{ .name = "Author", .color = medal_author_color, .target = author_turns },
     };
     const medal_count: i32 = medals.len;
     const row_width = medal_count * medal_row_size + (medal_count - 1) * ui_gap;
@@ -645,16 +648,19 @@ pub fn buildMissionComplete(
         } });
         content_y = summary_y + summary_font_size + ui_gap * 4;
     } else {
-        // "New clone: [horizontal icons]" - shows the just-completed run's
-        // converted_materials (the clone's rate numerator). The icon row is
-        // horizontal + compact (96px icons) so the whole line reads as one
-        // summary.
+        // "New clone: [horizontal icons] in N turns" - the icons show the
+        // just-completed run's converted_materials (the clone's rate
+        // numerator), the suffix its turn count. The icon row is
+        // horizontal + compact (96px icons) so the whole line reads as
+        // one summary.
         const new_clone_icon_size: i32 = 96;
         const new_clone_label_text = "New clone:";
         const new_clone_label_font_size: i32 = 64;
         const new_clone_label_width = font_metrics.measureSpanWidth(text(new_clone_label_text), new_clone_label_font_size);
+        const new_clone_suffix_text = try std.fmt.allocPrint(allocator, "in {d} turns", .{info.turns_spent});
+        const new_clone_suffix_width = font_metrics.measureSpanWidth(text(new_clone_suffix_text), new_clone_label_font_size);
         const new_clone_icon_row_width = rowWidth(5, new_clone_icon_size, ui_gap);
-        const new_clone_total_width = new_clone_label_width + ui_gap + new_clone_icon_row_width;
+        const new_clone_total_width = new_clone_label_width + ui_gap + new_clone_icon_row_width + ui_gap + new_clone_suffix_width;
         const new_clone_y = header_box.y + header_font_size + ui_gap * 3;
         const new_clone_start_x = screen.x + @divTrunc(screen.width - new_clone_total_width, 2);
         try elements.append(allocator, .{ .text_label = .{
@@ -673,6 +679,12 @@ pub fn buildMissionComplete(
             info.converted_materials,
             active_theme,
         );
+        try elements.append(allocator, .{ .text_label = .{
+            .text = new_clone_suffix_text,
+            .screen_position = .{ .x = new_clone_start_x + new_clone_label_width + ui_gap + new_clone_icon_row_width + ui_gap, .y = new_clone_y + (new_clone_icon_size - new_clone_label_font_size) / 2 },
+            .font_size = new_clone_label_font_size,
+            .blocks_input = false,
+        } });
         content_y = new_clone_y + new_clone_icon_size + ui_gap * 4;
     }
 
@@ -697,11 +709,11 @@ pub fn buildMissionComplete(
     const stat_font_size: i32 = 64;
     const stat_line_height: i32 = stat_font_size + ui_gap;
     const stat_entries = [_]struct { label: []const u8, value: u32 }{
-        .{ .label = "Turns Spent", .value = info.turns_spent },
-        .{ .label = "Tiles Moved", .value = info.tiles_moved },
-        .{ .label = "Skills Used", .value = info.skills_used },
-        .{ .label = "Damage Dealt", .value = info.damage_dealt },
-        .{ .label = "Damage Taken", .value = info.damage_taken },
+        .{ .label = "Turns taken", .value = info.turns_spent },
+        .{ .label = "Tiles moved", .value = info.tiles_moved },
+        .{ .label = "Skills used", .value = info.skills_used },
+        .{ .label = "Damage dealt", .value = info.damage_dealt },
+        .{ .label = "Damage taken", .value = info.damage_taken },
     };
     const stats_left = screen.x + ui_gap * 4;
     var stat_y = content_y;
@@ -1189,14 +1201,15 @@ const MissionCompleteScan = struct {
     header_completed: bool = false,
     new_clone_label: bool = false,
     new_clone_y: ?i32 = null,
+    new_clone_turns_suffix: ?[]const u8 = null,
     harvest_header: bool = false,
     validate_again_button: bool = false,
     replay_mission_button: bool = false,
     continue_button: bool = false,
     overwrite_replay_button: bool = false,
     overwrite_clone_button: bool = false,
-    /// The medal row: the blocking medals in row order (Author, Gold,
-    /// Silver, Bronze) with their tooltip header texts, plus the first
+    /// The medal row: the blocking medals in row order (Bronze, Silver,
+    /// Gold, Author) with their tooltip header texts, plus the first
     /// medal's position (the centering + below-the-material-row checks)
     /// and the unachieved-dim overlay count.
     medal_tooltips: [4]?[]const u8 = .{ null, null, null, null },
@@ -1216,6 +1229,7 @@ const MissionCompleteScan = struct {
                     found.new_clone_y = label.screen_position.y;
                 }
                 if (std.mem.eql(u8, label.text, "Clone material harvest")) found.harvest_header = true;
+                if (std.mem.startsWith(u8, label.text, "in ")) found.new_clone_turns_suffix = label.text;
             },
             .button => |button| switch (button.action) {
                 .validate_editor_mission => found.validate_again_button = true,
@@ -1276,16 +1290,16 @@ test "buildMissionComplete: the validation variant swaps the clone content for t
 
     const found = MissionCompleteScan.scan(elements.items);
     // The validation surface: "validated" header, the medal row
-    // (Author crowning the derived targets - pb 3 -> gold 4 / silver 6 /
-    // bronze 15; the 4-turn run dims only the author medal), Validate
-    // Again / Continue / the offered Overwrite Replay.
+    // (pb 3 -> bronze 15 / silver 6 / gold 4 / author 3, Author crowning
+    // the row at the right; the 4-turn run dims only the author medal),
+    // Validate Again / Continue / the offered Overwrite Replay.
     try testing.expect(found.header_validated);
     try testing.expectEqual(@as(usize, 4), found.medal_count);
     try testing.expectEqual(@as(usize, 1), found.medal_dim_count);
-    try testing.expectEqualStrings("Author Medal - 3 turns", found.medal_tooltips[0].?);
-    try testing.expectEqualStrings("Gold Medal - 4 turns", found.medal_tooltips[1].?);
-    try testing.expectEqualStrings("Silver Medal - 6 turns", found.medal_tooltips[2].?);
-    try testing.expectEqualStrings("Bronze Medal - 15 turns", found.medal_tooltips[3].?);
+    try testing.expectEqualStrings("Bronze Medal - 15 turns", found.medal_tooltips[0].?);
+    try testing.expectEqualStrings("Silver Medal - 6 turns", found.medal_tooltips[1].?);
+    try testing.expectEqualStrings("Gold Medal - 4 turns", found.medal_tooltips[2].?);
+    try testing.expectEqualStrings("Author Medal - 3 turns", found.medal_tooltips[3].?);
     try testing.expect(found.validate_again_button);
     try testing.expect(found.continue_button);
     try testing.expect(found.overwrite_replay_button);
@@ -1328,6 +1342,7 @@ test "buildMissionComplete: the campaign variant is unchanged (regression)" {
     try testing.expect(found.overwrite_clone_button);
     try testing.expectEqual(@as(usize, 0), found.medal_count);
     try testing.expectEqual(@as(usize, 0), found.medal_dim_count);
+    try testing.expectEqualStrings("in 4 turns", found.new_clone_turns_suffix.?);
     // NO validation content.
     try testing.expect(!found.header_validated);
     try testing.expect(!found.validate_again_button);
@@ -1358,10 +1373,11 @@ test "buildMissionComplete: the campaign medal row centers below the material co
     try testing.expect(found.header_completed);
     try testing.expectEqual(@as(usize, 4), found.medal_count);
     try testing.expectEqual(@as(usize, 3), found.medal_dim_count);
-    try testing.expectEqualStrings("Author Medal - 10 turns", found.medal_tooltips[0].?);
-    try testing.expectEqualStrings("Gold Medal - 12 turns", found.medal_tooltips[1].?);
-    try testing.expectEqualStrings("Silver Medal - 20 turns", found.medal_tooltips[2].?);
-    try testing.expectEqualStrings("Bronze Medal - 50 turns", found.medal_tooltips[3].?);
+    try testing.expectEqualStrings("Bronze Medal - 50 turns", found.medal_tooltips[0].?);
+    try testing.expectEqualStrings("Silver Medal - 20 turns", found.medal_tooltips[1].?);
+    try testing.expectEqualStrings("Gold Medal - 12 turns", found.medal_tooltips[2].?);
+    try testing.expectEqualStrings("Author Medal - 10 turns", found.medal_tooltips[3].?);
+    try testing.expectEqualStrings("in 25 turns", found.new_clone_turns_suffix.?);
 
     // Centered on the screen (the row width derives from the same
     // constants the emitter uses - 4 slots + 3 gaps).

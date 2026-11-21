@@ -1026,6 +1026,8 @@ test "player_overwrite_clone: replaces the existing clone with the run snapshot"
     try testing.expectEqualStrings("uuid-A", clones[0].mission_uuid);
     try testing.expectEqual(@as(u32, 4), clones[0].turns_to_complete);
     try testing.expectEqual(@as(u32, 20), clones[0].materials_collected.wood);
+    // Consuming the offer retires the overlay's Overwrite Clone button.
+    try testing.expect(!history.current_state.last_completed_mission.?.overwrite_offered);
 }
 
 test "player_overwrite_clone: no-op when no completed mission" {
