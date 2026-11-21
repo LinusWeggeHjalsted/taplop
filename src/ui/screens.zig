@@ -512,9 +512,10 @@ const medal_bronze_color = Color{ .r = 205, .g = 127, .b = 50 };
 /// construction). An unachieved medal is dimmed by redrawing it on itself
 /// in the theme's darkest color at 50% alpha - the skill-cooldown overlay
 /// pattern - with the overlay non-blocking so the tooltip-bearing medal
-/// beneath stays the hover hit target. Each medal's tooltip names its
-/// rank + turn target. See DESIGN → Custom Missions & Online Services →
-/// Turn counters + author medals.
+/// beneath stays the hover hit target. The best achieved tier (the
+/// tightest) carries the renderer's edge-highlight treatment. Each medal's
+/// tooltip names its rank + turn target. See DESIGN → Custom Missions &
+/// Online Services → Turn counters + author medals.
 fn emitMedalRow(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -533,23 +534,35 @@ fn emitMedalRow(
         .{ .name = "Gold", .color = medal_gold_color, .target = targets.gold },
         .{ .name = "Author", .color = medal_author_color, .target = author_turns },
     };
+    // The row's spotlight: the TIGHTEST achieved tier (the array runs
+    // loose-to-tight, so it is the LAST achieved index; null when nothing
+    // is achieved - no highlight on an all-dimmed row).
+    var best_achieved_index: ?usize = null;
+    for (medals, 0..) |medal, index| {
+        if (turns_spent <= medal.target) best_achieved_index = index;
+    }
     const medal_count: i32 = medals.len;
     const row_width = medal_count * medal_row_size + (medal_count - 1) * ui_gap;
     var x = screen.x + @divTrunc(screen.width - row_width, 2);
-    for (medals) |medal| {
+    for (medals, 0..) |medal, index| {
         const tooltip_text = try std.fmt.allocPrint(
             allocator,
             "{s} Medal - {d} turns",
             .{ medal.name, medal.target },
         );
-        try elements.append(allocator, .{ .image = .{
-            .sprite_id = "ui/medal",
-            .screen_position = .{ .x = x, .y = y },
-            .width = medal_row_size,
-            .height = medal_row_size,
-            .color = medal.color,
-            .tooltip = .{ .header = try spanRow(allocator, text(tooltip_text)) },
-        } });
+        try elements.append(allocator, .{
+            .image = .{
+                .sprite_id = "ui/medal",
+                .screen_position = .{ .x = x, .y = y },
+                .width = medal_row_size,
+                .height = medal_row_size,
+                .color = medal.color,
+                // The best achieved tier carries the renderer's edge-highlight
+                // treatment (the active turn-step indicator's outline).
+                .highlighted = best_achieved_index == index,
+                .tooltip = .{ .header = try spanRow(allocator, text(tooltip_text)) },
+            },
+        });
         if (turns_spent > medal.target) {
             try elements.append(allocator, .{ .image = .{
                 .sprite_id = "ui/medal",
@@ -1214,6 +1227,7 @@ const MissionCompleteScan = struct {
     /// medal's position (the centering + below-the-material-row checks)
     /// and the unachieved-dim overlay count.
     medal_tooltips: [4]?[]const u8 = .{ null, null, null, null },
+    medal_highlighted: [4]bool = .{ false, false, false, false },
     medal_count: usize = 0,
     medal_dim_count: usize = 0,
     first_medal_x: ?i32 = null,
@@ -1252,6 +1266,7 @@ const MissionCompleteScan = struct {
                             found.first_medal_x = image.screen_position.x;
                             found.first_medal_y = image.screen_position.y;
                         }
+                        found.medal_highlighted[found.medal_count] = image.highlighted;
                     }
                     found.medal_count += 1;
                 } else {
@@ -1301,6 +1316,9 @@ test "buildMissionComplete: the validation variant swaps the clone content for t
     try testing.expectEqualStrings("Silver Medal - 6 turns", found.medal_tooltips[1].?);
     try testing.expectEqualStrings("Gold Medal - 4 turns", found.medal_tooltips[2].?);
     try testing.expectEqualStrings("Author Medal - 3 turns", found.medal_tooltips[3].?);
+    // The spotlight sits on the tightest achieved tier - gold here (the
+    // author medal's target 3 is out of reach for a 4-turn run).
+    try testing.expectEqual([4]bool{ false, false, true, false }, found.medal_highlighted);
     try testing.expect(found.validate_again_button);
     try testing.expect(found.continue_button);
     try testing.expect(found.overwrite_replay_button);
@@ -1311,6 +1329,31 @@ test "buildMissionComplete: the validation variant swaps the clone content for t
     try testing.expect(!found.harvest_header);
     try testing.expect(!found.replay_mission_button);
     try testing.expect(!found.overwrite_clone_button);
+}
+
+test "buildMissionComplete: no highlight when no medal tier is achieved" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+    var elements: UiElementList = .empty;
+    // A 100-turn run against author turns 10: bronze's target is 50 - the
+    // whole row is dimmed and no medal carries the spotlight.
+    try buildMissionComplete(
+        &elements,
+        arena.allocator(),
+        metrics,
+        screenRect(),
+        .{ .name = "New Mission", .path = "missions/x", .turns_spent = 100 },
+        missionCompleteDummyTheme(),
+        null,
+        10,
+    );
+
+    const found = MissionCompleteScan.scan(elements.items);
+    try testing.expectEqual(@as(usize, 4), found.medal_count);
+    try testing.expectEqual(@as(usize, 4), found.medal_dim_count);
+    try testing.expectEqual([4]bool{ false, false, false, false }, found.medal_highlighted);
 }
 
 test "buildMissionComplete: the campaign variant is unchanged (regression)" {
@@ -1379,6 +1422,9 @@ test "buildMissionComplete: the campaign medal row centers below the material co
     try testing.expectEqualStrings("Gold Medal - 12 turns", found.medal_tooltips[2].?);
     try testing.expectEqualStrings("Author Medal - 10 turns", found.medal_tooltips[3].?);
     try testing.expectEqualStrings("in 25 turns", found.new_clone_turns_suffix.?);
+    // Only bronze is achieved - the spotlight sits on the row's leftmost
+    // medal, nothing else carries the outline.
+    try testing.expectEqual([4]bool{ true, false, false, false }, found.medal_highlighted);
 
     // Centered on the screen (the row width derives from the same
     // constants the emitter uses - 4 slots + 3 gaps).

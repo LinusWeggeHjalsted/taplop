@@ -435,6 +435,7 @@ working rules).
 - [Mission-complete overlay polish (author request, playtester feedback)](#mission-complete-overlay-polish-author-request-playtester-feedback)
 - [Mission-complete overlay polish, round 2 (author request)](#mission-complete-overlay-polish-round-2-author-request)
 - [Tooltip text report (the wording-review inventory)](#tooltip-text-report-the-wording-review-inventory)
+- [Mission-complete medal row - the real art + the best-achieved spotlight](#mission-complete-medal-row---the-real-art--the-best-achieved-spotlight)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -25081,3 +25082,18 @@ completeness nothing machine-checks (the coverage-matrix drift class).
 Verification: 1136 tests (new buildEffectTooltip contract test; the
 tool compiles into the headless test tree) + the generated report
 itself (74 literal sites, 38 runtime-built - inspected by hand).
+
+## Mission-complete medal row - the real art + the best-achieved spotlight
+
+The author dropped `assets/ui/medal.png` (128x128, pure grayscale at a
+light average - the ideal tint base; art_report now shows it shipped).
+The row gained its spotlight: the best achieved tier (the TIGHTEST - the
+last achieved index in the loose-to-tight array) carries the renderer's
+edge-highlight treatment (`Image.highlighted`, the active turn-step
+indicator's outline). Nothing achieved -> an all-dimmed row highlights
+nothing.
+
+Verification: 1137 tests (the validation test asserts gold spotlighted
+for a 4-turn/pb-3 run, the campaign test bronze for 25/10, and a new
+scenario asserts no highlight when nothing is achieved) + the campaign
+completion drive with the real texture loading (exit 0).

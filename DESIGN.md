@@ -3116,7 +3116,10 @@ time earns the author medal; the targets are ordered, so an achieved tier
 undims every looser tier by construction). Unachieved medals are dimmed by
 redrawing the medal on itself in the theme's darkest color at 50% alpha -
 the skill-cooldown overlay pattern - with the overlay non-blocking so the
-medal's tooltip ("{Rank} Medal - N turns") stays hoverable. The campaign
+medal's tooltip ("{Rank} Medal - N turns") stays hoverable. The best
+achieved tier (the tightest) carries the renderer's edge-highlight
+treatment (the active turn-step indicator's outline); an all-dimmed row
+highlights nothing. The campaign
 variant's anchor is the mission-start capture:
 `SessionState.mission_author_turns`, set in the start_mission handler via
 `authorTurnsForValidatedMission` (the checkMissionValidationArtifact
