@@ -23,8 +23,10 @@
 //! Rendering (type-determined - how a value prints depends only on its
 //! type, never on where the path ends): detail propagates through
 //! optionals, unions, and slices; struct fields cut to one-line
-//! summaries (compact form when the value fits one line, else a summary
-//! token naming its type). Leaf conventions are the session-log writer's
+//! summaries (the compact form when the value fits one line, else the
+//! first-`max_summary_fields` inline summary - compact fields verbatim,
+//! stopping at the first non-compact field's summary token; nested
+//! summaries never nest). Leaf conventions are the session-log writer's
 //! (ints decimal, bools true/false, enums → tagName, strings verbatim).
 //! Writes are best-effort - a failed write silently truncates the dump
 //! (the diagnostics-write convention: never surfaces as a crash).
@@ -38,6 +40,10 @@ const max_slice_elements_printed: usize = 100;
 /// slices render element-per-line (addressed) or a `([N] of T)` summary
 /// (nested).
 const max_inline_slice_elements: usize = 8;
+
+/// Fields rendered in a non-compact struct's inline summary - see
+/// `writeStructSummary`.
+const max_summary_fields: usize = 4;
 
 // ============================================================
 // Path parsing
@@ -403,9 +409,10 @@ fn writeSliceElements(output: *std.Io.Writer, indent: usize, slice: anytype) voi
 
 /// Write a value as a single line, no indent, no newline - the form used
 /// for struct fields and slice elements. Compact values render fully;
-/// non-compact values render a summary token (structs as their type
-/// name; unions keep their tag chain - the most interesting fact about
-/// a union is which variant it is).
+/// a non-compact struct renders its first-fields inline summary (see
+/// `writeStructSummary`); unions keep their tag chain (the most
+/// interesting fact about a union is which variant it is); everything
+/// else renders its summary token.
 fn writeSummaryInline(output: *std.Io.Writer, value: anytype) void {
     const T = @TypeOf(value);
     if (valueIsCompact(value)) {
@@ -413,7 +420,7 @@ fn writeSummaryInline(output: *std.Io.Writer, value: anytype) void {
         return;
     }
     switch (@typeInfo(T)) {
-        .@"struct" => output.print("<{s}>", .{@typeName(T)}) catch return,
+        .@"struct" => writeStructSummary(output, value),
         .@"union" => {
             output.print(".{s}", .{@tagName(value)}) catch return;
             switch (value) {
@@ -431,6 +438,77 @@ fn writeSummaryInline(output: *std.Io.Writer, value: anytype) void {
         },
         .optional => {
             if (value) |payload| writeSummaryInline(output, payload);
+        },
+        .pointer => |pointer| switch (pointer.size) {
+            .slice => output.print("({d} of {s})", .{ value.len, @typeName(pointer.child) }) catch return,
+            else => output.writeAll("<pointer>") catch return,
+        },
+        .array => |array| output.print("({d} of {s})", .{ array.len, @typeName(array.child) }) catch return,
+        else => output.writeAll("<opaque>") catch return,
+    }
+}
+
+/// A non-compact struct's inline summary: the first
+/// `max_summary_fields` fields in DECLARATION order as
+/// `{ name: value, ... }` - compact values render verbatim, and the first
+/// non-compact field renders its summary token and ENDS the summary (the
+/// line stays short; descend by path for the rest). Declaration order,
+/// not a per-type field list: the walker's type-determined rendering rule
+/// (how a value prints depends only on its type, never on where the path
+/// ends) - an Entity-dedicated field list would be the forbidden special
+/// case. Summaries never NEST: non-compact values inside a summary render
+/// via `writeSummaryToken`, whose struct arm is the bare type name.
+fn writeStructSummary(output: *std.Io.Writer, value: anytype) void {
+    const T = @TypeOf(value);
+    output.writeAll("{ ") catch return;
+    var rendered: usize = 0;
+    inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_types) |field_name, field_type| {
+        if (rendered >= max_summary_fields) break;
+        if (comptime field_type == void) continue;
+        if (comptime isEmptyUnion(field_type)) continue;
+        if (rendered > 0) output.writeAll(", ") catch return;
+        output.print("{s}: ", .{field_name}) catch return;
+        const field_value = @field(value, field_name);
+        if (valueIsCompact(field_value)) {
+            writeCompactForm(output, field_value);
+            rendered += 1;
+        } else {
+            writeSummaryToken(output, field_value);
+            break;
+        }
+    }
+    output.writeAll(" }") catch return;
+}
+
+/// The token form used INSIDE a struct summary: identical to
+/// `writeSummaryInline` for everything except a nested struct, which
+/// renders its TYPE NAME - summaries never nest (one `{ ... }` summary
+/// per line; a struct-inside-summary descends by path instead).
+fn writeSummaryToken(output: *std.Io.Writer, value: anytype) void {
+    const T = @TypeOf(value);
+    if (valueIsCompact(value)) {
+        writeCompactForm(output, value);
+        return;
+    }
+    switch (@typeInfo(T)) {
+        .@"struct" => output.print("<{s}>", .{@typeName(T)}) catch return,
+        .@"union" => {
+            output.print(".{s}", .{@tagName(value)}) catch return;
+            switch (value) {
+                inline else => |payload| {
+                    if (@TypeOf(payload) != void) {
+                        output.writeAll(" ") catch return;
+                        if (comptime isEmptyUnion(@TypeOf(payload))) {
+                            output.writeAll("<uninhabited>") catch return;
+                        } else {
+                            writeSummaryToken(output, payload);
+                        }
+                    }
+                },
+            }
+        },
+        .optional => {
+            if (value) |payload| writeSummaryToken(output, payload);
         },
         .pointer => |pointer| switch (pointer.size) {
             .slice => output.print("({d} of {s})", .{ value.len, @typeName(pointer.child) }) catch return,
@@ -588,6 +666,34 @@ const testing = std.testing;
 /// compact struct, slices, optionals, a union with void/leaf/slice
 /// payloads, and a pointer field.
 const TestLeaf = struct { x: i32, y: i32 };
+/// 12 compact elements - over the inline cap, so a slice of it is
+/// NON-compact (the tail that trips the summary path below).
+const summary_skills: [12]TestLeaf = @splat(.{ .x = 9, .y = 9 });
+/// Entity-shaped for the summary tests: compact lead fields, then a
+/// non-compact slice that stops the summary.
+const TestSummaryBig = struct {
+    name: []const u8 = "roster entry",
+    team: u32 = 2,
+    position: TestLeaf = .{ .x = 1, .y = 2 },
+    skills: []const TestLeaf = &summary_skills,
+    extra: u32 = 55,
+};
+/// Non-compact only via its tail blob: exercises the field cap (all five
+/// lead fields are compact, the cap renders four).
+const TestSummaryWide = struct {
+    a: u32 = 1,
+    b: u32 = 2,
+    c: u32 = 3,
+    d: u32 = 4,
+    e: u32 = 5,
+    blob: []const TestLeaf = &summary_skills,
+};
+/// A struct whose FIRST field is non-compact: exercises the one-level
+/// guard (a summary never contains another summary).
+const TestSummaryHolder = struct {
+    big: TestSummaryBig = .{},
+    tail: u32 = 8,
+};
 const TestMode = enum { on, off };
 const TestUnion = union(enum) { nothing: void, one: TestLeaf, label: []const u8 };
 const TestChild = struct {
@@ -853,4 +959,38 @@ test "dump walker canary: a battery of deep paths mutates nothing and crashes no
     }
 
     try testing.expect(deep_copy.deepEqual(state_mod.GameState, before, root.history.current_state));
+}
+
+test "dump walker: non-compact structs summarize their first fields inline" {
+    var buffer: [4096]u8 = undefined;
+
+    // The entity-like payoff: a slice element renders a readable one-line
+    // summary instead of `<dump_walker.TestSummaryBig>` - compact fields
+    // verbatim, stopping at the first non-compact field's token.
+    const items = [_]TestSummaryBig{.{}};
+    const roster = struct { items: []const TestSummaryBig = &items }{};
+    const listed = dumpToText(&buffer, roster, "items");
+    try expectContains(listed, "[0]: { name: roster entry, team: 2, position: { x: 1, y: 2 }, skills: (12 of dump_walker.TestLeaf) }\n");
+    // The stop-at-first-non-compact rule: `extra` (after `skills`) never
+    // renders inline - address it by path.
+    try testing.expect(std.mem.indexOf(u8, listed, "extra") == null);
+    const extra = dumpToText(&buffer, roster, "items[0].extra");
+    try testing.expectEqualStrings("55\n", extra);
+
+    // The field cap: five compact lead fields render four, the fifth stays
+    // path-only (the struct is non-compact via its tail).
+    const wide = struct { wide: TestSummaryWide = .{} }{};
+    const capped = dumpToText(&buffer, wide, "");
+    try expectContains(capped, "wide: { a: 1, b: 2, c: 3, d: 4 }\n");
+    try testing.expect(std.mem.indexOf(u8, capped, "e: 5") == null);
+    const fifth = dumpToText(&buffer, wide, "wide.e");
+    try testing.expectEqualStrings("5\n", fifth);
+
+    // The one-level guard: a summary never contains another summary - a
+    // non-compact struct field renders its type token, the rest by path.
+    const holder = struct { holder: TestSummaryHolder = .{} }{};
+    const guarded = dumpToText(&buffer, holder, "");
+    try expectContains(guarded, "holder: { big: <dump_walker.TestSummaryBig> }\n");
+    const tail = dumpToText(&buffer, holder, "holder.tail");
+    try testing.expectEqualStrings("8\n", tail);
 }

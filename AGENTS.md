@@ -466,10 +466,6 @@ replaced the flaky synthetic-canvas-click workaround.
   overflows the windowed panel): click the lowest-expanding strip
   first + re-report after any layout-shifting click. Both editors'
   inspector scrolls by wheel over its panel.
-- The console's remembered pointer position re-merges into EVERY
-  input-command frame, so each console frame is mouse-owned: arrow-key
-  cursor nudges never fire after any scripted move (the fix is a TODO
-  punch-list item) - click the highlighted tile instead.
 - Gameplay drives: enemies act only when AGGROED (an inactive enemy's
   turn never joins the cascade - move within the enemy's own
   aggro_range). A click-driven action drains INLINE

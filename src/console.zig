@@ -860,31 +860,46 @@ pub fn applyFrameCommand(
             history.session.force_render_next = true;
             break :blk mergeIntoPlatformInput(command.?, backend_input, arena);
         },
-        // Press/release/scroll/type/action: re-apply the remembered pointer
-        // position ahead of the command's own events (a mouse_move event
-        // after the backend's per-frame hardware position - last writer
-        // wins), so the command acts where the console moved the pointer,
-        // frames later. Without a remembered position (no `move` yet), the
-        // command acts at the hardware position. Mouse-button press/release
-        // also maintain the console's own held-button set (the gesture
-        // tracking the no-command branch gates on).
+        // Press/release/scroll/type/action. Mouse-button press/release
+        // maintain the console's own held-button set (the gesture tracking
+        // the no-command branch gates on). POINTER-RELEVANT commands (mouse
+        // press/release, scroll) re-apply the remembered pointer position
+        // ahead of the command's own events (a mouse_move after the
+        // backend's per-frame hardware position - last writer wins), so the
+        // click/scroll acts where the console moved the pointer, frames
+        // later. Key commands, `type`, and `action` act at the HARDWARE
+        // position instead: the console's pointer is decoupled outside its
+        // own gestures, so arrow-key cursor nudges fire after a scripted
+        // `move` rather than the mouse owning every console frame (the
+        // re-application would semantically teleport the pointer ahead of
+        // every key event). One guard, the hub-click-swallow lesson: while
+        // the CONSOLE holds a mouse button, EVERY frame keeps the console
+        // position - hardware bleed into a held gesture phantom-promotes a
+        // drag - so even a key/type/action frame mid-gesture re-applies it.
         else => blk: {
+            var position_relevant = false;
             switch (command.?) {
                 .press => |command_id| {
                     if (command_id == .mouse) {
                         queue.mouse_buttons_held_by_console |= consoleMouseButtonBit(command_id.mouse);
+                        position_relevant = true;
                     }
                 },
                 .release => |command_id| {
                     if (command_id == .mouse) {
                         queue.mouse_buttons_held_by_console &= ~consoleMouseButtonBit(command_id.mouse);
+                        position_relevant = true;
                     }
                 },
+                .scroll => position_relevant = true,
                 else => {},
             }
+            if (queue.mouse_buttons_held_by_console != 0) position_relevant = true;
             var merged_input = backend_input;
-            if (queue.pointer_position) |position| {
-                merged_input = mergeIntoPlatformInput(.{ .move = position }, merged_input, arena);
+            if (position_relevant) {
+                if (queue.pointer_position) |position| {
+                    merged_input = mergeIntoPlatformInput(.{ .move = position }, merged_input, arena);
+                }
             }
             history.session.force_render_next = true;
             break :blk mergeIntoPlatformInput(command.?, merged_input, arena);
@@ -2571,4 +2586,106 @@ test "feeder: pauses at the low-water occupancy while the drain holds" {
         @as(u32, feed_low_water - 3),
         queue.write_counter.load(.monotonic) -% queue.read_counter.load(.monotonic),
     );
+}
+
+test "applyFrameCommand: the remembered position applies to pointer-relevant commands only" {
+    const test_harness = @import("test_harness.zig");
+    var backing = std.heap.ArenaAllocator.init(std_testing.allocator);
+    defer backing.deinit();
+    var harness = test_harness.Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    test_harness.runToIdle(&history);
+
+    var queue: ConsoleQueue = .{};
+    queue.pointer_position = .{ .x = 100, .y = 200 };
+    const backend_input = PlatformInput{ .events = &.{}, .viewport = .{ .width = 1280, .height = 1080 } };
+    const no_root: struct {} = .{};
+
+    // Key commands act at the hardware position: no mouse_move merged.
+    queue.push(parseCommandLine("press KeyA").command);
+    {
+        const merged = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+        try std_testing.expectEqual(@as(usize, 1), merged.events.len);
+        try std_testing.expect(merged.events[0] == .key_down);
+        // The press IS a held key now (held-state tracking below the merge).
+        try std_testing.expect(parseCommandLine("release KeyA").command == .release);
+    }
+    queue.push(parseCommandLine("release KeyA").command);
+    {
+        const merged = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+        try std_testing.expectEqual(@as(usize, 1), merged.events.len);
+        try std_testing.expect(merged.events[0] == .key_up);
+    }
+
+    // `type` + `action` equally leave the pointer on the hardware spot.
+    queue.push(parseCommandLine("type hi").command);
+    {
+        const merged = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+        try std_testing.expectEqual(@as(usize, 0), merged.events.len);
+        try std_testing.expectEqualStrings("hi", merged.text_characters);
+    }
+    queue.push(parseCommandLine("action escape").command);
+    {
+        const merged = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+        try std_testing.expectEqual(@as(usize, 0), merged.events.len);
+        try std_testing.expectEqual(@as(usize, 1), merged.actions.len);
+    }
+
+    // Mouse press: the remembered position re-applies ahead of the press.
+    queue.push(parseCommandLine("press left").command);
+    {
+        const merged = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+        try std_testing.expectEqual(@as(usize, 2), merged.events.len);
+        try std_testing.expect(merged.events[0] == .mouse_move);
+        try std_testing.expectEqual(@as(f32, 100), merged.events[0].mouse_move.x);
+        try std_testing.expectEqual(@as(f32, 200), merged.events[0].mouse_move.y);
+        try std_testing.expect(merged.events[1] == .mouse_button_down);
+    }
+
+    // Mid-gesture: while the console holds the button, a KEY frame keeps
+    // the console position (the hub-click-swallow guard).
+    queue.push(parseCommandLine("press KeyB").command);
+    {
+        const merged = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+        try std_testing.expectEqual(@as(usize, 2), merged.events.len);
+        try std_testing.expect(merged.events[0] == .mouse_move);
+        try std_testing.expectEqual(@as(f32, 100), merged.events[0].mouse_move.x);
+        try std_testing.expect(merged.events[1] == .key_down);
+    }
+    queue.push(parseCommandLine("release KeyB").command);
+    {
+        const merged = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+        try std_testing.expectEqual(@as(usize, 2), merged.events.len);
+        try std_testing.expect(merged.events[0] == .mouse_move);
+        try std_testing.expect(merged.events[1] == .key_up);
+    }
+
+    // Release completes the gesture - the position applies on the release
+    // frame too (the click resolves at where the console pressed it).
+    queue.push(parseCommandLine("release left").command);
+    {
+        const merged = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+        try std_testing.expectEqual(@as(usize, 2), merged.events.len);
+        try std_testing.expect(merged.events[0] == .mouse_move);
+        try std_testing.expectEqual(@as(f32, 200), merged.events[0].mouse_move.y);
+        try std_testing.expect(merged.events[1] == .mouse_button_up);
+    }
+
+    // The gesture is over: key frames are back on the hardware position.
+    queue.push(parseCommandLine("press KeyC").command);
+    {
+        const merged = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+        try std_testing.expectEqual(@as(usize, 1), merged.events.len);
+        try std_testing.expect(merged.events[0] == .key_down);
+    }
+
+    // scroll is pointer-relevant: it acts at the hovered position.
+    queue.push(parseCommandLine("scroll 1").command);
+    {
+        const merged = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+        try std_testing.expectEqual(@as(usize, 2), merged.events.len);
+        try std_testing.expect(merged.events[0] == .mouse_move);
+        try std_testing.expectEqual(@as(f32, 100), merged.events[0].mouse_move.x);
+        try std_testing.expectEqual(@as(f32, 1), merged.events[1].mouse_scroll);
+    }
 }

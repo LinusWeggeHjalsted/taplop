@@ -78,26 +78,6 @@ Test by running `zig build run` and clicking through.
 - **Combat-log UI** - render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
   "Combat Log" below.
-- **The console's remembered pointer position merges into EVERY
-  input-command frame** (found driving the wait-idle fix): the
-  `else =>` arm of the console merge re-applies `queue.pointer_position`
-  ahead of every press/release/scroll/type/action, so each console frame
-  carries a mouse_move event and the MOUSE owns the frame - arrow-key
-  cursor nudges never fire after any scripted `move`, and key events
-  semantically teleport the pointer. The position is only MEANINGFUL for
-  pointer-relevant commands (mouse press/release, scroll - the click must
-  land where the console moved). Fix: narrow the re-application to those
-  (key commands + actions act at the hardware position); drives then work
-  with arrow nudges too. See AGENTS → Running the Game for the workaround.
-- **The dump walker renders struct values inside slices as opaque type
-  names** (`entities[1]: <types.Entity>`): driving gameplay state means
-  field-by-field addressing (entities[1].position, entities[1].team, ...)
-  - one dump per field. A depth-limited inline summary for array elements
-  (the key fields: position/team/name/is_active for entities, or just the
-  first N fields of any struct) would make gameplay drives much faster to
-  author. The walker's safety rules (never follows pointers, never calls
-  methods) stay as they are - see DESIGN → Input → Console input → dump
-  paths.
 - **Import/Export Game success is silent (the "nothing happens" class,
   found as the OS-zip import bug's mask)** - the pre-fix import
   SUCCEEDED (nested shadow tree, session re-boot) and the screen looked

@@ -2109,9 +2109,18 @@ the reader thread exits, zero cost.
   the position PERSISTS across frames like held keys: the native
   backend re-reports the hardware pointer position EVERY frame
   (unconditionally), which would otherwise overwrite a scripted
-  position before the next command lands, so every INPUT-command
-  frame re-applies the remembered position ahead of the command's
-  own events - last writer wins within the frame. Frames between
+  position before the next command lands, so POINTER-RELEVANT command
+  frames (mouse press/release, scroll) re-apply the remembered position
+  ahead of the command's own events - last writer wins within the
+  frame. The console's pointer is DECOUPLED outside its own gestures:
+  key commands, `type`, and `action` act at the hardware position
+  (re-applying ahead of every command would semantically teleport the
+  pointer and make the mouse own every console frame - arrow-key
+  cursor nudges never fired after any scripted `move`). One guard,
+  the hub-click-swallow lesson: while the console holds a mouse
+  button, EVERY frame keeps the console position - hardware bleed
+  into a held gesture phantom-promotes a drag - so even a
+  key/type/action frame mid-gesture re-applies it. Frames between
   commands stay on the hardware position, so a human at the window
   never loses the pointer; without a `move` yet, commands act at the
   hardware position), `scroll <delta>`, `type <text>` (the char
@@ -2191,8 +2200,17 @@ the reader thread exits, zero cost.
   tag); struct fields cut to one-line summaries - the compact form
   when the value fits one line (`{ x: 5, y: 6 }`, `.meta_event .start_hub
   { hub_id: camp_at_the_crossroads, sets_checkpoint: true, completed_mission: null }`),
-  else a summary token naming the type (`<types.ViewState>`, `([45 of
-  types.Vector2])`). Leaf conventions are the session-log writer's
+  else a first-4-fields inline summary - compact fields verbatim in
+  declaration order, stopping at the first non-compact field's token
+  (Entity's lead fields are all compact, so an entities element
+  renders `{ name: New Player, sprite: player, team: 0, position:
+  { x: 0, y: 0 } }`; a struct whose lead field is non-compact renders
+  `{ slots: (96 of ?types.Item) }` and stops); summaries never nest
+  (a struct inside a summary is its type token, `[45 of
+  types.Vector2]` the slice token).
+  Declaration order, not per-type field lists - the type-determined
+  rule forbids an Entity-dedicated key-field list. Leaf conventions are
+  the session-log writer's
   (ints decimal, bools true/false, enums → tagName, strings verbatim).
   Addressed slices render element-per-line capped at 100 with an
   explicit `(+N more - address by index)` note; depth is never limited

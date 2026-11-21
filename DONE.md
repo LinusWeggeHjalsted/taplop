@@ -441,6 +441,8 @@ working rules).
 - [Import Game: OS compress-folder zips strip the root folder](#import-game-os-compress-folder-zips-strip-the-root-folder)
 - [Web console channel slice 1 - the sink seam + the feeder (console.zig)](#web-console-channel-slice-1---the-sink-seam--the-feeder-consolezig)
 - [Web console channel slices 2-3 - web.zig wiring + the exclusion set](#web-console-channel-slices-2-3---webzig-wiring--the-exclusion-set)
+- [Console pointer decoupling - the merge no longer re-applies the scripted position on every command frame](#console-pointer-decoupling---the-merge-no-longer-re-applies-the-scripted-position-on-every-command-frame)
+- [Dump-walker struct summaries - slice elements and struct fields render their first fields inline](#dump-walker-struct-summaries---slice-elements-and-struct-fields-render-their-first-fields-inline)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -25280,3 +25282,50 @@ NPCs, the mission exit with click centers); `quit` produced its
 once-per-boot note as a separate mailbox delivery while the game kept
 running. The AGENTS → Running the Game → Driving the web build section
 is the operating manual.
+
+## Console pointer decoupling - the merge no longer re-applies the scripted position on every command frame
+
+The console merge's `else =>` arm re-applied `queue.pointer_position`
+ahead of EVERY command (press/release/scroll/type/action alike), so each
+console frame carried a mouse_move event and the mouse owned the frame:
+arrow-key cursor nudges never fired after any scripted `move`, and key
+events semantically teleported the pointer. The settled rule (the TODO
+item's proposal, refined one step by reading the code): the position
+re-applies on POINTER-RELEVANT command frames only (mouse press/release,
+scroll - the click must land where the console moved), while key
+commands, `type`, and `action` act at the hardware position - the
+console's pointer is decoupled outside its own gestures. The refinement
+the TODO text missed: the MID-GESTURE guard extends to command frames -
+while `mouse_buttons_held_by_console != 0`, EVERY frame keeps the
+console position (the no-command branch already gated on it; hardware
+bleed into a held console gesture phantom-promotes a drag - the
+hub-click-swallow lesson), so a `press KeyA` between a console
+`press left`/`release left` pair cannot let the hardware position into
+the gesture. A later mouse command re-applying the STALE remembered
+position stays: deterministic drives (the click lands where the console
+left its pointer). DESIGN → Input → Console input's command-set prose
+carries the rule; a tier-A test drives every arm (key/type/action
+position-free, mouse press/release/scroll position-carrying, the
+mid-gesture key frame, the after-gesture release back to hardware).
+
+## Dump-walker struct summaries - slice elements and struct fields render their first fields inline
+
+The walker rendered non-compact struct values as bare type-name tokens
+(`entities[1]: <types.Entity>`), so driving gameplay state meant
+field-by-field addressing - one dump per field. `writeSummaryInline`'s
+struct arm now renders a first-4-fields inline summary: compact fields
+verbatim in DECLARATION order, stopping at the first non-compact field's
+summary token (the line stays short; the rest descends by path). Two
+deliberate design points: declaration order, not per-type field lists -
+the walker's type-determined rendering rule forbids an Entity-dedicated
+key-field list, and by luck Entity's first four fields (name, sprite,
+team, position) are exactly the driving-relevant keys, so the generic
+rule serves the concrete case with no special case; and summaries never
+NEST - a non-compact value inside a summary renders via a new
+`writeSummaryToken` (the old token behavior), so one `{ ... }` per
+line is a hard invariant. Safety rules untouched (the canary test still
+walks the battery and asserts bit-identical state). Live-verified on
+the real binary: `dump history.current_state.player_data` now shows
+`inventory: { slots: (96 of ?types.Item) }` where the old code printed
+the type token. AGENTS' drive-authoring workaround bullet (the
+mouse-owned-frame note) deleted with the fix.
