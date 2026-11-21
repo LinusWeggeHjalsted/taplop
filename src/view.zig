@@ -6031,7 +6031,7 @@ test "global top bar: hovering options/undo/redo spawns their tooltips" {
 test "tips overlay: top-bar ? button, panel structure, cycle payloads" {
     // The ? button lives in the global top bar (any screen, only when
     // the tips list is non-empty); the open panel is the credits model:
-    // the wrapped tip's text, Back (the open_tips toggle, payload-less),
+    // the wrapped tip's text, Back (the toggle_tips toggle, payload-less),
     // and prev/next (cycle_tips, opposite tips_direction payloads).
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
@@ -6099,7 +6099,7 @@ test "tips overlay: top-bar ? button, panel structure, cycle payloads" {
             },
         );
         const elements = view_state.ui_elements;
-        try std.testing.expect(findButton(elements, .open_tips, null) != null);
+        try std.testing.expect(findButton(elements, .toggle_tips, null) != null);
         try std.testing.expect(findButton(elements, .cycle_tips, .previous) == null);
         try std.testing.expect(findButton(elements, .cycle_tips, .next) == null);
     }
@@ -6145,7 +6145,7 @@ test "tips overlay: top-bar ? button, panel structure, cycle payloads" {
                 .can_redo = false,
             },
         );
-        try std.testing.expect(findButton(view_state.ui_elements, .open_tips, null) == null);
+        try std.testing.expect(findButton(view_state.ui_elements, .toggle_tips, null) == null);
     }
 
     // Campaign editor screen: the same rule - the `?` HIDES (its
@@ -6187,12 +6187,12 @@ test "tips overlay: top-bar ? button, panel structure, cycle payloads" {
                 .can_redo = false,
             },
         );
-        try std.testing.expect(findButton(view_state.ui_elements, .open_tips, null) == null);
+        try std.testing.expect(findButton(view_state.ui_elements, .toggle_tips, null) == null);
         try std.testing.expect(findButton(view_state.ui_elements, .validate_campaign, null) != null);
     }
 
     // Open at index 1: the second tip's text, both nav buttons with
-    // opposite payloads, and the two payload-less open_tips buttons in
+    // opposite payloads, and the two payload-less toggle_tips buttons in
     // painter order - the panel's Back first (the tips block emits before
     // the global top bar), the top-bar ? last (the bar is the list's
     // final layer).
@@ -6223,19 +6223,19 @@ test "tips overlay: top-bar ? button, panel structure, cycle payloads" {
             },
         );
         const elements = view_state.ui_elements;
-        // Two payload-less open_tips buttons: the panel's Back (emitted
+        // Two payload-less toggle_tips buttons: the panel's Back (emitted
         // in the tips block) then the top-bar ? (the bar emits last).
-        var open_tips_buttons: usize = 0;
+        var toggle_tips_buttons: usize = 0;
         var first_index: usize = 0;
         var last_index: usize = 0;
         for (elements, 0..) |element, index| {
-            if (element == .button and element.button.action == .open_tips and element.button.payload == null) {
-                if (open_tips_buttons == 0) first_index = index;
+            if (element == .button and element.button.action == .toggle_tips and element.button.payload == null) {
+                if (toggle_tips_buttons == 0) first_index = index;
                 last_index = index;
-                open_tips_buttons += 1;
+                toggle_tips_buttons += 1;
             }
         }
-        try std.testing.expectEqual(@as(usize, 2), open_tips_buttons);
+        try std.testing.expectEqual(@as(usize, 2), toggle_tips_buttons);
         // The viewed tip's text is present as a label.
         var found_tip_text = false;
         for (elements) |element| {
@@ -6289,7 +6289,7 @@ test "tips overlay: top-bar ? button, panel structure, cycle payloads" {
         );
         // Empty list: the top-bar ? hides, and the open panel degrades to
         // background + header + Back (no nav buttons - nothing to cycle).
-        try std.testing.expect(findButton(view_state.ui_elements, .open_tips, null) != null);
+        try std.testing.expect(findButton(view_state.ui_elements, .toggle_tips, null) != null);
         try std.testing.expect(findButton(view_state.ui_elements, .cycle_tips, .next) == null);
     }
 }
@@ -6502,10 +6502,10 @@ test "z-order census: overlays emit in open order, announcements included; chrom
         const main_menu_base = firstButton(elements, .new_game);
         const options_menu = firstButton(elements, .exit_game);
         const load_save_browser = lastButton(elements, .toggle_load_save_menu);
-        const credits = lastButton(elements, .open_credits);
-        // The tips panel's Back is the FIRST open_tips button (the panel
+        const credits = lastButton(elements, .toggle_credits);
+        // The tips panel's Back is the FIRST toggle_tips button (the panel
         // emits before the global top bar, whose `?` is the last).
-        const tips_back = firstButton(elements, .open_tips);
+        const tips_back = firstButton(elements, .toggle_tips);
         const settings_screen = firstButton(elements, .change_setting);
         const editor_browser = lastButton(elements, .toggle_editor_browser);
         const error_popup = firstButton(elements, .dismiss_error);
@@ -6597,7 +6597,7 @@ test "z-order census: overlays emit in open order, announcements included; chrom
         );
         const elements = view_state.ui_elements;
         const bottom_bar = firstButton(elements, .skip);
-        const tips_back = firstButton(elements, .open_tips);
+        const tips_back = firstButton(elements, .toggle_tips);
         const options_menu = firstButton(elements, .restart_mission);
         // firstButton, not last: the world map ALSO emits a
         // toggle_campaign_browser button (its opener), and the raised map
@@ -6687,7 +6687,7 @@ test "mission-complete announcement: overlays opened later draw above it (the ti
     );
     const elements = view_state.ui_elements;
     const mission_complete = firstButton(elements, .continue_after_mission);
-    const tips_back = firstButton(elements, .open_tips);
+    const tips_back = firstButton(elements, .toggle_tips);
     const top_bar = firstButton(elements, .undo);
     try std.testing.expect(mission_complete < tips_back);
     try std.testing.expect(tips_back < top_bar);
@@ -7019,13 +7019,13 @@ test "surface-screen census: surfaceToggleLegal mirrors the view's emission cont
         // The options menu has no Back button of its own (Escape closes
         // it - the escape action is not a button), but its buttons are
         // uniquely identifying: Exit Game only the main-menu variant
-        // emits, and open_settings/open_credits/open_tips are the menu's
+        // emits, and toggle_settings/toggle_credits/toggle_tips are the menu's
         // own entries (distinctive per-surface on every screen variant).
-        .{ .surface = .options_menu, .actions = &.{ .exit_game, .open_settings } },
-        .{ .surface = .settings, .actions = &.{.open_settings} },
+        .{ .surface = .options_menu, .actions = &.{ .exit_game, .toggle_settings } },
+        .{ .surface = .settings, .actions = &.{.toggle_settings} },
         .{ .surface = .load_save_menu, .actions = &.{.toggle_load_save_menu} },
-        .{ .surface = .credits, .actions = &.{.open_credits} },
-        .{ .surface = .tips, .actions = &.{.open_tips} },
+        .{ .surface = .credits, .actions = &.{.toggle_credits} },
+        .{ .surface = .tips, .actions = &.{.toggle_tips} },
         .{ .surface = .editor_browser, .actions = &.{.toggle_editor_browser} },
         .{ .surface = .campaign_browser, .actions = &.{.toggle_campaign_browser} },
         .{ .surface = .inventory, .actions = &.{.toggle_inventory} },

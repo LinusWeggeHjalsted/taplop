@@ -512,23 +512,29 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         // handler (in `handleAnytimeInput`) serve both contexts - the
         // options_action switch runs regardless of screen. See DESIGN → UI
         // Framework → Settings screen.
-        .open_settings => player_input.anytime.options_action = action,
+        .toggle_settings => player_input.anytime.options_action = action,
         // Credits + Exit Game live in the MAIN-MENU options menu variant;
         // they must route through the anytime path too (idle input is
         // gated while the options menu is open).
-        .open_credits,
+        .toggle_credits,
         .exit_game,
         => player_input.anytime.options_action = action,
         // The tips button lives in the global top bar (always drawn, so
         // clickable even while the options menu is open); cycling fires
         // from the tips panel, which overlays any screen. Both route
         // through the anytime path's one options_action handler.
-        .open_tips,
+        .toggle_tips,
         .cycle_tips,
+        => player_input.anytime.options_action = action,
+        // The options button: same always-drawn top-bar layer, and it
+        // must open the menu over open overlays/panels (never the
+        // Escape chain - Escape dismisses, this opens). The KeyO binding
+        // fires through the same fold.
+        .toggle_options_menu,
         => player_input.anytime.options_action = action,
         // The campaign browser fires from the world map (its top-left
         // campaign button) - an overlay context, so the anytime path's
-        // one options_action handler serves it (the open_tips routing).
+        // one options_action handler serves it (the toggle_tips routing).
         .toggle_campaign_browser,
         .select_campaign_browser_tab,
         .view_campaign_row,

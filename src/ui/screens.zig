@@ -327,9 +327,11 @@ pub fn buildGlobalTopBar(
     var row = Row.init(screen.position(), top_bar_height, ui_gap);
 
     // Options button - flush in the top-left corner (no margin). Layered
-    // background + icon, same as the skip button. Clicking it while the
-    // options menu is open toggles the menu closed (the action routes
-    // through the Escape chain, which closes an open menu first).
+    // background + icon, same as the skip button. Carries the DEDICATED
+    // toggle action (never the Escape chain): clicking it opens the menu
+    // on top of whatever is open, and clicking it while the menu is open
+    // toggles the menu closed. Escape stays pure dismissal (plus its
+    // open-the-menu rung when nothing is open).
     const options_cell = row.next(top_bar_slot_size);
     {
         try emitIconButton(
@@ -338,7 +340,7 @@ pub fn buildGlobalTopBar(
             options_cell,
             small_button_background_sprite_id,
             "ui/icon_options",
-            .escape,
+            .toggle_options_menu,
             .{ .header = try spanRow(allocator, text("Options")) },
             c_btn_bg,
             c_btn_icon,
@@ -449,7 +451,7 @@ pub fn buildGlobalTopBar(
             tips_cell,
             "?",
             tips_glyph_font_size,
-            .open_tips,
+            .toggle_tips,
             null,
             .{ .header = try spanRow(allocator, text("Tips")) },
             c_btn_bg,

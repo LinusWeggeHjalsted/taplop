@@ -429,6 +429,7 @@ working rules).
 - [Playtest feedback 1: hidden tabs pause web audio cleanly](#playtest-feedback-1-hidden-tabs-pause-web-audio-cleanly)
 - [Playtest feedback 5: momentum decays out of combat (recent-combat tempo)](#playtest-feedback-5-momentum-decays-out-of-combat-recent-combat-tempo)
 - [Forest Outskirts validation replay re-recorded under the momentum decay](#forest-outskirts-validation-replay-re-recorded-under-the-momentum-decay)
+- [Options menu: the dedicated toggle action (decoupled from Escape) + the open_->toggle_ naming sweep](#options-menu-the-dedicated-toggle-action-decoupled-from-escape--the-open-toggle-naming-sweep)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24859,3 +24860,55 @@ against all five embedded Polpat mission dirs - all VALID under the
 decay build, i.e. the checking replay replays every shipped recording
 end-to-end through the new handler math. With that, all six playtest
 reports are landed.
+
+## Options menu: the dedicated toggle action (decoupled from Escape) + the open_->toggle_ naming sweep
+
+The top-bar Options button used to carry the `.escape` action itself, so
+clicking it over an open panel merely closed the panel - backwards for an
+opener. The decoupling (author request, settled in discussion):
+
+- **`toggle_options_menu`** - a new anytime-routed action, the tips
+  pattern: it pushes the SAME `player_toggle_ui_surface{.options_menu}`
+  the escape chain's final rung pushes, opening the menu ON TOP of open
+  overlays/panels (slot order is z-order; the existing overlay-stack
+  machinery does the rest) and toggling it closed while open. No new
+  event - the toggle event already was the menu's verb, a wrapper would
+  have been the fit-smell seam. Routed through the anytime
+  `options_action` bucket (the top bar is always drawn, clickable over
+  open surfaces - the tips rationale). Default binding: plain **KeyO**
+  (ctrl+KeyO stays the editor browser).
+- **Escape unchanged** (author decision): the final rung keeps opening
+  the menu when nothing is left to close - Escape and the toggle are
+  complementary (dismiss-everything-then-open vs open unconditionally).
+- **The naming sweep**: the request started as `open_tips` ->
+  `toggle_tips`; the survey found the full misnamed-toggle family - all
+  three surface toggles (`open_settings`/`open_credits`/`open_tips`)
+  push the toggle event and their Back buttons re-fire the same action,
+  so all three became `toggle_*`. The other `open_*` actions are honest
+  (gated one-way picker opens, drill-ins, browser rows). Settings-file
+  compat: a binding naming a retired action warns + drops at load (the
+  self-heal machinery) - these three had no default keybinds, so only
+  hand-rebound installs are affected.
+
+The name `toggle_options_menu` is a RECLAMATION: it was escape's own
+original name (renamed away long before this landed - the session_setup
+stale-binding tests had been using it as their unknown-action
+placeholder, which is why this change broke exactly those two tests).
+The placeholder swapped to `open_tips` - now genuinely unknown, making
+the tests' "pre-rename binding" comments literally true.
+
+Wiring sites (the DESIGN → Input → New keybind wiring list): the
+default-settings entry (+ context line), the `Action` enum, the
+`actionBindingContexts` anytime bucket, the `actionButtonPayload`
+payload-less classification (the compiler forced all three exhaustive
+switches), the applyAction routing fold, the handler arm, and the
+screens.zig button + comment. The KeyO binding fires through the same
+fold, so the console channel gets `action toggle_options_menu` for
+free. Docs: DESIGN → Input → Escape overlay chain gained the dedicated
+toggle paragraph; stale `open_*` references swept (AGENTS had none);
+the escape-intro parenthetical about the old name was reworded (the
+name collision made it misleading).
+
+Verification: 1132 tests (one new: the reported pain point inverted -
+the toggle opens the menu OVER an open panel, closes on re-fire, and
+Escape pops the menu before the panel beneath).

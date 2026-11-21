@@ -287,13 +287,13 @@ test "options menu on the main menu: credits toggles via options_action; exit ga
     // route through the anytime options_action path (idle input is gated
     // while the menu is open).
     var anytime: input.AnytimeInput = .{};
-    anytime.options_action = .open_credits;
+    anytime.options_action = .toggle_credits;
     input_handlers.handleAnytimeInput(&history, anytime, null, .{ .x = -4096, .y = -4096 }, &.{});
     try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.credits));
 
     // The credits Back button reuses the action to close.
     var anytime_close: input.AnytimeInput = .{};
-    anytime_close.options_action = .open_credits;
+    anytime_close.options_action = .toggle_credits;
     input_handlers.handleAnytimeInput(&history, anytime_close, null, .{ .x = -4096, .y = -4096 }, &.{});
     try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.credits));
 
@@ -326,9 +326,9 @@ test "toggling a covered overlay raises it (the map behind tips)" {
     input_handlers.handleAnytimeInput(&history, open_map, null, .{ .x = -4096, .y = -4096 }, &.{});
     try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.world_map));
 
-    var open_tips: input.AnytimeInput = .{};
-    open_tips.options_action = .open_tips;
-    input_handlers.handleAnytimeInput(&history, open_tips, null, .{ .x = -4096, .y = -4096 }, &.{});
+    var toggle_tips: input.AnytimeInput = .{};
+    toggle_tips.options_action = .toggle_tips;
+    input_handlers.handleAnytimeInput(&history, toggle_tips, null, .{ .x = -4096, .y = -4096 }, &.{});
     try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.tips));
 
     input_handlers.handleAnytimeInput(&history, open_map, null, .{ .x = -4096, .y = -4096 }, &.{});
@@ -456,4 +456,38 @@ test "escape: mission complete continues (dismisses the overlay)" {
         @as(std.meta.Tag(events.PlayerInputEvent), .dismiss_mission_complete),
         std.meta.activeTag(first.player_input_event),
     );
+}
+
+test "toggle_options_menu: opens on top of open panels, toggles closed; Escape pops the menu first" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
+        &three_by_three,
+    ));
+    test_harness.runToIdle(&history);
+
+    // The reported pain point, inverted: with a panel open, the top-bar
+    // options button used to ride the Escape chain and merely CLOSED the
+    // panel. The dedicated toggle opens the menu ON TOP of it.
+    history.current_state.ui_surfaces.openMiddlePanel(.inventory);
+    var anytime: input.AnytimeInput = .{};
+    anytime.options_action = .toggle_options_menu;
+    input_handlers.handleAnytimeInput(&history, anytime, null, .{ .x = -4096, .y = -4096 }, &.{});
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
+    try testing.expect(history.current_state.ui_surfaces.isMiddlePanelOpen(.inventory));
+
+    // Clicking the button again toggles the menu closed; the panel stays.
+    input_handlers.handleAnytimeInput(&history, anytime, null, .{ .x = -4096, .y = -4096 }, &.{});
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
+    try testing.expect(history.current_state.ui_surfaces.isMiddlePanelOpen(.inventory));
+
+    // With the menu back on top, Escape pops the menu first (topmost
+    // overlay); the panel beneath survives for the next press.
+    input_handlers.handleAnytimeInput(&history, anytime, null, .{ .x = -4096, .y = -4096 }, &.{});
+    pressEscape(&history);
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
+    try testing.expect(history.current_state.ui_surfaces.isMiddlePanelOpen(.inventory));
 }

@@ -320,3 +320,8 @@ input_name KeyS
 ctrl true
 action save_hub
 context hub_editor
+
+input_type key
+input_name KeyO
+action toggle_options_menu
+context anytime

@@ -566,7 +566,7 @@ pub fn buildSettingsPanel(
         },
         "Back",
         menu_button_font_size,
-        .open_settings,
+        .toggle_settings,
         button_color,
         null,
     );
@@ -1302,7 +1302,7 @@ test "buildSettingsPanel: tab row on both tabs; settings tab keeps control rows"
     // and the control column still FITS: the tab row shrank the rows region,
     // and the rows-centering formula can silently overflow once the region
     // is tighter - the lowest control's bottom must clear the Back button's
-    // top (the Back button toggles via the same .open_settings action that
+    // top (the Back button toggles via the same .toggle_settings action that
     // opened the screen).
     var found_control = false;
     var lowest_control_bottom: i32 = 0;
@@ -1316,7 +1316,7 @@ test "buildSettingsPanel: tab row on both tabs; settings tab keeps control rows"
                     button.screen_position.y + button.height,
                 );
             }
-            if (button.action == .open_settings) {
+            if (button.action == .toggle_settings) {
                 back_button_top = button.screen_position.y;
             }
         },

@@ -1437,9 +1437,12 @@ fn handleEscapeKey(history: *GameStateHistory) void {
         }
     }
 
-    // Every rung empty: open the options menu. Every screen has a variant
-    // - the main menu's carries Settings/Credits/Exit Game instead of the
-    // session verbs (see buildOptionsMenu).
+    // Every rung empty: open the options menu. Escape is the dedicated
+    // toggle's twin opener - with nothing to dismiss it still reaches the
+    // menu (the top-bar button / KeyO are the direct paths; this rung
+    // keeps the keyboard gesture). Every screen has a variant - the main
+    // menu's carries Settings/Credits/Exit Game instead of the session
+    // verbs (see buildOptionsMenu).
     pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
         .surface = .options_menu,
     } });
@@ -1853,7 +1856,7 @@ pub fn handleAnytimeInput(
             // over the menu directly. Routed through `options_action` so
             // one handler serves both contexts. See DESIGN → UI Framework
             // → Settings screen.
-            .open_settings => pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+            .toggle_settings => pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
                 .surface = .settings,
             } }),
             // Credits (the main-menu options menu variant): toggle the
@@ -1861,15 +1864,25 @@ pub fn handleAnytimeInput(
             // reuses this action to close (the load-save browser's toggle
             // pattern). Routed through `options_action` because idle input
             // is gated while the options menu is open.
-            .open_credits => pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+            .toggle_credits => pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
                 .surface = .credits,
             } }),
             // Tips (the global top bar's `?` button): toggle the overlay -
             // the panel's Back button re-fires this to close (the
             // credits/load-save toggle pattern). Anytime-routed because
             // the top bar stays clickable while the options menu is open.
-            .open_tips => pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+            .toggle_tips => pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
                 .surface = .tips,
+            } }),
+            // The top-bar options button + the KeyO binding: a DIRECT
+            // toggle of the options menu, never the Escape chain - it
+            // opens the menu ON TOP of open overlays/panels (slot order
+            // is z-order), and clicking it while the menu is open closes
+            // it. Escape's final rung pushes the same event; the two are
+            // the menu's openers, with Escape additionally dismissing
+            // everything else on the way (see handleEscapeKey).
+            .toggle_options_menu => pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                .surface = .options_menu,
             } }),
             // The campaign browser (the world map's top-left campaign
             // button + the browser's Back button). Reachable wherever the

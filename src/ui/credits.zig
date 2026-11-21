@@ -41,7 +41,7 @@ pub const credits_button_width: i32 = 768;
 /// "Credits" header, three person blocks (name in a larger font above their
 /// roles in a smaller font, gaps between each person), and a Back button in
 /// the bottom-left. The panel blocks input to the main-menu buttons behind
-/// it. The Back button reuses the `.open_credits` action (toggle semantics -
+/// it. The Back button reuses the `.toggle_credits` action (toggle semantics -
 /// same pattern as the load-save browser's Back button).
 pub fn buildCreditsPanel(
     elements: *UiElementList,
@@ -130,7 +130,7 @@ pub fn buildCreditsPanel(
         },
         "Back",
         menu_button_font_size,
-        .open_credits,
+        .toggle_credits,
         button_color,
         null,
     );

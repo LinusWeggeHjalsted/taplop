@@ -75,7 +75,7 @@ pub fn buildTipsPanel(
     } });
 
     // Back button, bottom-left (the credits position). Reuses the
-    // open_tips toggle - Back = close (the credits Back pattern).
+    // toggle_tips toggle - Back = close (the credits Back pattern).
     const button_y = screen.y + screen.height - credits_padding - panel_button_height;
     try emitPanelButton(
         elements,
@@ -89,7 +89,7 @@ pub fn buildTipsPanel(
         },
         "Back",
         menu_button_font_size,
-        .open_tips,
+        .toggle_tips,
         button_color,
         null,
     );

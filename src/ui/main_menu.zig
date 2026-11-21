@@ -341,7 +341,7 @@ test "buildMainMenu: session verbs + mode entries only; Settings/Credits live in
         try std.testing.expect(found_link_button);
         try std.testing.expect(found_link_label);
     }
-    for ([_]types.Action{ .open_settings, .open_credits }) |moved| {
+    for ([_]types.Action{ .toggle_settings, .toggle_credits }) |moved| {
         for (elements.items) |element| switch (element) {
             .button => |b| try std.testing.expect(b.action != moved),
             else => {},

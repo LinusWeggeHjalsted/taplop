@@ -330,7 +330,7 @@ pub fn buildOptionsMenu(
 
     // Settings: opens the settings overlay on top of this one (drill-in).
     // Present in every context the options menu appears in.
-    buttons[button_count] = .{ .label = "Settings", .action = .open_settings };
+    buttons[button_count] = .{ .label = "Settings", .action = .toggle_settings };
     button_count += 1;
 
     // The main-menu variant: no session verbs (nothing to restart/exit/
@@ -339,7 +339,7 @@ pub fn buildOptionsMenu(
     // (closing the tab is the user's, not ours; the handler's comptime os
     // gate is the defensive half for a future keybind).
     if (current_screen == .main_menu) {
-        buttons[button_count] = .{ .label = "Credits", .action = .open_credits };
+        buttons[button_count] = .{ .label = "Credits", .action = .toggle_credits };
         button_count += 1;
         if (@import("builtin").target.os.tag != .emscripten) {
             buttons[button_count] = .{ .label = "Exit Game", .action = .exit_game };
@@ -455,7 +455,7 @@ test "buildOptionsMenu: the hub editor variant carries the drill-in's verbs" {
     {
         var elements: UiElementList = .empty;
         try buildOptionsMenu(&elements, allocator, metrics, screen, .hub_editor, null, false, button_color, null);
-        for ([_]types.Action{ .save_hub, .toggle_editor_browser, .close_hub_editor, .open_settings, .exit_to_menu }) |expected| {
+        for ([_]types.Action{ .save_hub, .toggle_editor_browser, .close_hub_editor, .toggle_settings, .exit_to_menu }) |expected| {
             var found = false;
             for (elements.items) |element| switch (element) {
                 .button => |b| {
@@ -503,7 +503,7 @@ test "buildOptionsMenu: the main-menu variant carries the meta entries, not the 
     // verbs, the editor block, or Exit to Main Menu. No Continue - like
     // every variant, the menu has no close button (Escape + the top-bar
     // options button close it).
-    for ([_]types.Action{ .open_settings, .open_credits, .exit_game }) |expected| {
+    for ([_]types.Action{ .toggle_settings, .toggle_credits, .exit_game }) |expected| {
         var found = false;
         for (elements.items) |element| switch (element) {
             .button => |b| {

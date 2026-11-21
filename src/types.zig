@@ -341,12 +341,21 @@ pub const Action = enum {
     // picker; the picked file lands in saves/ and loads. Native builds never
     // emit the button (drop files into the persistent saves/ dir by hand).
     import_save,
-    open_settings,
-    open_credits,
+    // The main-menu Settings button and the options-menu Settings entry:
+    // toggle the settings overlay (the Back button re-fires this action).
+    toggle_settings,
+    // The main-menu options-menu Credits entry: toggle the credits overlay
+    // (the Back button re-fires this action).
+    toggle_credits,
+    /// The top-bar options button (top left, every screen) + the default
+    /// KeyO binding: toggle the options menu ON TOP of whatever is open -
+    /// a DIRECT toggle, never the Escape chain (Escape dismisses; this
+    /// opens). The panel's Back button re-fires this action to close.
+    toggle_options_menu,
     /// The top-bar tips button (the `?`, top right): toggle the tips
-    /// overlay - same toggle semantics as open_credits (the panel's Back
+    /// overlay - same toggle semantics as toggle_credits (the panel's Back
     /// button re-fires this action to close).
-    open_tips,
+    toggle_tips,
     /// The tips panel's previous/next buttons: cycle the viewed tip. The
     /// direction rides the click payload (the `tips_direction` variant);
     /// consumed at the input layer mutating `UiState.tips_index` (the
@@ -1213,7 +1222,11 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .zoom_reset,
         // The top-bar tips button sits in the same always-drawn layer as
         // options/undo/redo (the global top bar - see view()).
-        .open_tips,
+        .toggle_tips,
+        // The top-bar options button: same always-drawn layer, and it must
+        // open the menu over open overlays/panels (and close it while it
+        // is open).
+        .toggle_options_menu,
         => .{ .anytime = true },
 
         // The recoverable-error popup only (modal - replaces every other
@@ -1431,14 +1444,14 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         // The upstream-repo link (main-menu button; keybindable like every
         // action - the defensive future-keybind half again).
         .open_repo_link,
-        .open_credits,
+        .toggle_credits,
         .exit_game,
         => .{ .menu = true },
 
         // Multi-screen: fires on more than one screen's surface.
         // The settings overlay is reachable from the main menu AND the
         // in-game options menu.
-        .open_settings,
+        .toggle_settings,
         .change_setting,
         .select_settings_tab,
         .edit_keybind,
@@ -1804,9 +1817,10 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .new_game,
         .toggle_load_save_menu,
         .import_save,
-        .open_settings,
-        .open_credits,
-        .open_tips,
+        .toggle_settings,
+        .toggle_credits,
+        .toggle_options_menu,
+        .toggle_tips,
         .add_editor_level,
         .toggle_editor_inspector,
         .toggle_editor_metadata_sidebar,

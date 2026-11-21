@@ -757,9 +757,10 @@ test "overlayUserSettings: stale entries set repair flag; heal write is idempote
     defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
     const file_source = FileSource.init(io, dir);
 
-    // Stale user file: `toggle_options_menu` is the pre-rename name of
-    // `escape` (warned + dropped at load), `camra_zoom` is an unknown key
-    // (warned), plus one valid binding so the file isn't only garbage.
+    // Stale user file: `open_tips` is the pre-rename name of `toggle_tips`
+    // (the open_->toggle_ sweep made it unknown - warned + dropped at
+    // load), `camra_zoom` is an unknown key (warned), plus one valid
+    // binding so the file isn't only garbage.
     const user_settings =
         \\Metadata
         \\file_format_version 2
@@ -775,7 +776,7 @@ test "overlayUserSettings: stale entries set repair flag; heal write is idempote
         \\
         \\input_type key
         \\input_name KeyO
-        \\action toggle_options_menu
+        \\action open_tips
         \\context anytime
     ;
     dir.writeFile(io, .{ .sub_path = "settings.txt", .data = user_settings }) catch
@@ -793,7 +794,7 @@ test "overlayUserSettings: stale entries set repair flag; heal write is idempote
     var found_stale_warning = false;
     var found_repair_note = false;
     for (startup.warnings.items) |warning| {
-        if (std.mem.indexOf(u8, warning, "toggle_options_menu") != null) found_stale_warning = true;
+        if (std.mem.indexOf(u8, warning, "open_tips") != null) found_stale_warning = true;
         if (std.mem.indexOf(u8, warning, "repaired copy") != null) found_repair_note = true;
     }
     try testing.expect(found_stale_warning);
@@ -896,7 +897,7 @@ test "createSessionSetup: stale settings.txt schedules the repair write" {
         \\InputBindings
         \\input_type key
         \\input_name KeyO
-        \\action toggle_options_menu
+        \\action open_tips
         \\context anytime
     ;
     dir.writeFile(io, .{ .sub_path = "settings.txt", .data = user_settings }) catch

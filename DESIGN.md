@@ -1914,11 +1914,8 @@ that true (`src/session_log_bundle.zig`):
 
 ### Escape overlay chain
 
-Escape is one anytime action (`Action.escape`, previously
-`toggle_options_menu` - renamed once the binding self-heal landed: an
-install whose user settings.txt names the old action warns + drops it at
-load and picks up the renamed action's default binding).
-`handleEscapeKey` (input_handlers.zig) consumes it as a generic
+Escape is one anytime action (`Action.escape`). `handleEscapeKey`
+(input_handlers.zig) consumes it as a generic
 "close the topmost overlay" chain: a walk down `escape_ladder`, a
 topmost-first ordered array of `EscapeRung` values. With the overlay
 stack (mission announcements included - they are ordinary members now),
@@ -1955,6 +1952,24 @@ topmost:
 The walk closes the first open rung; every rung empty opens the options
 menu on ANY screen (the main-menu variant carries its own entries - see
 below).
+
+**The dedicated toggle - the menu's direct opener.** The top-bar options
+button (every screen) and its default KeyO binding carry
+`Action.toggle_options_menu`, an anytime-routed DIRECT toggle: it pushes
+the same `player_toggle_ui_surface` the chain's final rung pushes,
+opening the menu ON TOP of open overlays/panels (slot order is z-order)
+and toggling it closed while open - never walking the chain. (The button
+previously carried `.escape` itself, so clicking it over an open panel
+merely closed the panel - backwards for an opener. The name is a
+reclamation: `toggle_options_menu` was escape's own ORIGINAL name,
+renamed away long before this landed, so no log or settings file from a
+current install ever carried it.) Escape and the toggle are
+complementary: Escape dismisses everything on the way down and opens the
+menu only when nothing is left to close; the toggle opens
+unconditionally. The same open_->toggle_ naming sweep made the surface
+toggles honest: `toggle_settings` / `toggle_credits` / `toggle_tips` (all
+three push `player_toggle_ui_surface`, their Back buttons re-firing the
+same action).
 
 **No coverage list to drift.** Every plain stackable surface is closed
 by the pop rung and every middle panel by the panel rung automatically;
@@ -7455,8 +7470,8 @@ A full-screen modal on any screen (the credits structure: `blocks_input`
 time: a centered half-width wrapped text column with 128x128 prev/next
 glyph buttons flanking it, and an n/N ordinal directly beneath the
 header. Opened from the global top bar's `?` button
-(top-right, mirroring options at top-left - `Action.open_tips`, a toggle
-like open_credits; the `?` and the `<`/`>` are font glyphs, no icon
+(top-right, mirroring options at top-left - `Action.toggle_tips`, a toggle
+like toggle_credits; the `?` and the `<`/`>` are font glyphs, no icon
 sprites). The `?` hides on BOTH editor screens - that corner is the
 primary-actions row (Test/Validate on the mission editor, Validate on
 the campaign editor), the screens with UI already occupying the
@@ -7477,7 +7492,7 @@ button; an empty-but-valid file leaves the panel as background + Back.
 ### Settings screen
 
 A full-screen modal overlay (`GameState.ui_surfaces.isSurfaceOpen(.settings)`,
-toggled by the recorded `Action.open_settings` → `player_toggle_ui_surface`)
+toggled by the recorded `Action.toggle_settings` → `player_toggle_ui_surface`)
 with TWO content
 tabs (`UiState.settings_tab`: **Settings** / **Keybinds** - tab buttons
 under the header, `.select_settings_tab` + the `settings_tab` click-payload
@@ -7485,7 +7500,7 @@ variant; a switch is a view affordance off the undo timeline
 and resets `keybind_scroll_offset`). Mirrors the load-save browser /
 credits screen overlays: a `blocks_input` 9-slice panel, a Back button
 bottom-left that closes it. The screen is reachable from TWO entry points,
-both wired through `Action.open_settings`:
+both wired through `Action.toggle_settings`:
 
 **The Settings tab** (the scalar fields) lays its 12 control rows out on a
 TWO-COLUMN grid (6 rows per column, `settingsControlRowRect` - rows 0-5
