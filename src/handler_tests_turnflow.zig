@@ -163,6 +163,130 @@ test "turn_start: dead entity is a no-op (no events pushed)" {
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }
 
+// ───────────────────────── momentum decay ─────────────────────────
+
+// No enemies in the level (only the player): every player turn start
+// wipes momentum - the counter is initialized AT the threshold, so the
+// very first increment crosses it. Simulates the grind: momentum 8
+// accrued out of combat is structurally useless, wiping on the next
+// turn start no matter how it was gained.
+test "turn_start: momentum resets once more turns than the decay threshold passed without active enemies" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
+        &five_by_five,
+    ));
+    levelEntity(&history, 0).momentum = 8;
+    pushOne(&history, .{ .turn_start = .{ .entity_index = 0 } });
+    stepOnce(&history);
+    try testing.expectEqual(@as(u32, 0), levelEntity(&history, 0).momentum);
+    // The counter saturates at threshold + 1 ("long since combat"), staying
+    // bounded across an arbitrarily long grind.
+    try testing.expectEqual(types.momentum_decay_turns + 1, history.current_state.level.?.turns_since_combat);
+}
+
+test "turn_start: momentum and the decay counter hold while enemies are active" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 }, .momentum = 8 },
+            .{ .team = 1, .position = .{ .x = 4, .y = 4 }, .is_active = true },
+        },
+        &five_by_five,
+    ));
+    pushOne(&history, .{ .turn_start = .{ .entity_index = 0 } });
+    stepOnce(&history);
+    try testing.expectEqual(@as(u32, 8), levelEntity(&history, 0).momentum);
+    try testing.expectEqual(@as(u32, 0), history.current_state.level.?.turns_since_combat);
+}
+
+test "turn_start: a finished fight's momentum carries exactly the threshold turns, then resets" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 }, .momentum = 8 },
+            // Dead enemy: hasActiveEnemies is false, but the counter starts
+            // at 0 as if the fight just ended.
+            .{ .team = 1, .position = .{ .x = 4, .y = 4 }, .is_active = true, .current_health = 0 },
+        },
+        &five_by_five,
+    ));
+    history.current_state.level.?.turns_since_combat = 0;
+    // Threshold (3) consecutive turn starts keep the momentum...
+    var turn: u32 = 0;
+    while (turn < types.momentum_decay_turns) : (turn += 1) {
+        pushOne(&history, .{ .turn_start = .{ .entity_index = 0 } });
+        runToIdle(&history);
+        try testing.expectEqual(@as(u32, 8), levelEntity(&history, 0).momentum);
+    }
+    // ...the threshold+1'th wipes it.
+    pushOne(&history, .{ .turn_start = .{ .entity_index = 0 } });
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 0), levelEntity(&history, 0).momentum);
+}
+
+test "turn_start: mid-turn combat entry clears the counter on the next turn start" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 } },
+            // Inactive enemy: the opening attack (or an aggro check) flips
+            // is_active mid-turn, AFTER the turn-start snapshot.
+            .{ .team = 1, .position = .{ .x = 4, .y = 4 }, .is_active = false },
+        },
+        &five_by_five,
+    ));
+    // Turn 1: no active enemies - the counter increments and any held
+    // momentum is wiped (anti-grind holds through the opening turn).
+    levelEntity(&history, 0).momentum = 2;
+    pushOne(&history, .{ .turn_start = .{ .entity_index = 0 } });
+    stepOnce(&history);
+    try testing.expectEqual(@as(u32, 0), levelEntity(&history, 0).momentum);
+    // The opening attack lands mid-turn: momentum +1 and the enemy aggros.
+    levelEntity(&history, 0).momentum = 1;
+    levelEntity(&history, 1).is_active = true;
+    // Turn 2: active enemies - the counter clears and the opening attack's
+    // momentum survives.
+    pushOne(&history, .{ .turn_start = .{ .entity_index = 0 } });
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 1), levelEntity(&history, 0).momentum);
+    try testing.expectEqual(@as(u32, 0), history.current_state.level.?.turns_since_combat);
+}
+
+test "turn_start: enemy turn starts do not tick the decay counter" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    // Alive but INACTIVE enemy: hasActiveEnemies is false, so if the
+    // enemy's turn_start wrongly ran the player branch the counter would
+    // tick past the threshold and wipe the player's momentum. The default
+    // counter (AT the threshold) makes any tick immediately observable.
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 }, .momentum = 8 },
+            .{ .team = 1, .position = .{ .x = 4, .y = 4 }, .is_active = false },
+        },
+        &five_by_five,
+    ));
+    pushOne(&history, .{ .turn_start = .{ .entity_index = 1 } });
+    runToIdle(&history);
+    try testing.expectEqual(types.momentum_decay_turns, history.current_state.level.?.turns_since_combat);
+    try testing.expectEqual(@as(u32, 8), levelEntity(&history, 0).momentum);
+}
+
 // ───────────────────────── turn_end (enemy ordering) ─────────────────────────
 
 test "turn_end: player turn_end pushes enemies sorted by distance, closest on top" {

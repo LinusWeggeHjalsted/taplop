@@ -4996,6 +4996,29 @@ the game cheating):
   a longer one replaces it). Stun skills' AI mirrors this: they rate up only
   when an unstunned target is in reach and select unstunned targets first
   (`skill_helpers.zig` `stunTarget`).
+- **Momentum is recent-combat tempo (decays out of combat).** Momentum
+  accrues +1 on every `use_skill` and `move_entity` - for ANY entity -
+  but the player's resets to 0 at their `turn_start` once more than
+  `momentum_decay_turns` (3, `types.zig` - a code-owned balance constant,
+  momentum is never authorable) consecutive player turns started without
+  active enemies. `Level.turns_since_combat` is the transient counter:
+  initialized AT the threshold (a level's second turn already counts as
+  long since combat - no start-of-level ramp window; the turn-1 reset is
+  a no-op since momentum starts at 0), saturating at threshold + 1,
+  cleared whenever `hasActiveEnemies` holds at the turn-start snapshot
+  (mid-turn aggro clears it on the NEXT turn's start). The rule is
+  player-only (enemy turns are combat by construction) and the reset is
+  deliberately NOT a momentum gain, so it stays outside any future
+  momentum-gain transform hook (the Tier B intercept plans gain hooks
+  only). What the rule buys: a fight opened out of combat always starts
+  at converted momentum 0 - the reset at turn N+1's start precedes any
+  engagement action on that turn, so out-of-combat grinding is
+  structurally dead, not merely disincentivized - and a finished fight's
+  momentum carries exactly 3 full turns, wiped at the 4th turn start.
+  Superseded alternative: gating the +1 gains on `hasActiveEnemies` - a
+  silent freeze with no player-facing feedback that also punished
+  aggressive openers (the opening hit gains nothing when the gate
+  evaluates before the attack's aggro).
 - **AI options (the unified enemy decision surface).** A skill's
   `ai_options_fn` enumerates its meaningful casts as (target, rating)
   pairs, best-first - ONE decision instead of the old priority /

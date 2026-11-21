@@ -427,6 +427,7 @@ working rules).
 - [Playtest feedback 3: Escape closes the middle panels, rightmost-first](#playtest-feedback-3-escape-closes-the-middle-panels-rightmost-first)
 - [Playtest feedback 2: the mission announcements are ordinary overlay-stack members](#playtest-feedback-2-the-mission-announcements-are-ordinary-overlay-stack-members)
 - [Playtest feedback 1: hidden tabs pause web audio cleanly](#playtest-feedback-1-hidden-tabs-pause-web-audio-cleanly)
+- [Playtest feedback 5: momentum decays out of combat (recent-combat tempo)](#playtest-feedback-5-momentum-decays-out-of-combat-recent-combat-tempo)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24769,3 +24770,56 @@ recreate the ScriptProcessorNode on the autoplay resume path, dropping
 the wrapper with the old node. The documented quietly-no-op degradation
 class, now observed live; fix shape + verification plan in TODO →
 Platform Layer.
+
+## Playtest feedback 5: momentum decays out of combat (recent-combat tempo)
+
+Last of the six friends-reported playtest issues to be implemented (the
+report + the settled design discussion: TODO → Playtest Feedback at the
+time; the rule now lives in DESIGN → Architecture → Momentum decay).
+
+The report: momentum accrues +1 on every `use_skill` and `move_entity`
+regardless of combat state, so walking back and forth in an enemy-free
+(or all-unaggroed) level maxes it before the fight. The first proposal
+(gate the +1 on `hasActiveEnemies`) was superseded during the design
+discussion in favor of a DECAY: momentum is recent-combat tempo, not a
+permanent ratchet. The settled decisions: the counter initializes AT the
+threshold (a level's second turn already counts as long since combat -
+no start-of-level ramp window; grinding is structurally dead, not merely
+disincentivized, since the reset at turn N+1's start precedes any
+engagement action on that turn); increment-then-check (one code path -
+the turn-1 reset on a fresh level is a no-op, momentum starts at 0);
+player-only (enemy turns are combat by construction); NOT interceptable
+(the reset is not a momentum gain, so the future Tier B momentum-gain
+transform hook must not see it); a finished fight's momentum carries
+exactly 3 full turns, wiped at the 4th turn start.
+
+Implementation: `types.momentum_decay_turns` (3, code-owned - momentum
+is never authorable) + `Level.turns_since_combat` (transient, saturating
+at threshold + 1) + the player arm of the `turn_start` handler
+(handlers/level.zig - the same site as the cooldown / effect-duration
+ticks, evaluated at the turn-start snapshot so mid-turn aggro clears
+the counter on the NEXT turn's start). No new event, no session-log
+schema change - a pure transform inside an existing handler, replay- and
+undo-safe by construction.
+
+Verification: 5 new turnflow tests (1131 total) - the no-enemies wipe
+(counter initialized AT the threshold), the in-combat hold, the exact
+3-turn post-fight carry with the 4th-turn wipe, the mid-turn combat
+entry clearing the counter, and enemy turn starts not ticking it (an
+alive-but-inactive enemy, so the dead-skip can't mask a mis-gate).
+
+Shipped validation replays under the new math (the throwaway-diagnostic
+method: a temporary test ran `revalidateMission` - the checking replay -
+against every embedded Polpat mission dir; tests never pin campaign
+content, so the diagnostic was deleted after reading its verdict):
+Pleasant Grove, Sunny Meadows, Needle Bush, and Deep Forest still
+certify clean; **Forest Outskirts diverges** - its recorded run carries
+out-of-combat momentum into a later bash (recorded event 97,
+`outgoing_damage` no longer reproduces), so the shipped
+`validation_replay.txt` needs a re-record under the decay build (the
+Logging & Replay pre-release policy: re-record, no migration). That
+re-record is the momentum fix's one remaining part - it stays in TODO,
+and the fresh run's turn count will reset the author medal targets, so
+it should be a real author playthrough. Rider in the same work: the
+stale DESIGN AI-threat example naming Daze (a removed skill) was fixed
+in the preceding docs commit.

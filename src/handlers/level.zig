@@ -281,6 +281,28 @@ pub fn handleLevelEvent(
                 if (current.editor == null) {
                     current.player_data.turns += 1;
                 }
+
+                // Momentum decay: momentum is recent-combat tempo. The
+                // counter is checked at the START of the turn (before any
+                // mid-turn aggro), in the same arm as the cooldown /
+                // effect-duration ticks below. Increment-then-check keeps
+                // one code path - the turn-1 reset on a fresh level is a
+                // no-op (momentum starts at 0). The reset is deliberately
+                // NOT a momentum gain, so a future momentum-gain transform
+                // hook (TODO → Skill Logic → Tier B) must not intercept it.
+                // See DESIGN → Architecture → Momentum decay.
+                const decay_level = &current.level.?;
+                if (decay_level.hasActiveEnemies()) {
+                    decay_level.turns_since_combat = 0;
+                } else {
+                    decay_level.turns_since_combat = @min(
+                        decay_level.turns_since_combat + 1,
+                        types.momentum_decay_turns + 1,
+                    );
+                    if (decay_level.turns_since_combat > types.momentum_decay_turns) {
+                        getLevelEntity(current, 0).momentum = 0;
+                    }
+                }
             }
 
             // 1. Reduce all skill cooldowns by 1

@@ -4577,6 +4577,13 @@ pub const TurnPhase = enum {
     player_attack,
 };
 
+/// Player turns started without active enemies before the player's
+/// momentum resets to 0 (momentum is recent-combat tempo, not a permanent
+/// ratchet - see DESIGN → Architecture → Momentum decay). A code-owned
+/// balance constant, never authorable: momentum is a transient combat
+/// stat, and its decay rule follows it.
+pub const momentum_decay_turns: u32 = 3;
+
 pub const Level = struct {
     name: []const u8 = &.{},
     color_wheel_index: u32 = 0,
@@ -4593,6 +4600,13 @@ pub const Level = struct {
     highlighted_tiles: []const Vector2 = &.{},
     prepared_skill: ?SkillId = null,
     turn_phase: ?TurnPhase = null,
+    /// Consecutive player turn starts without active enemies, saturating
+    /// at `momentum_decay_turns + 1`. Initialized AT the decay threshold so
+    /// a level's second turn already counts as long since combat - there is
+    /// no start-of-level ramp window. Read/written only by the player's
+    /// `turn_start` arm (handlers/level.zig), which applies the momentum
+    /// decay. Transient replay state: never authored, never serialized.
+    turns_since_combat: u32 = momentum_decay_turns,
 
     /// Does the level still hold active enemies - anything alive,
     /// active, and on a team other than the player's (entity 0)? The one

@@ -156,36 +156,21 @@ via the session log (logging has landed).
 ## Playtest Feedback (friends' reports, post-GitHub-migration)
 
 Six issues reported by friends playing the shipped builds. Five have
-landed (DONE.md); only the momentum decay remains - design settled
-below, implementation next.
+landed (DONE.md); the sixth - momentum out of combat - is implemented
+(see DESIGN → Architecture → Momentum decay), with only its shipped
+validation-replay re-record remaining below.
 
-- **Momentum decays out of combat (design settled).** Momentum accrues
-      +1 on EVERY `use_skill` and `move_entity` (handlers/level.zig),
-      regardless of combat state, so walking back and forth in an
-      enemy-free (or all-unaggroed) level maxes it before the fight.
-      Settled fix - a DECAY, not a gain gate (the earlier proposal, gating
-      the +1 on `hasActiveEnemies`, is superseded): momentum is
-      recent-combat tempo. A transient Level counter, `turns_since_combat`,
-      initialized AT `momentum_decay_turns` (the pacing constant, 3) so a
-      level's second turn already counts as long since combat - no
-      start-of-level ramp window. At the player's `turn_start` (the same
-      arm as the cooldown / effect-duration ticks): active enemies ->
-      counter 0; else increment-then-check, counter > 3 -> player
-      momentum = 0. Player-only (enemy turns are combat by construction);
-      NOT interceptable (the reset is not a momentum gain, so it stays
-      outside the future Tier B momentum-gain transform hook).
-      Consequences: a fight opened out of combat always starts at
-      converted momentum 0 (grinding is structurally dead, not merely
-      disincentivized - the reset at turn N+1's start precedes any
-      engagement action on that turn), and a finished fight's momentum
-      carries exactly 3 full turns, wiped at the 4th turn start. Slice
-      parts: the field + the `turn_start` arm + turnflow tests + the
-      SHIPPED Polpat validation replays revalidated under the new math
-      (the checking replay recomputes use_skill live, so a
-      stale-momentum recording diverges; the Logging & Replay pre-release
-      policy: re-record, no migration - re-record only the missions that
-      diverge) + the stale DESIGN AI-threat Daze example (a removed
-      skill) fixed.
+- **Forest Outskirts validation replay: re-record under the momentum
+      decay (the momentum fix's last part; the decay itself landed -
+      DONE.md, DESIGN → Architecture → Momentum decay).** The shipped
+      recording carries out-of-combat momentum into a later attack, so
+      the decay build's checking replay rejects it (recorded event 97,
+      a bash whose outgoing_damage no longer reproduces). The other
+      four Polpat replays revalidate clean. Re-record = a fresh
+      Validate run of the mission under the new build (the Logging &
+      Replay pre-release policy: re-record, no migration); the fresh
+      run's turn count resets the author medal targets, so it should
+      be a real author playthrough, not a scripted crawl.
 
 ## Skill Logic
 
