@@ -2008,18 +2008,20 @@ player actions on the undo timeline.
 
 The game reads stdin while it runs: launching from a terminal gives
 terminal control alongside the game window; piping a script drives the
-game. ANOTHER INPUT CHANNEL, not a dev tool - always on (no flag), native
-only (web has no stdin; the node headless run is a later investigation).
+game. ANOTHER INPUT CHANNEL, not a dev tool - always on (no flag).
+Native reads stdin; web has none, so the web build gets the same channel
+through a JS file seam instead (see Web console seam below).
 An stdin-less launch (double-click, the mac app bundle) is immediate EOF -
 the reader thread exits, zero cost.
 
 - **Injection mirrors the engine's own synthetic-input model.** A reader
   thread blocks on stdin lines → parses → a queue; the frame driver (the
-  shared `frame()`, right after the backend poll - native-only in effect,
-  because only the native driver spawns a reader; on web the queue stays
-  empty and the drain is a no-op) drains ONE COMMAND PER FRAME and merges
-  its events into that frame's `PlatformInput` - the same per-frame,
-  per-event cadence the synthetic key-repeat machinery uses. The queue is
+  shared `frame()`, right after the backend poll) drains ONE COMMAND PER
+  FRAME and merges its events into that frame's `PlatformInput` - the same
+  per-frame, per-event cadence the synthetic key-repeat machinery uses.
+  Only the native driver spawns a reader; on web the queue is filled by the
+  JS seam's feeder instead (same queue, same drain - see Web console seam
+  below), and with no producer the drain is a no-op. The queue is
   a single-producer single-consumer ring with atomic counters, not a
   mutex: Zig's std locks need an `Io` handle on BOTH threads and the
   game thread has none to give inside `frame()`; a SPSC ring needs none,
@@ -2257,6 +2259,73 @@ the reader thread exits, zero cost.
   is stored on the queue as the concrete `File.Writer` parent (the
   interface's vtable resolves its parent via `fieldParentPtr`, so an
   interface copy would dangle).
+
+#### Web console seam (the drivable web surface)
+
+Web has no stdin, so the web build long had no drivable surface: every
+web UI flow (Export Game's download, Import Game's marker + re-boot,
+the listing surfaces) needed a human, and the synthetic-canvas-click
+workaround was flaky (worked locally, silently failed deployed). The
+settled shape: the SHARED pipeline already runs on web - `frame()`
+calls `applyFrameCommand` unconditionally; the queue was simply always
+empty - so the feature is only a PRODUCER (getting script text into
+the queue) plus a READABLE OUTPUT SINK. Nothing downstream changes:
+same parser, same queue, same one-command-per-frame drain, same merge,
+same recorded events.
+
+- **Transport: the FS marker seam, not exported wasm functions.** The
+  codebase already has an established JS↔Zig channel - the web import
+  markers: JS writes a file into the `/taplop` MEMFS mount via
+  `FS.writeFile`, Zig polls for it per frame, reads, deletes. The web
+  console rides that same seam: shims installed at boot from Zig via
+  `emscripten_run_script` (the audio-watchdog pattern - no shell.html
+  change, deployment-identical on emrun, GitHub Pages, and node):
+  `window.taplopConsole(text)` writes `.console_in` (appending if Zig
+  has not consumed the previous write yet); `window.taplopConsoleOutput()`
+  reads + unlinks `.console_out`. Exported wasm functions would add two
+  new mechanism classes (emcc `EXPORTED_FUNCTIONS` config + raw
+  heap-view lifetime under `ALLOW_MEMORY_GROWTH`) for the same result -
+  fitting, not belonging. The seam is also the canvas-click workaround's
+  missing property: identical everywhere the module runs.
+- **Output is a mailbox - nothing is destroyed unread.** The sink
+  (`ConsoleOutputSink` in console.zig - an ArrayList-backed `Writer`
+  interface) is intra-frame staging; the queue's write sites route
+  through ONE accessor (the sink when wired, else the native stdout
+  `File.Writer` - the concrete-parent rule stays for the file arm).
+  DELIVERY HOLDS WHILE THE PREVIOUS DELIVERY IS UNREAD: each frame,
+  if the sink is non-empty AND `.console_out` is absent, the web driver
+  writes the whole sink to the file and clears it; while the file sits
+  unread, the sink retains. JS takes all + unlinks. No append machinery,
+  no re-sent bytes, no quadratic rewrites - the two-layer hold is the
+  whole retention design. A per-frame take-and-clear would instead
+  lose every report: between two agent actions dozens of frames tick,
+  so a report written on frame N is overwritten by nothing on frame
+  N+1 and the agent reads an empty file. No cap on growth: output
+  exists only when commands produce it, so unbounded growth would be a
+  driver bug, same posture as native stdout (which never blocks the
+  game either).
+- **Backpressure is a line feeder, not the queue's spin.** The native
+  SPSC's full-queue behavior is yield-spin - safe only because the
+  producer is a separate THREAD. On web the producer is the game
+  thread itself; a spin inside `frameCallback` would freeze the tab.
+  So the web side stages raw script text and feeds ONE parsed command
+  per frame, only while the queue's occupancy is below a low-water
+  mark (8): `ConsoleFeeder` in console.zig, headless-testable. Blank/
+  comment lines consume no frame; parse errors report to the sink
+  (`console: <message>`) the way the native reader reports them to
+  stderr. Steady state is one in / one drained per frame, so there is
+  no throughput cost; during a `wait idle` hold the feeder simply
+  pauses at the low-water mark.
+- **`quit` is a web no-op by design.** Closing the game on web is
+  closing the tab, which the tab cannot do to itself; the command stays
+  in the shared vocabulary (native scripts paste unmodified), the web
+  driver notices `quit_requested` once and writes a sink note so a
+  driving agent's trailing `quit` is not a silent mystery.
+- **Known limitations:** a HIDDEN tab stops rAF, so the drain stops -
+  a drive needs the tab visible; `wait n` counts frames at the tab's
+  actual frame rate. The node headless run (the FS seam works there,
+  rAF falls back to setTimeout - a fully automated web smoke) stays a
+  later investigation, as before.
 
 ## Error Handling
 

@@ -98,23 +98,12 @@ Test by running `zig build run` and clicking through.
   author. The walker's safety rules (never follows pointers, never calls
   methods) stay as they are - see DESIGN → Input → Console input → dump
   paths.
-- **Web console input channel (drivability gap, found driving the
-  Import/Export Game fixes)** - the console channel is stdin-only, so the
-  web build has no drivable surface: every web UI flow (Export Game's
-  download, Import Game's marker + re-boot, the listing surfaces on web)
-  needs a human. The synthetic-canvas-click workaround is flaky: the same
-  scripted click (DOM events dispatched at computed reference
-  coordinates) worked on a locally served build and silently failed on
-  the deployed one, undiagnosed - and a per-frame-polled game needs
-  press/hold/release spanning frames (a same-tick mousedown+mouseup is
-  invisible to the poll). Design sketch: a JS-exposed queue (e.g. a
-  `window.taplopConsole(text)` pushing into the SAME SPSC queue the
-  stdin reader fills - console.zig) + the web driver draining one
-  command per frame exactly like the native loop; report/dump output
-  (stdout on native) lands in a window-readable buffer so a driving
-  agent can read it back. Reuses the parser + the applyAction fold + the
-  one-command-per-frame queue semantics wholesale. See DESIGN → Input →
-  Console input for the settled native design.
+- **Web console input channel (the web build's drivable surface)** -
+      design settled (DESIGN → Input → Console input → Web console seam:
+      FS-marker transport, mailbox output, line feeder); slices + status
+      at Platform Layer → web console channel below. Landing this makes
+      web UI flows agent-drivable (the Firefox-MCP evaluate_script
+      surface) without the flaky synthetic-canvas-click workaround.
 - **Import/Export Game success is silent (the "nothing happens" class,
   found as the OS-zip import bug's mask)** - the pre-fix import
   SUCCEEDED (nested shadow tree, session re-boot) and the screen looked
@@ -598,6 +587,43 @@ Open:
   capture or the show_fps overlay while reproducing), and whether native
   release shows the same dips. The audio watchdog caps the damage this
   causes to sound; the dips themselves are a smoothness item.
+- **Web console channel (the web build's drivable surface - design
+  settled, see DESIGN → Input → Console input → Web console seam for the
+  full rationale: FS-marker transport over exported wasm fns, mailbox
+  output, line feeder instead of the queue's spin, `quit` as a
+  noticed no-op).** Slices:
+  - [ ] 1. `console.zig` headless core: `ConsoleOutputSink` (an
+        ArrayList-backed `Writer` the queue's write sites route through,
+        sink-else-stdout via one accessor) + `ConsoleFeeder` (stage raw
+        script text; feed one parsed command per frame below a
+        low-water occupancy; skips + parse errors consume no frame,
+        errors land in the sink) + tests (sink round-trip +
+        take-and-clear; feeder ordering, low-water pause during holds,
+        no-overflow, parse-error capture).
+  - [ ] 2. `web.zig` wiring: `WebSession` gains sink + feeder;
+        `bootSession` wires the fresh queue (re-boot safe - same site as
+        the audio re-wraps) + installs the JS shims via
+        `emscripten_run_script` (`window.taplopConsole` writes
+        `.console_in` via `FS.writeFile`; `window.taplopConsoleOutput`
+        reads + unlinks `.console_out`); `frameCallback` = poll
+        `.console_in` (read, stage, delete) → feed → `game.frame()` →
+        deliver sink to `.console_out` when the previous delivery is
+        unread → the `quit_requested` note (once).
+  - [ ] 3. `file_source.zig`: `.console_in`/`.console_out` join the
+        marker exclusion set (listing exclusion + the export-zip walk,
+        parity with the import markers - a drive interrupted mid-script
+        can leave one behind).
+  - [ ] 4. Docs + verification wrap-up: AGENTS → Running the Game gains
+        the web-drive operating manual (the tab must stay visible -
+        rAF stops on hidden tabs); DONE entry; slice checkoffs delete
+        their blocks (this task's whole bullet goes when the last slice
+        lands).
+        Verification ladder: `scripts/test.sh` for slice 1; slice 2 is
+        WEB COMPILES ≠ WEB RUNS territory - `scripts/web.sh` + a real
+        browser drive through the Firefox-MCP evaluate_script surface
+        (report ui → read output → move + press/release → wait idle →
+        report level). The node-headless drive stays deferred (see the
+        DESIGN subsection's known-limitations line).
 - **macOS native port** - cross-build + persistent dir + .app bundle landed
   (history in DONE.md; persistent-dir design in DESIGN → File System & IO →
   Persistent path; build workflow in AGENTS → Build & Test). REMAINING:
