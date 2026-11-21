@@ -2289,10 +2289,18 @@ pub const GameStateHistory = struct {
                         }
                     },
                     .player_exit_to_menu => {
+                        // Every screen whose options menu offers Exit to
+                        // Main Menu (the menu hides it on main_menu only -
+                        // options_menu.zig). The hub editor drill-in joined
+                        // the family after the list was written; the
+                        // record-time trap caught the omission live (a
+                        // legal exit crashed dev builds - the validator is
+                        // the stale side, the handler arm is complete).
                         if (self.current_state.screen != .level and self.current_state.screen != .hub and
-                            self.current_state.screen != .editor and self.current_state.screen != .campaign_editor)
+                            self.current_state.screen != .editor and self.current_state.screen != .campaign_editor and
+                            self.current_state.screen != .hub_editor)
                         {
-                            self.rejectReplay("replay validation: player_exit_to_menu outside level/hub/editor screen");
+                            self.rejectReplay("replay validation: player_exit_to_menu from a screen without the exit path");
                             return;
                         }
                     },
@@ -4809,4 +4817,24 @@ test "isNpcInteractionLegal: the interaction legality core" {
     current.screen = .hub;
     current.hub = null;
     try std.testing.expect(!history.isNpcInteractionLegal(.{ .npc_index = 0 }));
+}
+
+test "replay validation: exit to menu records legally from every exit-path screen" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = test_harness.Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+
+    // The options menu offers Exit to Main Menu on every screen except
+    // main_menu (options_menu.zig) - the gate's screen set must mirror
+    // that exactly. The hub editor drill-in joined the family after the
+    // list was written; the record-time trap caught the omission live (a
+    // legal exit crashed dev builds - the same class as the campaign
+    // editor's ctrl+O gap the browser gate's test names). An illegal
+    // screen would PANIC via rejectReplay (the no-expectPanics
+    // convention - the legal set is what this pins).
+    for ([_]Screen{ .level, .hub, .editor, .campaign_editor, .hub_editor }) |screen| {
+        history.current_state.screen = screen;
+        history.validatePlayerAction(.{ .player_input_event = .player_exit_to_menu });
+    }
 }

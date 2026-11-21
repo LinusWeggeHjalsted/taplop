@@ -445,6 +445,7 @@ working rules).
 - [Dump-walker struct summaries - slice elements and struct fields render their first fields inline](#dump-walker-struct-summaries---slice-elements-and-struct-fields-render-their-first-fields-inline)
 - [Toast system slices 2-3 - the firing sites + the re-boot bridge](#toast-system-slices-2-3---the-firing-sites--the-re-boot-bridge)
 - [Mission + hub save toasts; the "Open Mission" label rename](#mission--hub-save-toasts-the-open-mission-label-rename)
+- [The hub-editor exit crash - the record-time trap catches a validator gap](#the-hub-editor-exit-crash---the-record-time-trap-catches-a-validator-gap)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -25388,3 +25389,35 @@ No new wiring: both saves were already input-layer side effects with
 success sites holding everything needed - the toasts are one
 setToast each, and the save-first callers (validate/export) see the
 same "Mission saved" their campaign sibling does.
+
+## The hub-editor exit crash - the record-time trap catches a validator gap
+
+The dev-build legality trap fired on a LEGAL flow (exit to main menu
+from the hub editor drill-in) - which is exactly the trap's own
+instructions for what to do: "that's a validator gap to fix before
+promoting". The handler arm was complete all along (it handles
+`.hub_editor` - open_main_menu's plain transition, the scope swap
+clears the editor session); the VALIDATOR's screen set was the stale
+side: the gate listed level/hub/editor/campaign_editor, and
+`.hub_editor` joined the exit family when the drill-in landed without
+the list being extended. Same class as the campaign editor's ctrl+O
+gap that the browser gate's mirror test already names - the
+validator's screen sets are hand-maintained mirrors of UI gating, and
+the trap is the thing that surfaces the drift.
+
+The fix adds `.hub_editor` to the gate and generalizes the message
+("player_exit_to_menu from a screen without the exit path" - an
+enumerating prose message invites the next miss). A regression test
+walks the whole legal screen set through `validatePlayerAction`
+directly; an illegal screen would panic via rejectReplay, so the legal
+set is what pins the gate (the no-expectPanics convention).
+
+Verified end-to-end on the real binary through the console channel:
+the full repro path driven live (fresh campaign via `action
+new_editor_campaign`, the hub double-click drill-in, the options menu,
+the Exit to Main Menu click) now records and the screen dumps
+`main_menu`. One drive lesson re-learned on the way: the first re-run
+after the fix still crashed with the OLD message - the driving binary
+was stale (the test build compiles the test binary only; the AGENTS
+"rebuild before driving" rule exists for exactly that), and the stale
+message text itself is what made the diagnosis instant.
