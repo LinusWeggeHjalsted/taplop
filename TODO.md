@@ -705,8 +705,8 @@ Open:
 - **Later extensions (settled direction, not scheduled):** per-screen base
   tracks (menu/hub/level ambience); per-enemy-TYPE music stems (the current
   stack is intensity-only); a medal-stinger layer per medal type
-  (author/gold/silver/bronze) for the mission-complete overlay when the
-  medals work lands; player-vs-enemy sound variants (move/hit/death) if the
+  (author/gold/silver/bronze) for the mission-complete medal row (the
+  row itself landed - see DONE.md); player-vs-enemy sound variants (move/hit/death) if the
   designer wants them (trivial at the queue sites).
 
 ## Memory / Budget
@@ -754,39 +754,6 @@ looking:
   fully populate the source ("loading mission...") before emitting
   start_mission.
 
-- **Mission-complete medal row (display side of the author-medal
-      machinery - DESIGN → Custom Missions & Online Services → Turn
-      counters + author medals):** 4 tinted `ui/medal` sprites on the
-      mission-complete overlay, directly below the top-middle summary
-      (the campaign variant's material-count row / the validation
-      variant's "Validated in N turns" line), replacing the validation
-      variant's text ladder. Settled:
-      - campaign targets come from a mission-start capture (session-side
-        `mission_author_turns`, the `validation_personal_best_turns`
-        pattern - view stays file-free); the capture runs the
-        `checkMissionValidationArtifact` standard and derives turns from
-        the replay's events. Unvalidated (missing/stale/foreign replay) →
-        null → the row hides.
-      - validation variant anchors the row to the personal best
-        (`validation_personal_best_turns` orelse this run's turns).
-      - achieved = `turns_spent <= target` (inclusive), so an achieved
-        tier undims itself + every looser tier by construction.
-      - unachieved dimming = the cooldown-overlay pattern (the medal
-        redrawn on itself tinted `active_theme.darkest`, alpha 128,
-        non-blocking).
-      - one shared `ui/medal` graphic, hardcoded tint constants (bronze/
-        silver/gold/author-green); the asset is MISSING on purpose for
-        now (magenta placeholder signals it - the artist drops
-        `assets/ui/medal.png` later).
-      - tooltip per medal: `"{Rank} Medal - {N} turns"`.
-      - row order mirrors the old ladder: Author, Gold, Silver, Bronze.
-      - no stinger sounds (TODO → Audio tracks them), no persistence
-        (map-UI badges rederive from the saved clone when that lands).
-      Slices:
-      - [ ] 2. The medal row emitter in screens.zig + view plumbing (the
-            `medal_author_turns` param into `buildMissionComplete`, both
-            variants, dim overlay, tooltips) + the validation text-ladder
-            removal + test migration.
 - **Content hash v2 - artifact scope (design settled - DESIGN → Custom
   Missions & Online Services → Content identity):** slices 1 + 2 DONE
   (DONE.md, "content hash v2 - the artifact-scope extension"). Remaining:

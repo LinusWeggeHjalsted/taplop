@@ -19,7 +19,6 @@ const parser = @import("parser.zig");
 const loaders = @import("loaders.zig");
 const functions = @import("functions.zig");
 const combat_log = @import("combat_log.zig");
-const validation_replay = @import("validation_replay.zig");
 const event_handlers = @import("event_handlers.zig");
 const lookups = @import("generated_lookups.zig");
 const test_harness = @import("test_harness.zig");
@@ -987,11 +986,16 @@ pub fn view(
                 // replay.
                 const validation: ?ui.ValidationCompleteContext = if (info.validation) .{
                     .personal_best_turns = session.validation_personal_best_turns,
-                    .medal_targets = validation_replay.medalTargets(
-                        session.validation_personal_best_turns orelse info.turns_spent,
-                    ),
                     .overwrite_offered = session.validation_replay_overwrite_offered,
                 } else null;
+                // The medal row's anchor: the campaign variant uses the
+                // mission-start capture (unvalidated -> null -> hidden);
+                // the validation variant anchors to the personal best
+                // (this run's turns when no replay landed).
+                const medal_author_turns: ?u32 = if (info.validation)
+                    (session.validation_personal_best_turns orelse info.turns_spent)
+                else
+                    session.mission_author_turns;
                 ui.buildMissionComplete(
                     &ui_elements,
                     frame_allocator,
@@ -1000,6 +1004,7 @@ pub fn view(
                     info,
                     active_theme,
                     validation,
+                    medal_author_turns,
                 ) catch @panic("failed to build mission complete overlay");
             },
             .mission_fail => if (playerDead(current_state)) {

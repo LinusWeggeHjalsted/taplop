@@ -479,16 +479,88 @@ fn emitDimWash(elements: *UiElementList, allocator: std.mem.Allocator, cell: Rec
 
 /// The validation stats screen's session-side context - view() builds this
 /// from SessionState when the completed "mission" was a validation run
-/// (MissionCompleteInfo.validation). The personal best + medal targets
-/// derive from the replay FILE's turns (captured at the write site - view
-/// is file-free); the targets fall back to this run's turns when no replay
-/// landed (a failed write - the popup says so). See DESIGN → Custom
-/// Missions & Online Services → Validation replay.
+/// (MissionCompleteInfo.validation). The personal best derives from the
+/// replay FILE's turns (captured at the write site - view is file-free);
+/// it anchors the medal row (this run's turns when no replay landed - a
+/// failed write, the popup says so). See DESIGN → Custom Missions & Online
+/// Services → Validation replay.
 pub const ValidationCompleteContext = struct {
     personal_best_turns: ?u32,
-    medal_targets: validation_replay.MedalTargets,
     overwrite_offered: bool,
 };
+
+/// The mission-complete medal row's visual constants. One medal size
+/// (128, matching the row's slot rhythm), and the per-rank tints - the
+/// ranks share ONE graphic (`ui/medal`), color is the only per-rank
+/// difference, so the tints are hardcoded here (the medal-target
+/// multipliers' convention: constants live in the file that uses them).
+/// The asset is MISSING on purpose for now - the renderer's magenta
+/// fallback signals it (the artist drops assets/ui/medal.png later).
+const medal_row_size: i32 = 128;
+const medal_author_color = Color{ .r = 0, .g = 200, .b = 70 };
+const medal_gold_color = Color{ .r = 255, .g = 215, .b = 0 };
+const medal_silver_color = Color{ .r = 192, .g = 192, .b = 192 };
+const medal_bronze_color = Color{ .r = 205, .g = 127, .b = 50 };
+
+/// Emit the medal row: 4 medals (Author, Gold, Silver, Bronze - tightest
+/// first, the old text ladder's order), centered on the screen. Targets
+/// derive from `author_turns` at display time (medalTargets - never
+/// stored). Achieved = this run's turns at or under the tier's target
+/// (inclusive: matching the author's time earns the author medal; the
+/// targets are ordered, so an achieved tier undims every looser tier by
+/// construction). An unachieved medal is dimmed by redrawing it on itself
+/// in the theme's darkest color at 50% alpha - the skill-cooldown overlay
+/// pattern - with the overlay non-blocking so the tooltip-bearing medal
+/// beneath stays the hover hit target. Each medal's tooltip names its
+/// rank + turn target. See DESIGN → Custom Missions & Online Services →
+/// Turn counters + author medals.
+fn emitMedalRow(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    screen: Rectangle,
+    y: i32,
+    turns_spent: u32,
+    author_turns: u32,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    const targets = validation_replay.medalTargets(author_turns);
+    const medals = [_]struct { name: []const u8, color: Color, target: u32 }{
+        .{ .name = "Author", .color = medal_author_color, .target = author_turns },
+        .{ .name = "Gold", .color = medal_gold_color, .target = targets.gold },
+        .{ .name = "Silver", .color = medal_silver_color, .target = targets.silver },
+        .{ .name = "Bronze", .color = medal_bronze_color, .target = targets.bronze },
+    };
+    const medal_count: i32 = medals.len;
+    const row_width = medal_count * medal_row_size + (medal_count - 1) * ui_gap;
+    var x = screen.x + @divTrunc(screen.width - row_width, 2);
+    for (medals) |medal| {
+        const tooltip_text = try std.fmt.allocPrint(
+            allocator,
+            "{s} Medal - {d} turns",
+            .{ medal.name, medal.target },
+        );
+        try elements.append(allocator, .{ .image = .{
+            .sprite_id = "ui/medal",
+            .screen_position = .{ .x = x, .y = y },
+            .width = medal_row_size,
+            .height = medal_row_size,
+            .color = medal.color,
+            .tooltip = .{ .header = try spanRow(allocator, text(tooltip_text)) },
+        } });
+        if (turns_spent > medal.target) {
+            try elements.append(allocator, .{ .image = .{
+                .sprite_id = "ui/medal",
+                .screen_position = .{ .x = x, .y = y },
+                .width = medal_row_size,
+                .height = medal_row_size,
+                .color = active_theme.darkest,
+                .alpha = 128,
+                .blocks_input = false,
+            } });
+        }
+        x += medal_row_size + ui_gap;
+    }
+}
 
 /// Build the mission-complete overlay: a full-screen 9-slice panel with a
 /// header centered at the top, a centered summary line below it, a
@@ -503,12 +575,15 @@ pub const ValidationCompleteContext = struct {
 /// - VALIDATION (validation != null - the editor's post-run stats screen;
 ///   end_validation populated the info so the overlay renders over the
 ///   editor): "{name} validated" header, a "Validated in N turns - Personal
-///   best: M turns" summary, the medal ladder (Author / Gold / Silver /
-///   Bronze - the author's own validated turns crowning the derived
-///   targets), and Continue
-///   + Validate Again (+ Overwrite Replay while the personal-best guard's
-///   slower-run stash is on offer). See DESIGN → Custom Missions & Online
-///   Services → Validation replay.
+///   best: M turns" summary, the medal row (anchored to the personal best -
+///   the author's own validated turns crowning the derived targets), and
+///   Continue + Validate Again (+ Overwrite Replay while the personal-best
+///   guard's slower-run stash is on offer). See DESIGN → Custom Missions &
+///   Online Services → Validation replay.
+///
+/// The MEDAL ROW (both variants, `medal_author_turns`): 4 tinted medals
+/// centered below the summary line - hidden entirely when null (the
+/// campaign variant's unvalidated missions). See `emitMedalRow`.
 pub fn buildMissionComplete(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -517,6 +592,7 @@ pub fn buildMissionComplete(
     info: types.MissionCompleteInfo,
     active_theme: types.ActiveColorTheme,
     validation: ?ValidationCompleteContext,
+    medal_author_turns: ?u32,
 ) !void {
     // Button panels tint with player gradient index 5 to read as buttons
     // against the theme-`darkest` background panel.
@@ -599,6 +675,22 @@ pub fn buildMissionComplete(
         );
         content_y = new_clone_y + new_clone_icon_size + ui_gap * 4;
     }
+
+    // ── The medal row (both variants): 4 tinted medals centered below the
+    //    summary - hidden entirely for an unvalidated mission (null). ──
+    if (medal_author_turns) |author_turns| {
+        try emitMedalRow(
+            elements,
+            allocator,
+            screen,
+            content_y,
+            info.turns_spent,
+            author_turns,
+            active_theme,
+        );
+        content_y += medal_row_size + ui_gap * 4;
+    }
+
     // ── Two columns extending down from below the summary line. ──
 
     // Left column: stats (flush left, top-aligned at content_y).
@@ -625,39 +717,12 @@ pub fn buildMissionComplete(
         stat_y += stat_line_height;
     }
 
-    // ── Right column (flush right, top-aligned at content_y) - branch by
-    //    context. ──
+    // ── Right column (flush right, top-aligned at content_y) - the
+    //    campaign variant's clone-harvest stack. (The validation variant's
+    //    old text medal ladder lives in the medal row now - see
+    //    emitMedalRow.) ──
     const material_right = screen.x + screen.width - ui_gap * 4;
-    if (validation) |context| {
-        // The medal ladder, Trackmania-style: the Author row is the
-        // author's own validated turns - the SAME value the targets derive
-        // from (the replay file's turns; this run's as the fallback when
-        // no replay landed). Derived at display time, never stored. See
-        // DESIGN → Custom Missions & Online Services → Turn counters +
-        // author medals.
-        const medal_lines = [_]struct { label: []const u8, turns: u32 }{
-            .{ .label = "Author", .turns = context.personal_best_turns orelse info.turns_spent },
-            .{ .label = "Gold", .turns = context.medal_targets.gold },
-            .{ .label = "Silver", .turns = context.medal_targets.silver },
-            .{ .label = "Bronze", .turns = context.medal_targets.bronze },
-        };
-        var medal_y = content_y;
-        for (medal_lines) |medal_line| {
-            const medal_line_text = try std.fmt.allocPrint(
-                allocator,
-                "{s}: {d} turns",
-                .{ medal_line.label, medal_line.turns },
-            );
-            const medal_line_width = font_metrics.measureSpanWidth(text(medal_line_text), stat_font_size);
-            try elements.append(allocator, .{ .text_label = .{
-                .text = medal_line_text,
-                .screen_position = .{ .x = material_right - medal_line_width, .y = medal_y },
-                .font_size = stat_font_size,
-                .blocks_input = false,
-            } });
-            medal_y += stat_line_height;
-        }
-    } else {
+    if (validation == null) {
         // "Clone material harvest" sub-header + vertical material icon
         // stack.
         const harvest_header_font_size: i32 = 64;
@@ -1122,18 +1187,23 @@ fn missionCompleteDummyTheme() types.ActiveColorTheme {
 const MissionCompleteScan = struct {
     header_validated: bool = false,
     header_completed: bool = false,
-    author_line: bool = false,
-    gold_line: bool = false,
-    silver_line: bool = false,
-    bronze_line: bool = false,
-    medal_header: bool = false,
     new_clone_label: bool = false,
+    new_clone_y: ?i32 = null,
     harvest_header: bool = false,
     validate_again_button: bool = false,
     replay_mission_button: bool = false,
     continue_button: bool = false,
     overwrite_replay_button: bool = false,
     overwrite_clone_button: bool = false,
+    /// The medal row: the blocking medals in row order (Author, Gold,
+    /// Silver, Bronze) with their tooltip header texts, plus the first
+    /// medal's position (the centering + below-the-material-row checks)
+    /// and the unachieved-dim overlay count.
+    medal_tooltips: [4]?[]const u8 = .{ null, null, null, null },
+    medal_count: usize = 0,
+    medal_dim_count: usize = 0,
+    first_medal_x: ?i32 = null,
+    first_medal_y: ?i32 = null,
 
     fn scan(elements: []const ui_element.UiElement) MissionCompleteScan {
         var found: MissionCompleteScan = .{};
@@ -1141,12 +1211,10 @@ const MissionCompleteScan = struct {
             .text_label => |label| {
                 if (std.mem.eql(u8, label.text, "New Mission validated")) found.header_validated = true;
                 if (std.mem.eql(u8, label.text, "New Mission completed")) found.header_completed = true;
-                if (std.mem.eql(u8, label.text, "Author medals")) found.medal_header = true;
-                if (std.mem.eql(u8, label.text, "Author: 3 turns")) found.author_line = true;
-                if (std.mem.eql(u8, label.text, "Gold: 4 turns")) found.gold_line = true;
-                if (std.mem.eql(u8, label.text, "Silver: 6 turns")) found.silver_line = true;
-                if (std.mem.eql(u8, label.text, "Bronze: 15 turns")) found.bronze_line = true;
-                if (std.mem.eql(u8, label.text, "New clone:")) found.new_clone_label = true;
+                if (std.mem.eql(u8, label.text, "New clone:")) {
+                    found.new_clone_label = true;
+                    found.new_clone_y = label.screen_position.y;
+                }
                 if (std.mem.eql(u8, label.text, "Clone material harvest")) found.harvest_header = true;
             },
             .button => |button| switch (button.action) {
@@ -1157,13 +1225,31 @@ const MissionCompleteScan = struct {
                 .overwrite_clone => found.overwrite_clone_button = true,
                 else => {},
             },
+            .image => |image| {
+                if (!std.mem.eql(u8, image.sprite_id, "ui/medal")) continue;
+                if (image.blocks_input) {
+                    if (found.medal_count < 4) {
+                        found.medal_tooltips[found.medal_count] = if (image.tooltip) |tooltip|
+                            (if (tooltip.header) |header| (if (header.len > 0) header[0].text else null) else null)
+                        else
+                            null;
+                        if (found.medal_count == 0) {
+                            found.first_medal_x = image.screen_position.x;
+                            found.first_medal_y = image.screen_position.y;
+                        }
+                    }
+                    found.medal_count += 1;
+                } else {
+                    found.medal_dim_count += 1;
+                }
+            },
             else => {},
         };
         return found;
     }
 };
 
-test "buildMissionComplete: the validation variant swaps the clone content for medals + Validate Again" {
+test "buildMissionComplete: the validation variant swaps the clone content for the medal row + Validate Again" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
@@ -1174,35 +1260,40 @@ test "buildMissionComplete: the validation variant swaps the clone content for m
         arena.allocator(),
         metrics,
         screenRect(),
+        // medalTargets(3): gold = ceil(3.6) = 4, silver = 6, bronze = 15.
+        // This run (4 turns) achieves gold and below; the author medal
+        // (target 3) is out of reach - it shows dimmed.
         .{ .name = "New Mission", .path = "missions/x", .turns_spent = 4, .validation = true },
         missionCompleteDummyTheme(),
         .{
             .personal_best_turns = 3,
-            // medalTargets(3): gold = ceil(3.6) = 4, silver = 6, bronze = 15.
-            .medal_targets = validation_replay.medalTargets(3),
             .overwrite_offered = true,
         },
+        // The validation variant's anchor: the personal best (view's
+        // pb-orelse-this-run derivation, mirrored here).
+        3,
     );
 
     const found = MissionCompleteScan.scan(elements.items);
-    // The validation surface: "validated" header, the medal ladder
-    // (Author crowning the derived targets - pb 3 → gold 4 / silver 6 /
-    // bronze 15), Validate Again / Continue / the offered Overwrite
-    // Replay.
+    // The validation surface: "validated" header, the medal row
+    // (Author crowning the derived targets - pb 3 -> gold 4 / silver 6 /
+    // bronze 15; the 4-turn run dims only the author medal), Validate
+    // Again / Continue / the offered Overwrite Replay.
     try testing.expect(found.header_validated);
-    try testing.expect(found.author_line);
-    try testing.expect(found.gold_line);
-    try testing.expect(found.silver_line);
-    try testing.expect(found.bronze_line);
+    try testing.expectEqual(@as(usize, 4), found.medal_count);
+    try testing.expectEqual(@as(usize, 1), found.medal_dim_count);
+    try testing.expectEqualStrings("Author Medal - 3 turns", found.medal_tooltips[0].?);
+    try testing.expectEqualStrings("Gold Medal - 4 turns", found.medal_tooltips[1].?);
+    try testing.expectEqualStrings("Silver Medal - 6 turns", found.medal_tooltips[2].?);
+    try testing.expectEqualStrings("Bronze Medal - 15 turns", found.medal_tooltips[3].?);
     try testing.expect(found.validate_again_button);
     try testing.expect(found.continue_button);
     try testing.expect(found.overwrite_replay_button);
     // NO campaign content: no clone summary/harvest, no Replay Mission, no
-    // Overwrite Clone, no leftover column header.
+    // Overwrite Clone.
     try testing.expect(!found.header_completed);
     try testing.expect(!found.new_clone_label);
     try testing.expect(!found.harvest_header);
-    try testing.expect(!found.medal_header);
     try testing.expect(!found.replay_mission_button);
     try testing.expect(!found.overwrite_clone_button);
 }
@@ -1221,21 +1312,64 @@ test "buildMissionComplete: the campaign variant is unchanged (regression)" {
         .{ .name = "New Mission", .path = "missions/x", .turns_spent = 4, .overwrite_offered = true },
         missionCompleteDummyTheme(),
         null,
+        // Unvalidated (no mission-start capture): the medal row hides.
+        null,
     );
 
     const found = MissionCompleteScan.scan(elements.items);
     // The campaign surface: "completed" header, clone summary + harvest,
-    // Replay Mission / Continue / the offered Overwrite Clone.
+    // Replay Mission / Continue / the offered Overwrite Clone - and no
+    // medal row (unvalidated).
     try testing.expect(found.header_completed);
     try testing.expect(found.new_clone_label);
     try testing.expect(found.harvest_header);
     try testing.expect(found.replay_mission_button);
     try testing.expect(found.continue_button);
     try testing.expect(found.overwrite_clone_button);
+    try testing.expectEqual(@as(usize, 0), found.medal_count);
+    try testing.expectEqual(@as(usize, 0), found.medal_dim_count);
     // NO validation content.
     try testing.expect(!found.header_validated);
-    try testing.expect(!found.author_line);
-    try testing.expect(!found.medal_header);
     try testing.expect(!found.validate_again_button);
     try testing.expect(!found.overwrite_replay_button);
+}
+
+test "buildMissionComplete: the campaign medal row centers below the material count and dims unachieved tiers" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+    var elements: UiElementList = .empty;
+    // A 25-turn run against author turns 10: targets author 10 / gold 12
+    // (ceil) / silver 20 / bronze 50 - only bronze is achieved, so the
+    // other three medals carry the dim overlay.
+    try buildMissionComplete(
+        &elements,
+        arena.allocator(),
+        metrics,
+        screenRect(),
+        .{ .name = "New Mission", .path = "missions/x", .turns_spent = 25 },
+        missionCompleteDummyTheme(),
+        null,
+        10,
+    );
+
+    const found = MissionCompleteScan.scan(elements.items);
+    try testing.expect(found.header_completed);
+    try testing.expectEqual(@as(usize, 4), found.medal_count);
+    try testing.expectEqual(@as(usize, 3), found.medal_dim_count);
+    try testing.expectEqualStrings("Author Medal - 10 turns", found.medal_tooltips[0].?);
+    try testing.expectEqualStrings("Gold Medal - 12 turns", found.medal_tooltips[1].?);
+    try testing.expectEqualStrings("Silver Medal - 20 turns", found.medal_tooltips[2].?);
+    try testing.expectEqualStrings("Bronze Medal - 50 turns", found.medal_tooltips[3].?);
+
+    // Centered on the screen (the row width derives from the same
+    // constants the emitter uses - 4 slots + 3 gaps).
+    const rect = screenRect();
+    const row_width = 4 * medal_row_size + 3 * ui_gap;
+    try testing.expectEqual(rect.x + @divTrunc(rect.width - row_width, 2), found.first_medal_x.?);
+
+    // Directly below the material-count row: strictly past the "New
+    // clone:" label's row (the label centers on the 96px icon row).
+    try testing.expect(found.first_medal_y.? > found.new_clone_y.? + 96);
 }

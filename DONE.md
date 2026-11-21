@@ -431,6 +431,7 @@ working rules).
 - [Forest Outskirts validation replay re-recorded under the momentum decay](#forest-outskirts-validation-replay-re-recorded-under-the-momentum-decay)
 - [Options menu: the dedicated toggle action (decoupled from Escape) + the open_->toggle_ naming sweep](#options-menu-the-dedicated-toggle-action-decoupled-from-escape--the-open-toggle-naming-sweep)
 - [Mission-complete medal row - slice 1: the mission-start author-turns capture](#mission-complete-medal-row---slice-1-the-mission-start-author-turns-capture)
+- [Mission-complete medal row - slice 2: the surface (both variants)](#mission-complete-medal-row---slice-2-the-surface-both-variants)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24949,3 +24950,52 @@ unvalidated in-game, exactly what a player would see.
 Verification: 1134 tests (new: the three-status helper unit test +
 the start_mission capture handler test over a shipped mission and a
 replay-less fixture mission).
+
+## Mission-complete medal row - slice 2: the surface (both variants)
+
+The medal row landed in `buildMissionComplete` (screens.zig):
+
+- `emitMedalRow` - 4 tinted `ui/medal` sprites (Author, Gold, Silver,
+  Bronze - tightest first, the historical text ladder's order),
+  128x128, centered below the top-middle summary line in BOTH overlay
+  variants. One shared graphic, hardcoded per-rank tints (constants next
+  to the emitter - the medal-multipliers convention). Achieved =
+  `turns_spent <= target` (inclusive); unachieved medals are dimmed by
+  redrawing the medal on itself in `active_theme.darkest` at alpha 128
+  (the skill-cooldown overlay pattern), the overlay non-blocking so the
+  medal beneath stays the tooltip hit target. Tooltips:
+  "{Rank} Medal - {N} turns" (header-only rows).
+- The validation variant's right-column TEXT ladder (the slice-1-era
+  stand-in) is deleted - the medal row replaces it; the validation
+  context lost its `medal_targets` field (targets derive from the row's
+  author anchor: the personal best for validation, the mission-start
+  capture for campaign - view builds one `medal_author_turns: ?u32`).
+  Unvalidated campaign missions pass null and the row hides entirely.
+- The asset is MISSING on purpose: `ui/medal` draws the magenta
+  placeholder until the artist drops assets/ui/medal.png (the tints are
+  display-time colors over whatever grayscale/white medal art lands;
+  black pixels stay black under tint).
+
+Settled design prose moved to DESIGN → Custom Missions & Online
+Services → Turn counters + author medals (the mission-complete medal row
+paragraph); the TODO task block is deleted per the lifecycle.
+
+Test migration: the two buildMissionComplete structure tests moved from
+text-ladder line matches to medal-row shape matches (blocking medal
+count in row order, tooltip texts, dim-overlay count, the centering
+formula derived from the same constants, the strictly-below-the-
+material-row ordering), plus a new campaign medal test (a 25-turn run
+against author turns 10: only bronze achieved - 3 dim overlays) and the
+unvalidated regression (null -> no row). The scan's `.image` arm taught
+the "break inside a switch prong exits the whole loop" reminder the
+cheap way (two red tests, `continue` was the intent).
+
+Runtime verification (console drives, scratch data dir): the full
+campaign path new game -> hub exit click -> mission (the live capture
+dumped 15 author turns for Forest Outskirts) -> skip through -> the
+completion overlay rendered with the campaign variant; the editor path
+open mission -> Validate -> skip through -> the validation variant
+rendered; hovering all four medals exercised the tooltip pass clean
+(exit 0).
+
+Verification: 1135 tests.

@@ -3094,8 +3094,9 @@ multipliers, computed at read time (not stored):
   - bronze = ceil(author_turns × 5.0)
 Ceil (round up) so a medal target is always at least 1 turn more than the
 faster tier (very low author times can make tiers collide - accepted edge
-case). Multipliers live as constants in the file that uses them (the browser
-UI / mission-complete screen, when those land). The author time is DERIVED
+case). Multipliers + the per-rank tints live as constants in the file
+that uses them (screens.zig's `emitMedalRow`; the browser UI, when that
+lands, reuses the same derivation). The author time is DERIVED
 from the replay's events at read time (count the player's `turn_start`s -
 see Validation replay below), never stored anywhere, so it can't drift
 from the truth of the replay; the derived count must equal the
@@ -3104,6 +3105,28 @@ is a pure function of author_turns, so the browser/mission-complete
 derive at display time. A mission with no validation replay - or one
 whose content hash no longer matches the mission - shows "unvalidated"
 (no medals).
+
+**The mission-complete medal row.** Both variants of the mission-complete
+overlay render a row of 4 tinted `ui/medal` sprites (Author, Gold, Silver,
+Bronze - tightest first, the historical text ladder's order), centered
+below the top-middle summary line. One shared graphic, per-rank hardcoded
+tints (author-green / gold / silver / bronze). Achieved = this run's
+turns at or under the tier's target (inclusive - matching the author's
+time earns the author medal; the targets are ordered, so an achieved tier
+undims every looser tier by construction). Unachieved medals are dimmed by
+redrawing the medal on itself in the theme's darkest color at 50% alpha -
+the skill-cooldown overlay pattern - with the overlay non-blocking so the
+medal's tooltip ("{Rank} Medal - N turns") stays hoverable. The campaign
+variant's anchor is the mission-start capture:
+`SessionState.mission_author_turns`, set in the start_mission handler via
+`authorTurnsForValidatedMission` (the checkMissionValidationArtifact
+standard - a missing/stale/foreign replay reads as unvalidated), gated
+`!replaying` and rewritten on EVERY mission start so it can never
+describe a stale mission; null (unvalidated) hides the row entirely. The
+validation variant anchors to `validation_personal_best_turns` (this
+run's turns as the fallback when no replay landed). Map-UI medal badges
+(a future surface) rederive from the saved clone's recorded run - nothing
+persists.
 
 ### Validation replay (the mission-dir artifact + personal best)
 
@@ -3214,9 +3237,9 @@ for the run-side design.
   the campaign and validation variants share one surface with
   context-branched content. The validation variant swaps the clone
   summary/harvest for a "Validated in N turns - Personal best: M turns"
-  line + the medal ladder (Author / Gold / Silver / Bronze - the Author
-  row shows the author's own validated turns, the SAME value the targets
-  derive from), and the buttons are Continue /
+  line + the medal row (anchored to the personal best - the author's own
+  validated turns, the SAME value the targets derive from; see Turn
+  counters + author medals above), and the buttons are Continue /
   Validate Again (the same action as the top-bar Validate button - saves
   first, then re-runs) / Overwrite Replay (while offered - writes the
   stashed bytes; the stash is SELF-DESCRIBING, its first event names the
