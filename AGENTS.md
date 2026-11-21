@@ -374,6 +374,11 @@ WEB COMPILES ≠ RUNS). `zig build` first.
 
 ### Launching a drive
 
+- **Rebuild before driving** (`zig build`, not just `zig build test`):
+  the test suite rebuilds the test binary only, so `zig-out/bin/taplop`
+  can be a STALE exe - a drive after test-only changes "verifies" code
+  the binary does not contain (hit once mid-session: the drive passed,
+  the fix wasn't in the exe).
 - **Close any running instance first** (yours or a player's) - a second
   instance's `initWindow` can hang indefinitely against a live one's
   render loop (observed with an uncapped-fps instance saturating GL/X;
@@ -575,6 +580,12 @@ survived many sessions this way).
   fns, types, fields). Inside a function body it's always `//` - a `///`
   there is "expected statement, found a document comment".
 - `opaque` is a reserved keyword (opaque types) - don't name a variable it.
+- **`break` inside a switch prong inside a loop exits the LOOP, not the
+  switch** - there is no "break out of the switch" in Zig (switch prongs
+  are not loops), so `if (wrong) break;` inside a prong silently abandons
+  every later iteration. Inside a `for` loop use `continue` to skip the
+  rest of the iteration (hit as a two-red-test scan bug; the wrong guess
+  reads natural because C-family `break` does exit `switch`).
 - **`@typeInfo` is struct-of-arrays since 0.17**: `.fields` is gone -
   struct/union/enum info exposes `field_names` / `field_types` /
   `field_values` as parallel slices, so loops zip them

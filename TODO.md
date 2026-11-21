@@ -798,6 +798,16 @@ designed:
 ## Tech Debt / Refactoring
 
 Done items in DONE.md. Open:
+- **`zig build emrun` auto-opens a 404** (found during the padded-outline
+      web smoke): build.zig's emrunStep is handed
+      `zig-out/taplop.html` but the emcc step installs the html at
+      `zig-out/web/taplop.html` - the served page at emrun's opened URL
+      is "File not found", and the working URL is manually
+      `http://localhost:6931/web/taplop.html`. The fix is the path in
+      the emrunStep call (point it at `web/taplop.html`); also note a
+      leftover emrun.py from an earlier run holds the port (the next
+      emrun dies on "Address already in use" - kill the old server
+      first).
 - **Custom sprite-id prefix vs plain content paths (deferred question,
       flagged in review of the world-map background fix).** The `custom/`
       segment is the id-space discriminator between the two resolution
