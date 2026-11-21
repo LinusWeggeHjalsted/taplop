@@ -412,6 +412,12 @@ pub fn build(b: *std.Build) !void {
             .root_source_file = b.path("src/generated_test_root.zig"),
             .target = target,
             .optimize = optimize,
+            // libc: the web listing arm (listDirEntriesLibc -
+            // opendir/readdir over the in-memory mount) is unit-tested
+            // DIRECTLY, natively; the shipped builds already link libc
+            // (raylib's C objects on native, musl on emscripten), so this
+            // aligns the test build with what ships.
+            .link_libc = true,
         }),
     });
     tests.root_module.addAnonymousImport("generated", .{ .root_source_file = generated_path });

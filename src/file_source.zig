@@ -269,15 +269,11 @@ pub fn resolveUuidDir(
     // Tier 1: the persistent dir's subdirs (absent parent dir - fresh
     // install - simply contributes no candidates; the embedded tier
     // below still runs).
-    if (file_source.persistent_dir.openDir(file_source.io, parent, .{
-        .access_sub_paths = true,
-        .iterate = true,
-    }) catch null) |parent_dir| {
-        defer std.Io.Dir.close(parent_dir, file_source.io);
-        var it = parent_dir.iterate();
-        while (it.next(file_source.io) catch null) |dir_entry| {
-            if (dir_entry.kind != .directory) continue;
-            const dir = std.fmt.allocPrint(allocator, "{s}/{s}", .{ parent, dir_entry.name }) catch
+    if (file_source.listPersistentDirEntries(allocator, parent) catch null) |entries| {
+        defer freePersistentDirEntries(allocator, entries);
+        for (entries) |entry| {
+            if (entry.kind != .directory) continue;
+            const dir = std.fmt.allocPrint(allocator, "{s}/{s}", .{ parent, entry.name }) catch
                 @panic("failed to build candidate dir");
             defer allocator.free(dir);
             const config_path = std.fmt.allocPrint(allocator, "{s}/{s}", .{ dir, config_name }) catch
@@ -286,7 +282,7 @@ pub fn resolveUuidDir(
             const found_uuid = readConfigUuid(file_source, allocator, config_path, sections, uuid_key) orelse continue;
             defer allocator.free(found_uuid);
             if (!std.mem.eql(u8, found_uuid, uuid)) continue;
-            const mtime = dirMtime(file_source, dir);
+            const mtime = dirMtime(file_source, allocator, dir);
             candidates.append(allocator, .{
                 .dir = allocator.dupe(u8, dir) catch @panic("failed to dupe candidate dir"),
                 .uuid = allocator.dupe(u8, found_uuid) catch @panic("failed to dupe candidate uuid"),
@@ -424,17 +420,21 @@ pub fn persistentFileExists(file_source: *const FileSource, path: []const u8) bo
 /// resolution recency stamp - any change to any file is an update). An
 /// unreadable dir reports 0. Pub: the campaign load's scans share the
 /// stamp.
-pub fn dirMtime(file_source: *const FileSource, dir: []const u8) i128 {
-    const opened = file_source.persistent_dir.openDir(file_source.io, dir, .{
-        .access_sub_paths = true,
-        .iterate = true,
-    }) catch return 0;
-    defer std.Io.Dir.close(opened, file_source.io);
+pub fn dirMtime(
+    file_source: *const FileSource,
+    allocator: std.mem.Allocator,
+    dir: []const u8,
+) i128 {
+    const entries = file_source.listPersistentDirEntries(allocator, dir) catch return 0;
+    defer freePersistentDirEntries(allocator, entries);
     var max_mtime: i128 = 0;
-    var it = opened.iterate();
-    while (it.next(file_source.io) catch null) |dir_entry| {
-        if (dir_entry.kind == .directory) continue;
-        const stat = opened.statFile(file_source.io, dir_entry.name, .{}) catch continue;
+    for (entries) |entry| {
+        if (entry.kind == .directory) continue;
+        const relative_path = std.fmt.allocPrint(allocator, "{s}/{s}", .{ dir, entry.name }) catch
+            @panic("failed to build stat path");
+        defer allocator.free(relative_path);
+        const stat = file_source.persistent_dir.statFile(file_source.io, relative_path, .{}) catch
+            continue;
         max_mtime = @max(max_mtime, stat.mtime.nanoseconds);
     }
     return max_mtime;
@@ -630,20 +630,17 @@ pub const FileSource = struct {
         allocator: std.mem.Allocator,
         dir_path: []const u8,
     ) ![][]const u8 {
-        var sub_dir = self.persistent_dir.openDir(self.io, dir_path, .{ .iterate = true }) catch |open_error| switch (open_error) {
-            error.FileNotFound => return &[_][]const u8{},
-            else => return open_error,
-        };
+        const dir_entries = try self.listPersistentDirEntries(allocator, dir_path);
+        defer freePersistentDirEntries(allocator, dir_entries);
         var names: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (names.items) |name| allocator.free(name);
             names.deinit(allocator);
         }
-        var iterator = sub_dir.iterate();
-        while (iterator.next(self.io) catch |iterate_error| return iterate_error) |entry| {
-            if (entry.kind != .file) continue;
-            if (!std.mem.endsWith(u8, entry.name, ".png")) continue;
-            try names.append(allocator, try allocator.dupe(u8, entry.name));
+        for (dir_entries) |dir_entry| {
+            if (dir_entry.kind != .file) continue;
+            if (!std.mem.endsWith(u8, dir_entry.name, ".png")) continue;
+            try names.append(allocator, try allocator.dupe(u8, dir_entry.name));
         }
         const SortContext = struct {
             fn lessThan(_: void, first: []const u8, second: []const u8) bool {
@@ -676,16 +673,15 @@ pub const FileSource = struct {
         }
 
         // Tier 1: the persistent dir's direct files.
-        if (self.persistent_dir.openDir(self.io, dir_path, .{ .iterate = true })) |sub_dir| {
-            defer std.Io.Dir.close(sub_dir, self.io);
-            var iterator = sub_dir.iterate();
-            while (try iterator.next(self.io)) |entry| {
-                if (entry.kind == .directory) continue;
-                try names.append(allocator, try allocator.dupe(u8, entry.name));
+        if (self.listPersistentDirEntries(allocator, dir_path)) |dir_entries| {
+            defer freePersistentDirEntries(allocator, dir_entries);
+            for (dir_entries) |dir_entry| {
+                if (dir_entry.kind == .directory) continue;
+                try names.append(allocator, try allocator.dupe(u8, dir_entry.name));
             }
-        } else |open_error| switch (open_error) {
+        } else |list_error| switch (list_error) {
             error.FileNotFound => {},
-            else => return open_error,
+            else => return list_error,
         }
 
         // Tier 2: the embedded map's direct files under data/<dir_path>/.
@@ -1036,16 +1032,12 @@ pub const FileSource = struct {
             for (names.items) |name| allocator.free(name);
             names.deinit(allocator);
         }
-        const missions_dir = self.persistent_dir.openDir(self.io, root_name, .{
-            .access_sub_paths = true,
-            .iterate = true,
-        }) catch |err| switch (err) {
+        const dir_entries = self.listPersistentDirEntries(allocator, root_name) catch |err| switch (err) {
             error.FileNotFound => return names.toOwnedSlice(allocator),
             else => return err,
         };
-        defer std.Io.Dir.close(missions_dir, self.io);
-        var it = missions_dir.iterate();
-        while (try it.next(self.io)) |dir_entry| {
+        defer freePersistentDirEntries(allocator, dir_entries);
+        for (dir_entries) |dir_entry| {
             if (dir_entry.kind != .directory) continue;
             try names.append(allocator, try allocator.dupe(u8, dir_entry.name));
         }
@@ -1066,24 +1058,23 @@ pub const FileSource = struct {
         var result: MissionFolderScan = .{};
         const dir_path = try std.fmt.allocPrint(allocator, "missions/{s}", .{mission_id});
         defer allocator.free(dir_path);
-        const mission_dir = self.persistent_dir.openDir(self.io, dir_path, .{
-            .access_sub_paths = true,
-            .iterate = true,
-        }) catch return result; // unreadable folder → no custom assets, mtime 0
-        defer std.Io.Dir.close(mission_dir, self.io);
+        const dir_entries = self.listPersistentDirEntries(allocator, dir_path) catch
+            return result; // unreadable folder → no custom assets, mtime 0
+        defer freePersistentDirEntries(allocator, dir_entries);
         var names: std.ArrayList([]const u8) = .empty;
         defer names.deinit(allocator);
-        var it = mission_dir.iterate();
-        while (try it.next(self.io)) |entry| {
+        for (dir_entries) |entry| {
             if (entry.kind == .directory) continue; // subdirs aren't config files
             names.append(allocator, allocator.dupe(u8, entry.name) catch
                 @panic("failed to dupe mission folder entry name")) catch
                 @panic("failed to collect mission folder entry name");
             if (!isKnownMissionConfigFile(entry.name)) result.has_custom_assets = true;
-            // Stat through the open mission dir by bare name (the
-            // save-listing pattern); a stat failure (vanished between
-            // iterate + stat) just skips the stamp.
-            const stat = mission_dir.statFile(self.io, entry.name, .{}) catch continue;
+            // Stat by full persistent-relative path; a stat failure
+            // (vanished between listing + stat) just skips the stamp.
+            const stat_path = std.fmt.allocPrint(allocator, "{s}/{s}", .{ dir_path, entry.name }) catch
+                @panic("failed to build mission stat path");
+            defer allocator.free(stat_path);
+            const stat = self.persistent_dir.statFile(self.io, stat_path, .{}) catch continue;
             result.max_mtime_ns = @max(result.max_mtime_ns, stat.mtime.nanoseconds);
         }
         // The derived level count: consecutive level_1..level_N present.
@@ -1188,36 +1179,36 @@ pub const FileSource = struct {
         var entries: std.ArrayList(SaveFileEntry) = .empty;
         errdefer freeSaveFiles(allocator, entries.items);
 
-        // The one path, every platform: open saves/, iterate, filter .txt,
-        // stat each. (The old emscripten platform split - a JS enumeration
-        // via a listing temp because IDBFS's readdir was broken - died with
-        // the IDBFS mount itself: plain MEMFS readdir works; browser-verified,
-        // see DONE.md "web storage model slice 5".)
-        const maybe_saves_dir = self.persistent_dir.openDir(self.io, "saves", .{
-            .access_sub_paths = true,
-            .iterate = true,
-        }) catch |err| switch (err) {
+        // The one seam, every platform: list saves/, filter .txt, stat
+        // each. A missing saves/ dir is a fresh install - empty list, not
+        // an error. (The listing itself goes through
+        // `listPersistentDirEntries`: on web, `std.Io.Dir.iterate` is
+        // unimplemented in Zig 0.17's Io dispatch - the seam's libc arm
+        // is what makes the save browser work there at all.)
+        const maybe_save_entries = self.listPersistentDirEntries(allocator, "saves") catch |err| switch (err) {
             error.FileNotFound => null, // fresh install: empty list, not an error
             else => return err,
         };
-        if (maybe_saves_dir) |saves_dir| {
-            defer std.Io.Dir.close(saves_dir, self.io);
+        if (maybe_save_entries) |save_entries| {
+            defer freePersistentDirEntries(allocator, save_entries);
 
-            var it = saves_dir.iterate();
-            while (try it.next(self.io)) |dir_entry| {
+            for (save_entries) |dir_entry| {
                 if (dir_entry.kind != .file) continue;
                 if (!std.mem.endsWith(u8, dir_entry.name, ".txt")) continue;
 
-                // Stat through the open saves_dir by bare name - a failure
-                // here (vanished between iterate + stat, permissions
-                // quirk) skips the entry without having allocated
-                // anything for it yet.
-                const stat = saves_dir.statFile(self.io, dir_entry.name, .{}) catch continue;
-
+                // Stat by full persistent-relative path - a failure here
+                // (vanished between listing + stat, permissions quirk)
+                // skips the entry without having allocated anything for
+                // it yet.
                 const relative_path = try std.fmt.allocPrint(allocator, "saves/{s}", .{dir_entry.name});
-                errdefer allocator.free(relative_path);
+                const stat = self.persistent_dir.statFile(self.io, relative_path, .{}) catch {
+                    allocator.free(relative_path);
+                    continue;
+                };
+
                 const name = try allocator.dupe(u8, dir_entry.name);
                 errdefer allocator.free(name);
+                errdefer allocator.free(relative_path);
                 try entries.append(allocator, .{
                     .name = name,
                     .path = relative_path,
@@ -1237,17 +1228,71 @@ pub const FileSource = struct {
         try self.persistent_dir.deleteFile(self.io, path);
     }
 
+    /// One directory's direct entries (name + kind) - the listing seam
+    /// every persistent-dir walk goes through (the save scan, the
+    /// mission/campaign folder scans, the Export Game tree walk).
+    /// Comptime-split by necessity: Zig 0.17's `std.Io.Threaded` dirRead
+    /// dispatch has no `.emscripten` arm (it falls to
+    /// `dirReadUnimplemented`), so `std.Io.Dir.iterate` returns
+    /// `error.Unexpected` on web; every other platform keeps the std.Io
+    /// walk unchanged, emscripten walks libc opendir/readdir through the
+    /// in-memory mount (std.c.dirent covers emscripten). `dir_path` is
+    /// persistent-dir-relative ("" = the root). A missing dir is
+    /// `error.FileNotFound`, the openDir convention callers already
+    /// switch on. Names are caller-owned dupes (free via
+    /// `freePersistentDirEntries`); order is the OS's readdir order, same
+    /// as the underlying iterators - callers that need determinism sort,
+    /// as they always have.
+    pub fn listPersistentDirEntries(
+        self: *const FileSource,
+        allocator: std.mem.Allocator,
+        dir_path: []const u8,
+    ) anyerror![]DirEntryInfo {
+        if (comptime @import("builtin").target.os.tag == .emscripten) {
+            // <mount>[/<dir_path>] - the in-memory persistent mount.
+            if (dir_path.len == 0) return listDirEntriesLibc(allocator, persistent_mount_path);
+            const full_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{
+                persistent_mount_path,
+                dir_path,
+            });
+            defer allocator.free(full_path);
+            return listDirEntriesLibc(allocator, full_path);
+        }
+        var dir: std.Io.Dir = undefined;
+        var dir_is_owned = false;
+        if (dir_path.len == 0) {
+            // The root: the session's own handle (opened with iteration
+            // capability by both entry files) - never closed here.
+            dir = self.persistent_dir;
+        } else {
+            dir = try self.persistent_dir.openDir(self.io, dir_path, .{
+                .access_sub_paths = true,
+                .iterate = true,
+            });
+            dir_is_owned = true;
+        }
+        defer if (dir_is_owned) std.Io.Dir.close(dir, self.io);
+        var entries: std.ArrayList(DirEntryInfo) = .empty;
+        errdefer freePersistentDirEntries(allocator, entries.items);
+        var iterator = dir.iterate();
+        while (try iterator.next(self.io)) |dir_entry| {
+            try entries.append(allocator, .{
+                .name = try allocator.dupe(u8, dir_entry.name),
+                .kind = dirEntryKindFromFileKind(dir_entry.kind),
+            });
+        }
+        return entries.toOwnedSlice(allocator);
+    }
+
     /// Recursively list every FILE under the persistent dir as
     /// `/`-separated persistent-relative paths - the game-folder zip's
-    /// source list (Export Game; see game_zip.zig). Platform-split (the
-    /// `Dir.iterate`-is-broken-on-IDBFS story - see `listSaveFiles`):
-    /// native walks the tree via `Dir.iterate` recursion; web walks it via
-    /// JS (a recursive `FS.lookupPath` pass writing the path list to a
-    /// temp listing - the `.saves_listing` pattern at tree scale), then
-    /// reads the list back. The staging + listing temps + import markers
+    /// source list (Export Game; see game_zip.zig). The per-level listing
+    /// goes through `listPersistentDirEntries` (the platform seam: on web,
+    /// `std.Io.Dir.iterate` is unimplemented in Zig 0.17's Io dispatch).
+    /// The staging zips + import markers
     /// (`persistent_dir_artifact_names` - the whole root-artifact set) are
-    /// excluded on both platforms: a crashed export's or import's
-    /// leftovers must not ride in a later export. Caller owns the returned
+    /// excluded: a crashed export's or import's leftovers must not ride in
+    /// a later export. Caller owns the returned
     /// slice + strings (free via `freePersistentDirFiles`, or pass a
     /// throwaway arena). Sorted for determinism. Empty when the dir is
     /// empty (a fresh web session).
@@ -1257,25 +1302,27 @@ pub const FileSource = struct {
     ) ![][]const u8 {
         var paths: std.ArrayList([]const u8) = .empty;
         errdefer freePersistentDirFiles(allocator, paths.items);
-        // The one path, every platform (the old emscripten JS-walk split
-        // died with the IDBFS mount - plain MEMFS readdir works; see
-        // DONE.md "web storage model slice 5").
-        try collectPersistentDirFiles(self.persistent_dir, self.io, "", allocator, &paths);
+        // The root call propagates listing failures (an unlistable game
+        // folder fails the export with the recoverable popup); recursion
+        // below skips unreadable subtrees instead.
+        try collectPersistentDirFiles(self, "", allocator, &paths);
         std.mem.sort([]const u8, paths.items, {}, pathOrder);
         return paths.toOwnedSlice(allocator);
     }
 
-    /// `Dir.iterate` recursion. `prefix` is `dir`'s
-    /// persistent-relative path ("" at the root).
+    /// `listPersistentDirEntries` recursion. `prefix` is the directory's
+    /// persistent-relative path ("" at the root). An unreadable SUBTREE is
+    /// skipped (an export lists what it can); only the root call's
+    /// failures propagate to the caller.
     fn collectPersistentDirFiles(
-        dir: std.Io.Dir,
-        io: std.Io,
+        file_source: *const FileSource,
         prefix: []const u8,
         allocator: std.mem.Allocator,
         paths: *std.ArrayList([]const u8),
     ) anyerror!void {
-        var iterator = dir.iterate();
-        while (try iterator.next(io)) |entry| {
+        const entries = try file_source.listPersistentDirEntries(allocator, prefix);
+        defer freePersistentDirEntries(allocator, entries);
+        for (entries) |entry| {
             if (isPersistentDirArtifactName(entry.name)) continue;
             const relative_path = if (prefix.len == 0)
                 try allocator.dupe(u8, entry.name)
@@ -1283,13 +1330,11 @@ pub const FileSource = struct {
                 try std.fmt.allocPrint(allocator, "{s}/{s}", .{ prefix, entry.name });
             switch (entry.kind) {
                 .directory => {
-                    var sub_dir = dir.openDir(io, entry.name, .{ .iterate = true }) catch {
+                    collectPersistentDirFiles(file_source, relative_path, allocator, paths) catch {
                         allocator.free(relative_path);
                         continue;
                     };
-                    defer sub_dir.close(io);
-                    defer allocator.free(relative_path);
-                    try collectPersistentDirFiles(sub_dir, io, relative_path, allocator, paths);
+                    allocator.free(relative_path);
                 },
                 .file => try paths.append(allocator, relative_path),
                 else => allocator.free(relative_path),
@@ -1302,6 +1347,80 @@ pub const FileSource = struct {
 fn freePersistentDirFiles(allocator: std.mem.Allocator, paths: [][]const u8) void {
     for (paths) |path| allocator.free(path);
     allocator.free(paths);
+}
+
+/// A directory entry's coarse kind, as the listing sites filter on it.
+/// Symlinks are their own arm (never followed by a listing) so a walker
+/// can decide; `other` covers everything a listing site skips today
+/// (sockets, fifos, unknown - MEMFS reports DT_UNKNOWN when a filesystem
+/// does not fill d_type).
+pub const DirEntryKind = enum { file, directory, symlink, other };
+
+/// One entry of a `listPersistentDirEntries` listing. `name` is a
+/// caller-owned dupe (freed by `freePersistentDirEntries`).
+pub const DirEntryInfo = struct {
+    name: []const u8,
+    kind: DirEntryKind,
+};
+
+/// Free a `listPersistentDirEntries` result (each entry's name + the
+/// slice).
+pub fn freePersistentDirEntries(allocator: std.mem.Allocator, entries: []DirEntryInfo) void {
+    for (entries) |entry| allocator.free(entry.name);
+    allocator.free(entries);
+}
+
+/// The native listing arm's kind mapping (`std.Io.File.Kind` -> the seam's
+/// coarse kind).
+fn dirEntryKindFromFileKind(kind: std.Io.File.Kind) DirEntryKind {
+    return switch (kind) {
+        .file => .file,
+        .directory => .directory,
+        .sym_link => .symlink,
+        else => .other,
+    };
+}
+
+/// The emscripten listing arm: libc opendir/readdir over a FULL path.
+/// Free-standing (the path, not the FileSource) so the test build drives
+/// it directly against a scratch dir - comptime-selected for emscripten,
+/// but its logic is plain POSIX and covered natively. The d_type values
+/// are the POSIX constants (shared by `std.os.linux.DT`, the namespace
+/// emscripten builds against).
+fn listDirEntriesLibc(
+    allocator: std.mem.Allocator,
+    path: []const u8,
+) anyerror![]DirEntryInfo {
+    const DT = std.os.linux.DT;
+    var path_buffer: [std.posix.PATH_MAX + 1]u8 = undefined;
+    const path_z = std.mem.printSentinel(&path_buffer, "{s}", .{path}, 0) catch
+        return error.NameTooLong;
+    const dir_handle = std.c.opendir(path_z.ptr) orelse {
+        const errno = std.posix.errno(-1);
+        return switch (errno) {
+            .NOENT => error.FileNotFound,
+            .ACCES => error.AccessDenied,
+            else => error.Unexpected,
+        };
+    };
+    defer _ = std.c.closedir(dir_handle);
+    var entries: std.ArrayList(DirEntryInfo) = .empty;
+    errdefer freePersistentDirEntries(allocator, entries.items);
+    while (std.c.readdir(dir_handle)) |dirent| {
+        const name = std.mem.sliceTo(&dirent.name, 0);
+        if (std.mem.eql(u8, name, ".") or std.mem.eql(u8, name, "..")) continue;
+        const kind: DirEntryKind = switch (dirent.type) {
+            DT.REG => .file,
+            DT.DIR => .directory,
+            DT.LNK => .symlink,
+            else => .other,
+        };
+        try entries.append(allocator, .{
+            .name = try allocator.dupe(u8, name),
+            .kind = kind,
+        });
+    }
+    return entries.toOwnedSlice(allocator);
 }
 
 /// Free a `listDirFiles` result (each owned name + the slice).
@@ -1503,7 +1622,7 @@ fn probeCampaignDir(
     var entry = parseCampaignEntry(allocator, campaign_bytes, content_dir) orelse return null;
     // The recency stamp rides the entry (the browser lists sort newest
     // first - the MissionEntry discipline).
-    entry.mtime_ns = dirMtime(self, content_dir);
+    entry.mtime_ns = dirMtime(self, allocator, content_dir);
     return entry;
 }
 
@@ -1766,6 +1885,73 @@ pub fn triggerBrowserGameUpload() void {
 // --- tests for listMissions / listOfficialMissions ---
 
 const testing = std.testing;
+
+test "listPersistentDirEntries: names + kinds + missing-dir convention (both arms)" {
+    const allocator = testing.allocator;
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    const scratch = "zig-cache/test-list-dir-entries";
+    std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch return error.TestUnexpectedError;
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    dir.writeFile(io, .{ .sub_path = "a.txt", .data = "a" }) catch return error.TestUnexpectedError;
+    dir.createDirPath(io, "nested") catch return error.TestUnexpectedError;
+    dir.writeFile(io, .{ .sub_path = "nested/b.txt", .data = "b" }) catch return error.TestUnexpectedError;
+    const file_source = FileSource.init(io, dir);
+
+    // The seam (the native arm under the test build; the platform split
+    // is comptime). The root listing ("" - the session handle, not an
+    // openDir) and a subdirectory listing.
+    const root_entries = try file_source.listPersistentDirEntries(allocator, "");
+    defer freePersistentDirEntries(allocator, root_entries);
+    var saw_file = false;
+    var saw_dir = false;
+    for (root_entries) |entry| {
+        if (std.mem.eql(u8, entry.name, "a.txt")) {
+            try testing.expectEqual(DirEntryKind.file, entry.kind);
+            saw_file = true;
+        }
+        if (std.mem.eql(u8, entry.name, "nested")) {
+            try testing.expectEqual(DirEntryKind.directory, entry.kind);
+            saw_dir = true;
+        }
+    }
+    try testing.expect(saw_file and saw_dir);
+    const nested_entries = try file_source.listPersistentDirEntries(allocator, "nested");
+    defer freePersistentDirEntries(allocator, nested_entries);
+    try testing.expectEqual(@as(usize, 1), nested_entries.len);
+    try testing.expectEqualStrings("b.txt", nested_entries[0].name);
+    try testing.expectEqual(DirEntryKind.file, nested_entries[0].kind);
+    try testing.expectError(
+        error.FileNotFound,
+        file_source.listPersistentDirEntries(allocator, "no-such-dir"),
+    );
+
+    // The libc arm DIRECTLY (the web platform's implementation - plain
+    // POSIX, so it runs + leak-checks natively; the cwd-relative path is
+    // what opendir takes on both platforms, the mount prefix being the
+    // only web-specific part, added at the call site).
+    const libc_entries = try listDirEntriesLibc(allocator, scratch);
+    defer freePersistentDirEntries(allocator, libc_entries);
+    var libc_saw_file = false;
+    var libc_saw_dir = false;
+    for (libc_entries) |entry| {
+        if (std.mem.eql(u8, entry.name, "a.txt")) {
+            try testing.expectEqual(DirEntryKind.file, entry.kind);
+            libc_saw_file = true;
+        }
+        if (std.mem.eql(u8, entry.name, "nested")) {
+            try testing.expectEqual(DirEntryKind.directory, entry.kind);
+            libc_saw_dir = true;
+        }
+    }
+    try testing.expect(libc_saw_file and libc_saw_dir);
+    try testing.expectError(error.FileNotFound, listDirEntriesLibc(allocator, scratch ++ "-nope"));
+}
 
 test "listMissions: empty when missions/ absent" {
     const allocator = testing.allocator;

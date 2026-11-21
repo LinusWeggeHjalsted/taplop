@@ -437,6 +437,7 @@ working rules).
 - [Tooltip text report (the wording-review inventory)](#tooltip-text-report-the-wording-review-inventory)
 - [Mission-complete medal row - the real art + the best-achieved spotlight](#mission-complete-medal-row---the-real-art--the-best-achieved-spotlight)
 - [Padded outline masks - the medal-highlight halo cutoff fix](#padded-outline-masks---the-medal-highlight-halo-cutoff-fix)
+- [Web listing seam - Dir.iterate is unimplemented on emscripten (Zig 0.17)](#web-listing-seam---diriterate-is-unimplemented-on-emscripten-zig-017)
 - [Import Game: OS compress-folder zips strip the root folder](#import-game-os-compress-folder-zips-strip-the-root-folder)
 <!-- doc index: end -->
 
@@ -25129,6 +25130,49 @@ emrun smoke (build + serve + the page boots, Module calledRun, rAF at
 
 Verification: 1137 tests (headless suite; the raylib seam itself is
 excluded from it - the runtime drives are the real gate for this class).
+
+## Web listing seam - Dir.iterate is unimplemented on emscripten (Zig 0.17)
+
+The user-facing symptom: Export Game on web failed with "could not list
+the game folder" - and the silent half was worse, EVERY listing surface
+on web was broken (the save browser, the mission browser, the campaign
+browsers, the mission-folder scans) because a failing scan degrades to
+an empty list almost everywhere.
+
+Root cause (a std gap, not our bug): Zig 0.17's `std.Io.Threaded`
+dirRead dispatch has no `.emscripten` arm - it falls to
+`dirReadUnimplemented`, so every `std.Io.Dir.iterate` call returns
+`error.Unexpected` on the very first entry. The web storage model slice
+5 had deleted the platform listing splits as dead weight on a
+"browser-verified, plain MEMFS readdir works" claim - a verification
+that predates the `std.fs` -> `std.Io` migration (the old API iterated
+through libc; the new Io dispatch never grew the emscripten arm). The
+phantom-green lesson, once removed: the deleted splits were masking a
+real platform difference, and the verification that said otherwise had
+gone stale across a std migration. Worth an upstream Zig issue.
+
+The fix is ONE seam, not per-site splits: `FileSource.
+listPersistentDirEntries` (name + kind per entry, `FileNotFound` on a
+missing dir - the openDir convention callers already switched on). Every
+platform but emscripten keeps the std.Io walk unchanged; emscripten
+walks libc opendir/readdir (`listDirEntriesLibc`, free-standing on a
+full path so the test build drives it directly - `std.c.dirent` covers
+emscripten, and the test step now links libc, aligning it with the
+shipped builds which link libc already). All nine production listing
+sites route through it: the campaign/mission uuid candidate scans, the
+mission browser scans, `dirMtime`, `listSaveFiles`, `listDirFiles`,
+`listPersistentPngFiles`, `listRootSubfolders`, `scanMissionFolder`, and
+the Export Game tree walk (`collectPersistentDirFiles`, which now
+skips unreadable subtrees instead of swallowing only openDir
+failures - only the root call's failure aborts the export with the
+popup). Stats were never affected (the Io stat dispatch falls through to
+a generic Posix arm on emscripten) - only dirRead was the gap.
+
+The libc arm is leak-checked natively by a direct test (the arm is
+plain POSIX; the comptime emscripten selection is the only
+web-specific part, and it lives at the call site); the whole seam got
+its own headless test (root + subdir listings, kinds, the
+missing-dir convention, both arms).
 
 ## Import Game: OS compress-folder zips strip the root folder
 

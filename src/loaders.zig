@@ -3302,19 +3302,15 @@ pub fn resolveCampaignMissions(
         candidates.deinit(allocator);
     }
 
-    if (file_source.persistent_dir.openDir(file_source.io, missions_dir, .{
-        .access_sub_paths = true,
-        .iterate = true,
-    }) catch null) |persistent_dir| {
-        defer std.Io.Dir.close(persistent_dir, file_source.io);
-        var it = persistent_dir.iterate();
-        while (it.next(file_source.io) catch null) |dir_entry| {
+    if (file_source.listPersistentDirEntries(allocator, missions_dir) catch null) |dir_entries| {
+        defer file_source_mod.freePersistentDirEntries(allocator, dir_entries);
+        for (dir_entries) |dir_entry| {
             if (dir_entry.kind != .directory) continue;
             const dir = std.fmt.allocPrint(allocator, "{s}/{s}", .{ missions_dir, dir_entry.name }) catch
                 @panic("failed to build mission dir");
             candidates.append(allocator, .{
                 .dir = dir,
-                .mtime_ns = file_source_mod.dirMtime(file_source, dir),
+                .mtime_ns = file_source_mod.dirMtime(file_source, allocator, dir),
                 .persistent = true,
             }) catch @panic("failed to append mission candidate");
         }

@@ -2634,7 +2634,11 @@ possible): a game in progress pushes the autosave write FIRST (the
 `end_hub`/`end_level` `write_save` push - mid-level progress is IN the
 export, not just the files already on disk), then zips the FULL persistent
 dir (the "game folder": settings, saves including backups, custom missions,
-logs) as `taplop.zip` and triggers a browser download
+logs) as `taplop.zip` - the tree listing through
+`FileSource.listPersistentDirEntries`, the platform seam (on web Zig
+0.17's Io dispatch has NO emscripten dirRead arm, so `std.Io.Dir.iterate`
+fails with `error.Unexpected`; the seam's libc opendir/readdir arm is what
+makes every listing surface work there) - and triggers a browser download
 (`triggerBrowserDownload`). The download is the only guaranteed-safe home
 for web data - the bytes leave the browser entirely. (The file name
 migrates with the game rename.)
@@ -5734,10 +5738,11 @@ has no filesystem). Lists live on SessionState
 (scanned from the input path on open, never `view()`; no periodic rescan
 while open - nothing can add a local mission while the modal is up, a web
 import rescans explicitly). The per-mission probe + parse + the folder
-scan run the same `Dir.iterate` path on every platform (the old
-IDBFS-era platform split - a JS listing via a temp file because the
-IDBFS mount's readdir was broken - died with the IDBFS mount itself;
-see DONE.md "web storage model slice 5"). A row click pushes
+scan go through `FileSource.listPersistentDirEntries`, the ONE listing
+seam (every platform but emscripten: `std.Io.Dir.iterate`; emscripten:
+libc opendir/readdir - Zig 0.17's Io dispatch has no emscripten dirRead
+arm, so the std.Io walk fails with `error.Unexpected` on web; see Web
+storage model). A row click pushes
 the ordinary `open_editor`
 with the row's path (`pushPlayerActionAndDrain`) - the loading path is
 unchanged; replay re-reads the files silently (the `player_load_save`
