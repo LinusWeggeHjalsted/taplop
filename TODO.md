@@ -98,6 +98,34 @@ Test by running `zig build run` and clicking through.
   author. The walker's safety rules (never follows pointers, never calls
   methods) stay as they are - see DESIGN → Input → Console input → dump
   paths.
+- **Web console input channel (drivability gap, found driving the
+  Import/Export Game fixes)** - the console channel is stdin-only, so the
+  web build has no drivable surface: every web UI flow (Export Game's
+  download, Import Game's marker + re-boot, the listing surfaces on web)
+  needs a human. The synthetic-canvas-click workaround is flaky: the same
+  scripted click (DOM events dispatched at computed reference
+  coordinates) worked on a locally served build and silently failed on
+  the deployed one, undiagnosed - and a per-frame-polled game needs
+  press/hold/release spanning frames (a same-tick mousedown+mouseup is
+  invisible to the poll). Design sketch: a JS-exposed queue (e.g. a
+  `window.taplopConsole(text)` pushing into the SAME SPSC queue the
+  stdin reader fills - console.zig) + the web driver draining one
+  command per frame exactly like the native loop; report/dump output
+  (stdout on native) lands in a window-readable buffer so a driving
+  agent can read it back. Reuses the parser + the applyAction fold + the
+  one-command-per-frame queue semantics wholesale. See DESIGN → Input →
+  Console input for the settled native design.
+- **Import/Export Game success is silent (the "nothing happens" class,
+  found as the OS-zip import bug's mask)** - the pre-fix import
+  SUCCEEDED (nested shadow tree, session re-boot) and the screen looked
+  identical, so a real failure read as silence; the root-strip fix landed
+  the content where the game reads it, but a successful import re-boot
+  is STILL visually a no-op. One legibility line each way: after an
+  import re-boot, a one-time confirmation (the file count is known at
+  the overlay's end - e.g. a line on the main menu or a toast); on
+  export, the only success signal is the browser's own download bar, so
+  a blocked/missed download also reads as silence - a "zip prepared for
+  download" popup would close the loop.
 - **World overlay stripe scopes batch-flush per tile (session reflection
   rider, unmeasured)** - each highlighted tile opens its own stripe scope
   (~2 batch flushes per tile; a 20-tile move range ≈ 40 flushes/frame).
