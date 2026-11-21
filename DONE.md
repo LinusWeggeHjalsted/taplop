@@ -430,6 +430,7 @@ working rules).
 - [Playtest feedback 5: momentum decays out of combat (recent-combat tempo)](#playtest-feedback-5-momentum-decays-out-of-combat-recent-combat-tempo)
 - [Forest Outskirts validation replay re-recorded under the momentum decay](#forest-outskirts-validation-replay-re-recorded-under-the-momentum-decay)
 - [Options menu: the dedicated toggle action (decoupled from Escape) + the open_->toggle_ naming sweep](#options-menu-the-dedicated-toggle-action-decoupled-from-escape--the-open-toggle-naming-sweep)
+- [Mission-complete medal row - slice 1: the mission-start author-turns capture](#mission-complete-medal-row---slice-1-the-mission-start-author-turns-capture)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24912,3 +24913,39 @@ name collision made it misleading).
 Verification: 1132 tests (one new: the reported pain point inverted -
 the toggle opens the menu OVER an open panel, closes on re-fire, and
 Escape pops the menu before the panel beneath).
+
+## Mission-complete medal row - slice 1: the mission-start author-turns capture
+
+The display side of the author-medal machinery (DESIGN → Custom Missions
+& Online Services → Turn counters + author medals) needs the mission's
+author turn count session-side at completion - view is file-free by
+design, so the capture happens at MISSION START, the
+`validation_personal_best_turns` pattern:
+
+- `validation_replay.authorTurnsForValidatedMission` - the capture
+  helper: runs the `checkMissionValidationArtifact` standard (the dir's
+  validation replay must certify this mission's uuid + CURRENT content
+  hash - a missing/stale/foreign replay reads as unvalidated), then
+  derives the author's turns from the replay's EVENTS (never stored -
+  the medal-targets invariant). The check reads the replay once for the
+  status and the helper re-reads it for the events (the check doesn't
+  return the parsed replay) - one small extra file read at mission
+  start, accepted.
+- `SessionState.mission_author_turns: ?u32` - the stash. Captured in the
+  start_mission handler, gated `!replaying` (side-effect display state;
+  replay never re-reads files), and REWRITTEN on EVERY mission start - so
+  it can never describe a stale mission (an unvalidated mission retires
+  a prior capture by writing null). Editor playtest/validation never
+  read it (playtest shows no completion overlay; the validation variant
+  anchors its medals to `validation_personal_best_turns`).
+
+The handler test doubles as a content contract: the official campaign's
+shipped validation replays must still certify current content (the
+capture on the first official mission must be non-null and equal the
+replay's independently-derived turns) - if a replay ever goes stale
+against edited content, the test fails and the mission reads as
+unvalidated in-game, exactly what a player would see.
+
+Verification: 1134 tests (new: the three-status helper unit test +
+the start_mission capture handler test over a shipped mission and a
+replay-less fixture mission).

@@ -374,6 +374,19 @@ pub const SessionState = struct {
     /// state for the validation stats screen; the browser/UI derives from
     /// the file itself later.
     validation_personal_best_turns: ?u32 = null,
+
+    /// The mission-start medal capture: the entered mission's author turn
+    /// count when its dir carries a validation replay certifying the
+    /// mission's CURRENT content (the checkMissionValidationArtifact
+    /// standard - validation_replay.authorTurnsForValidatedMission), null
+    /// when unvalidated. The campaign mission-complete variant derives its
+    /// medal row's targets from this (validation runs use
+    /// `validation_personal_best_turns` instead). Captured in the
+    /// start_mission handler, gated `!replaying` (side-effect display
+    /// state - view is file-free, the same class as
+    /// validation_personal_best_turns), and REWRITTEN on every mission
+    /// start, so it can never describe a stale mission.
+    mission_author_turns: ?u32 = null,
     save_files_last_scan_us: u64 = save_files_never_scanned,
     // Camera pan (right-drag): offset in world pixels added to the player-
     // centered camera, plus the drag anchor + press position. Transient view

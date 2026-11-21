@@ -21,6 +21,7 @@ const player_handlers = @import("player.zig");
 const editor_handlers = @import("../editor/handlers.zig");
 const editor_mission_io = @import("../editor/mission_io.zig");
 const session_log = @import("../session_log.zig");
+const validation_replay = @import("../validation_replay.zig");
 
 const GameState = state.GameState;
 const GameStateHistory = state.GameStateHistory;
@@ -536,6 +537,22 @@ pub fn handleMetaEvent(
                 failReconstructionRead(history, "failed to read mission level files");
                 return;
             };
+
+            // The mission-start medal capture (session-side display state
+            // for the campaign completion overlay - gated so replay never
+            // re-reads files, and REWRITTEN on every start so a later
+            // unvalidated mission shows no medals). The dir's validation
+            // replay must certify this content; its derived turn count
+            // crowns the medal row. See DESIGN → Custom Missions & Online
+            // Services → Turn counters + author medals.
+            if (!history.replaying) {
+                history.session.mission_author_turns = validation_replay.authorTurnsForValidatedMission(
+                    history.file_source,
+                    allocator,
+                    current.mission.?.uuid,
+                    start.mission_path,
+                );
+            }
 
             // Entering a mission (new game or replay) retires any prior
             // completion overlay (payload + slot together - the screens

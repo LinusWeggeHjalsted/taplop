@@ -14,6 +14,8 @@ const testing = std.testing;
 const types = @import("types.zig");
 const state = @import("state.zig");
 const events = @import("events.zig");
+const parser = @import("parser.zig");
+const validation_replay = @import("validation_replay.zig");
 const event_push = @import("event_push.zig");
 const event_handlers = @import("event_handlers.zig");
 const input_handlers = @import("input_handlers.zig");
@@ -464,4 +466,55 @@ test "map travel mid-level to the entering hub: abandons + returns (not a no-op)
         .options_action = .travel_to_map_hub,
     }, .{ .map_hub = 0 }, .{ .x = -4096, .y = -4096 }, &.{});
     try testing.expectEqual(events_before, history.event_history.items.len);
+}
+
+test "start_mission captures the medal author turns only for a validated mission" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+    var harness = Harness.init(arena);
+
+    // A shipped official mission (authored content - the dir is derived,
+    // never pinned): its validation replay certifies current content, so
+    // the capture derives the author's turns from the replay's events. The
+    // expectation is DERIVED INDEPENDENTLY (parse + load the same replay
+    // through the harness's file source), never a pinned number.
+    const official_dir = test_harness.officialMissionDir(arena);
+    {
+        var history = harness.newHistory(null);
+        event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_mission = .{
+            .mission_path = official_dir,
+            .end_hub_id = null,
+        } } }}, history.current_arena.allocator());
+        runToIdle(&history);
+        try testing.expectEqual(state.Screen.level, history.current_state.screen);
+        const captured = history.session.mission_author_turns orelse
+            return error.expectedCapturedAuthorTurns;
+
+        const replay_path = std.fmt.allocPrint(arena, "{s}/validation_replay.txt", .{official_dir}) catch
+            @panic("failed to build the replay path");
+        const replay_bytes = harness.file_source.readFile(arena, replay_path) catch
+            @panic("failed to read the shipped validation replay");
+        const replay_sections = parser.parseConfigFile(replay_bytes, arena, &parser.session_log_sections) catch
+            @panic("failed to parse the shipped validation replay");
+        const replay = validation_replay.loadValidationReplay(replay_sections, arena) catch
+            @panic("failed to load the shipped validation replay");
+        try testing.expectEqual(validation_replay.deriveValidationTurns(replay.events), captured);
+    }
+
+    // The fixture campaign's mission has no validation replay: the
+    // capture reads as unvalidated - null, the medal row hides (and the
+    // rewritten-on-every-start rule means the null also RETIRES any
+    // prior capture rather than leaving a stale one behind).
+    {
+        var history = harness.newHistory(null);
+        writeFixtureCampaignAt(&history, "test_campaign");
+        event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_mission = .{
+            .mission_path = mission_path,
+            .end_hub_id = null,
+        } } }}, history.current_arena.allocator());
+        runToIdle(&history);
+        try testing.expectEqual(state.Screen.level, history.current_state.screen);
+        try testing.expectEqual(@as(?u32, null), history.session.mission_author_turns);
+    }
 }
