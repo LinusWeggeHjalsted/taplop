@@ -958,3 +958,32 @@ Done items in DONE.md. Open:
       accept + ignore `.?` as a no-op step, or extend the console's
       `help` to say optionals auto-descend. Cosmetic; note it here so the
       next console-drive session doesn't rediscover it.
+
+## Repo Hosting
+
+- **Migrate to GitLab (author preference, undecided timing - "at some
+      point"; until it happens the GitHub Pages deploy stays the live
+      one).** What carries over untouched vs what needs a decision:
+      - CARRIES OVER: the in-game repo link - `computeRepoUrl` in
+        build.zig derives it from the `origin` remote at build time (SSH
+        form normalized to https, `.git` stripped), so a retargeted
+        origin follows with zero code edits (the sr.ht -> GitHub
+        precedent). The web-build subpath is equivalent on gitlab.com
+        (`https://<user>.gitlab.io/taplop/` - the relative-asset-refs
+        safety already verified for the /taplop/ subpath carries over;
+        re-check the URL shape for a self-hosted instance). The move
+        itself is a push to the new remote, not a re-import - history
+        carries.
+      - THE OPEN QUESTION (playable web hosting): GitLab Pages does
+        NOT serve a branch tip - it publishes via a CI job named
+        `pages` that emits a `public/` artifact. The gh-pages
+        orphan-branch + force-push model (`scripts/pages.sh`)
+        therefore needs one of: (a) a minimal CI `pages` job that
+        copies the branch's three files into `public/` (keeps the
+        script + branch shape and the local-build model - no
+        toolchain needed on the runner), or (b) the script uploading
+        the artifact via GitLab's Pages deploy API instead of a
+        branch (verify availability + shape on the target instance
+        when it happens). Decide at migration time.
+      - Same-pass doc sweep: README (play link, the GitHub Pages
+        notes), AGENTS (the Pages deploy section).
