@@ -494,8 +494,10 @@ pub const ValidationCompleteContext = struct {
 /// ranks share ONE graphic (`ui/medal`), color is the only per-rank
 /// difference, so the tints are hardcoded here (the medal-target
 /// multipliers' convention: constants live in the file that uses them).
-/// The asset is MISSING on purpose for now - the renderer's magenta
-/// fallback signals it (the artist drops assets/ui/medal.png later).
+/// The shared graphic ships as assets/ui/medal.png with tight margins -
+/// its silhouette nears the canvas edge, so the highlight halo rides the
+/// padded outline masks (see DESIGN → Platform Seam → Outline stripe
+/// shader).
 const medal_row_size: i32 = 128;
 const medal_author_color = Color{ .r = 0, .g = 200, .b = 70 };
 const medal_gold_color = Color{ .r = 255, .g = 215, .b = 0 };
@@ -509,11 +511,11 @@ const medal_bronze_color = Color{ .r = 205, .g = 127, .b = 50 };
 /// stored). Achieved = this run's turns at or under the tier's target
 /// (inclusive: matching the author's time earns the author medal; the
 /// targets are ordered, so an achieved tier undims every looser tier by
-/// construction). An unachieved medal is dimmed by redrawing it on itself
-/// in the theme's darkest color at 50% alpha - the skill-cooldown overlay
-/// pattern - with the overlay non-blocking so the tooltip-bearing medal
-/// beneath stays the hover hit target. The best achieved tier (the
-/// tightest) carries the renderer's edge-highlight treatment. Each medal's
+/// construction). An unachieved medal is drawn directly in the theme's
+/// darkest color - no overlay pass, so the medal's transparent interior
+/// reads as an empty ring against the panel background, and the color gap
+/// from the achieved tints is the whole distinction. The best achieved
+/// tier (the tightest) carries the renderer's edge-highlight treatment. Each medal's
 /// tooltip names its rank + turn target. See DESIGN → Custom Missions &
 /// Online Services → Turn counters + author medals.
 fn emitMedalRow(
@@ -556,24 +558,13 @@ fn emitMedalRow(
                 .screen_position = .{ .x = x, .y = y },
                 .width = medal_row_size,
                 .height = medal_row_size,
-                .color = medal.color,
-                // The best achieved tier carries the renderer's edge-highlight
-                // treatment (the active turn-step indicator's outline).
+                // Unachieved: drawn darkest (an empty ring against the
+                // panel background), no overlay pass.
+                .color = if (turns_spent <= medal.target) medal.color else active_theme.darkest,
                 .highlighted = best_achieved_index == index,
                 .tooltip = .{ .header = try spanRow(allocator, text(tooltip_text)) },
             },
         });
-        if (turns_spent > medal.target) {
-            try elements.append(allocator, .{ .image = .{
-                .sprite_id = "ui/medal",
-                .screen_position = .{ .x = x, .y = y },
-                .width = medal_row_size,
-                .height = medal_row_size,
-                .color = active_theme.darkest,
-                .alpha = 128,
-                .blocks_input = false,
-            } });
-        }
         x += medal_row_size + ui_gap;
     }
 }
@@ -1222,14 +1213,14 @@ const MissionCompleteScan = struct {
     continue_button: bool = false,
     overwrite_replay_button: bool = false,
     overwrite_clone_button: bool = false,
-    /// The medal row: the blocking medals in row order (Bronze, Silver,
-    /// Gold, Author) with their tooltip header texts, plus the first
-    /// medal's position (the centering + below-the-material-row checks)
-    /// and the unachieved-dim overlay count.
+    /// The medal row: the medals in row order (Bronze, Silver, Gold,
+    /// Author) with their tooltip header texts and drawn colors (unachieved
+    /// tiers draw the theme's darkest), plus the first medal's position (the
+    /// centering + below-the-material-row checks).
     medal_tooltips: [4]?[]const u8 = .{ null, null, null, null },
+    medal_colors: [4]?Color = .{ null, null, null, null },
     medal_highlighted: [4]bool = .{ false, false, false, false },
     medal_count: usize = 0,
-    medal_dim_count: usize = 0,
     first_medal_x: ?i32 = null,
     first_medal_y: ?i32 = null,
 
@@ -1256,22 +1247,19 @@ const MissionCompleteScan = struct {
             },
             .image => |image| {
                 if (!std.mem.eql(u8, image.sprite_id, "ui/medal")) continue;
-                if (image.blocks_input) {
-                    if (found.medal_count < 4) {
-                        found.medal_tooltips[found.medal_count] = if (image.tooltip) |tooltip|
-                            (if (tooltip.header) |header| (if (header.len > 0) header[0].text else null) else null)
-                        else
-                            null;
-                        if (found.medal_count == 0) {
-                            found.first_medal_x = image.screen_position.x;
-                            found.first_medal_y = image.screen_position.y;
-                        }
-                        found.medal_highlighted[found.medal_count] = image.highlighted;
+                if (found.medal_count < 4) {
+                    found.medal_tooltips[found.medal_count] = if (image.tooltip) |tooltip|
+                        (if (tooltip.header) |header| (if (header.len > 0) header[0].text else null) else null)
+                    else
+                        null;
+                    found.medal_colors[found.medal_count] = image.color;
+                    if (found.medal_count == 0) {
+                        found.first_medal_x = image.screen_position.x;
+                        found.first_medal_y = image.screen_position.y;
                     }
-                    found.medal_count += 1;
-                } else {
-                    found.medal_dim_count += 1;
+                    found.medal_highlighted[found.medal_count] = image.highlighted;
                 }
+                found.medal_count += 1;
             },
             else => {},
         };
@@ -1292,7 +1280,7 @@ test "buildMissionComplete: the validation variant swaps the clone content for t
         screenRect(),
         // medalTargets(3): gold = ceil(3.6) = 4, silver = 6, bronze = 15.
         // This run (4 turns) achieves gold and below; the author medal
-        // (target 3) is out of reach - it shows dimmed.
+        // (target 3) is out of reach - it draws darkest.
         .{ .name = "New Mission", .path = "missions/x", .turns_spent = 4, .validation = true },
         missionCompleteDummyTheme(),
         .{
@@ -1307,11 +1295,15 @@ test "buildMissionComplete: the validation variant swaps the clone content for t
     const found = MissionCompleteScan.scan(elements.items);
     // The validation surface: "validated" header, the medal row
     // (pb 3 -> bronze 15 / silver 6 / gold 4 / author 3, Author crowning
-    // the row at the right; the 4-turn run dims only the author medal),
-    // Validate Again / Continue / the offered Overwrite Replay.
+    // the row at the right; the 4-turn run draws only the author medal
+    // darkest), Validate Again / Continue / the offered Overwrite Replay.
     try testing.expect(found.header_validated);
     try testing.expectEqual(@as(usize, 4), found.medal_count);
-    try testing.expectEqual(@as(usize, 1), found.medal_dim_count);
+    try testing.expectEqual(medal_bronze_color, found.medal_colors[0].?);
+    try testing.expectEqual(medal_silver_color, found.medal_colors[1].?);
+    try testing.expectEqual(medal_gold_color, found.medal_colors[2].?);
+    // Unachieved: the theme's darkest, not the rank tint.
+    try testing.expectEqual(missionCompleteDummyTheme().darkest, found.medal_colors[3].?);
     try testing.expectEqualStrings("Bronze Medal - 15 turns", found.medal_tooltips[0].?);
     try testing.expectEqualStrings("Silver Medal - 6 turns", found.medal_tooltips[1].?);
     try testing.expectEqualStrings("Gold Medal - 4 turns", found.medal_tooltips[2].?);
@@ -1338,7 +1330,7 @@ test "buildMissionComplete: no highlight when no medal tier is achieved" {
     const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     var elements: UiElementList = .empty;
     // A 100-turn run against author turns 10: bronze's target is 50 - the
-    // whole row is dimmed and no medal carries the spotlight.
+    // whole row draws darkest and no medal carries the spotlight.
     try buildMissionComplete(
         &elements,
         arena.allocator(),
@@ -1352,7 +1344,9 @@ test "buildMissionComplete: no highlight when no medal tier is achieved" {
 
     const found = MissionCompleteScan.scan(elements.items);
     try testing.expectEqual(@as(usize, 4), found.medal_count);
-    try testing.expectEqual(@as(usize, 4), found.medal_dim_count);
+    for (found.medal_colors[0..4]) |medal_color| {
+        try testing.expectEqual(missionCompleteDummyTheme().darkest, medal_color.?);
+    }
     try testing.expectEqual([4]bool{ false, false, false, false }, found.medal_highlighted);
 }
 
@@ -1385,7 +1379,6 @@ test "buildMissionComplete: the campaign variant is unchanged (regression)" {
     try testing.expect(found.continue_button);
     try testing.expect(found.overwrite_clone_button);
     try testing.expectEqual(@as(usize, 0), found.medal_count);
-    try testing.expectEqual(@as(usize, 0), found.medal_dim_count);
     try testing.expectEqualStrings("in 4 turns", found.new_clone_turns_suffix.?);
     // NO validation content.
     try testing.expect(!found.header_validated);
@@ -1393,7 +1386,7 @@ test "buildMissionComplete: the campaign variant is unchanged (regression)" {
     try testing.expect(!found.overwrite_replay_button);
 }
 
-test "buildMissionComplete: the campaign medal row centers below the material count and dims unachieved tiers" {
+test "buildMissionComplete: the campaign medal row centers below the material count and draws unachieved tiers darkest" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
@@ -1401,7 +1394,7 @@ test "buildMissionComplete: the campaign medal row centers below the material co
     var elements: UiElementList = .empty;
     // A 25-turn run against author turns 10: targets author 10 / gold 12
     // (ceil) / silver 20 / bronze 50 - only bronze is achieved, so the
-    // other three medals carry the dim overlay.
+    // other three medals draw the theme's darkest.
     try buildMissionComplete(
         &elements,
         arena.allocator(),
@@ -1416,7 +1409,10 @@ test "buildMissionComplete: the campaign medal row centers below the material co
     const found = MissionCompleteScan.scan(elements.items);
     try testing.expect(found.header_completed);
     try testing.expectEqual(@as(usize, 4), found.medal_count);
-    try testing.expectEqual(@as(usize, 3), found.medal_dim_count);
+    try testing.expectEqual(medal_bronze_color, found.medal_colors[0].?);
+    for (found.medal_colors[1..4]) |medal_color| {
+        try testing.expectEqual(missionCompleteDummyTheme().darkest, medal_color.?);
+    }
     try testing.expectEqualStrings("Bronze Medal - 50 turns", found.medal_tooltips[0].?);
     try testing.expectEqualStrings("Silver Medal - 20 turns", found.medal_tooltips[1].?);
     try testing.expectEqualStrings("Gold Medal - 12 turns", found.medal_tooltips[2].?);

@@ -3123,10 +3123,12 @@ centered below the top-middle summary line. One shared graphic, per-rank hardcod
 tints (author-green / gold / silver / bronze). Achieved = this run's
 turns at or under the tier's target (inclusive - matching the author's
 time earns the author medal; the targets are ordered, so an achieved tier
-undims every looser tier by construction). Unachieved medals are dimmed by
-redrawing the medal on itself in the theme's darkest color at 50% alpha -
-the skill-cooldown overlay pattern - with the overlay non-blocking so the
-medal's tooltip ("{Rank} Medal - N turns") stays hoverable. The best
+undims every looser tier by construction). Unachieved medals are drawn
+directly in the theme's darkest color - no overlay pass - so the medal's
+transparent interior reads as an empty ring against the panel background
+(achieved tint vs darkest is the whole distinction; the medal's tooltip
+("{Rank} Medal - N turns") stays hoverable since there is nothing drawn
+over it). The best
 achieved tier (the tightest) carries the renderer's edge-highlight
 treatment (the active turn-step indicator's outline); an all-dimmed row
 highlights nothing. The campaign
