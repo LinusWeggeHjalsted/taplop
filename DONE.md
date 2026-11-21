@@ -440,6 +440,7 @@ working rules).
 - [Web listing seam - Dir.iterate is unimplemented on emscripten (Zig 0.17)](#web-listing-seam---diriterate-is-unimplemented-on-emscripten-zig-017)
 - [Import Game: OS compress-folder zips strip the root folder](#import-game-os-compress-folder-zips-strip-the-root-folder)
 - [Web console channel slice 1 - the sink seam + the feeder (console.zig)](#web-console-channel-slice-1---the-sink-seam--the-feeder-consolezig)
+- [Web console channel slices 2-3 - web.zig wiring + the exclusion set](#web-console-channel-slices-2-3---webzig-wiring--the-exclusion-set)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -25237,3 +25238,45 @@ calls (the marker-poll shape), parse-error capture, and the low-water
 pause (feeds stop AT the mark while nothing drains, resume
 one-for-one below it). Slice 2 (web.zig wiring) makes
 `ConsoleFeeder`'s methods cross-file consumers of web.zig.
+
+## Web console channel slices 2-3 - web.zig wiring + the exclusion set
+
+The web driver halves of the drivable web surface (slice 1 + the design
+rationale: the previous entry; DESIGN → Input → Console input → Web
+console seam). `WebSession` gains the session-owned sink + feeder
+(surviving the Import Game re-boot - `bootSession` re-points each fresh
+queue at the sink, the same re-wrapping site the audio watchdog uses,
+and re-arms the once-per-boot quit note). `frameCallback` is now:
+poll `.console_in` (read, stage into the feeder, delete - the
+`pollGameImportMarker` discipline) → feed ONE command → `game.frame()`
+(the shared drain) → the quit note → deliver the sink to `.console_out`
+(mailbox semantics: the delivery holds while the previous one is
+unread, writes the whole sink once, never appends - no dupes, no
+quadratic rewrites).
+
+The JS shims install at boot via `emscripten_run_script` (the
+audio-watchdog pattern - no shell.html change, deployment-identical on
+emrun / GitHub Pages / node): `window.taplopConsole(text)` (binary FS
+write, appends to the unconsumed remainder if a second call lands
+before the poll consumed the first, guarantees the trailing newline the
+line splitter needs) and `window.taplopConsoleOutput()` (BINARY FS
+read + TextDecoder - emscripten's `{encoding:'utf8'}` read stops at
+the first NUL, the truncated-download lesson reapplied; one build-time
+gotcha: the JS braces in the allocPrint format string must be doubled
+or the comptime format walker parses them as placeholders).
+`.console_in`/`.console_out` join `persistent_dir_artifact_names`
+(listing + Export Game exclusion on both platforms - the
+interrupted-drive leftover class), pinned by extending the game_zip
+temps-excluded test.
+
+Runtime-verified against the served build through a real browser drive
+(the WEB COMPILES ≠ WEB RUNS rule): `help` + `report ui` round-trip;
+a `move` + `press left` + `release left` click on the reported
+`new_game` button STARTED a game (press/hold spanning frames - the
+thing the flaky synthetic-canvas workaround could not do, and the
+whole reason this channel exists); `wait idle` held + released;
+`report level` reported the hub world ("Central Ruins" - entities,
+NPCs, the mission exit with click centers); `quit` produced its
+once-per-boot note as a separate mailbox delivery while the game kept
+running. The AGENTS → Running the Game → Driving the web build section
+is the operating manual.

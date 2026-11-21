@@ -333,6 +333,8 @@ test "listPersistentDirFiles + zip round-trip: the full tree, temps excluded" {
     try file_source.writeFile(file_source_mod.game_import_marker_path, "stale import marker");
     try file_source.writeFile(file_source_mod.import_marker_path, "stale save import marker");
     try file_source.writeFile(file_source_mod.mission_import_marker_path, "stale mission import marker");
+    try file_source.writeFile(file_source_mod.console_input_marker_path, "stale console drive script");
+    try file_source.writeFile(file_source_mod.console_output_marker_path, "stale console delivery");
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

@@ -1442,6 +1442,8 @@ fn pathOrder(_: void, a: []const u8, b: []const u8) bool {
 /// the whole set on BOTH platforms, both walks deriving from this ONE list
 /// so the native + JS filters can never drift apart.
 const persistent_dir_artifact_names = [_][]const u8{
+    console_input_marker_path,
+    console_output_marker_path,
     game_export_temp_path,
     game_import_temp_path,
     game_import_marker_path,
@@ -1705,6 +1707,23 @@ pub const game_import_marker_path = ".game_import_marker";
 /// the marker, deletes it, and extracts the zip into campaigns/ - see
 /// campaign_editor/io.zig's pollCampaignImportMarker).
 pub const campaign_import_marker_path = ".campaign_import_marker";
+
+/// Marker file (persistent-dir root) written by the web console JS shim
+/// (`window.taplopConsole(text)` - see DESIGN → Input → Console input → Web
+/// console seam): the staged script text, lines split on '\n'. The web
+/// driver polls it every frame, stages the bytes into the console
+/// feeder, and deletes it - the same shape as `game_import_marker_path`
+/// (the shim appends to the unconsumed remainder if a second write lands
+/// before the poll consumed the first).
+pub const console_input_marker_path = ".console_in";
+
+/// The web console's output DELIVERY (persistent-dir root): the driver
+/// writes the whole sink here when this file is ABSENT (a present file
+/// means the previous delivery is still unread - the mailbox semantics,
+/// DESIGN → Input → Console input → Web console seam), and
+/// `window.taplopConsoleOutput()` reads + unlinks it. Nothing is
+/// destroyed unread.
+pub const console_output_marker_path = ".console_out";
 
 /// On web, offer a file from the persistent dir to the player as a browser
 /// download (anchor click on a Blob of the file's bytes) under the given

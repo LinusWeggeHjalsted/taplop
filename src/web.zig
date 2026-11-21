@@ -13,6 +13,10 @@
 //!     per-frame core from main.zig) via emscripten_set_main_loop_arg. The
 //!     browser calls it once per requestAnimationFrame; yielding is the
 //!     browser's job, so no waitTime/sleep (and no asyncify).
+//! The web CONSOLE channel (the drivable surface - the JS shims + the
+//! marker poll + the sink delivery) is wired here; the shared pipeline it
+//! feeds lives in console.zig (see DESIGN → Input → Console input → Web
+//! console seam).
 //! See DESIGN → Platform Seam (raylib) + "File System & IO" + the web
 //! build roadmap.
 //!
@@ -29,6 +33,7 @@ const types = @import("types.zig");
 const FileSource = @import("file_source.zig").FileSource;
 const file_source_mod = @import("file_source.zig");
 const crash_dump = @import("crash_dump.zig");
+const console = @import("console.zig");
 
 // --- Emscripten externs (minimal subset of what zemscripten wraps) ---
 
@@ -74,6 +79,17 @@ const WebSession = struct {
     file_source: *const FileSource,
     io: std.Io,
     allocator: std.mem.Allocator,
+    /// The web console channel's session-long halves (see DESIGN → Input →
+    /// Console input → Web console seam): the output sink the fresh queue's
+    /// write sites route through (`bootSession` points each re-boot's new
+    /// queue at it), + the script feeder staged from the `.console_in`
+    /// marker. Session-owned (not per-boot) so staged lines + undelivered
+    /// output survive the Import Game re-boot.
+    console_sink: std.Io.Writer.Allocating,
+    console_feeder: console.ConsoleFeeder,
+    /// `quit` on web is a noticed no-op (closing the game = closing the
+    /// tab); the note fires once per boot.
+    console_quit_noted: bool = false,
 };
 
 /// Emscripten main-loop callback - called once per requestAnimationFrame:
@@ -85,7 +101,20 @@ const WebSession = struct {
 /// with the imported autosave's Continue button).
 fn frameCallback(arg: *anyopaque) callconv(.c) void {
     const session: *WebSession = @ptrCast(@alignCast(arg));
+    // The web console channel (see DESIGN → Input → Console input → Web
+    // console seam): stage any newly-written script text, feed one command
+    // into the queue (the game-thread producer - never a spin), then the
+    // shared frame drains it exactly like the native loop. After the
+    // frame: the quit note, then the sink delivery (mailbox semantics -
+    // hold while the previous delivery is unread).
+    pollConsoleInputScript(session);
+    session.console_feeder.feedNextCommand(
+        &session.setup.frame_state.console_queue,
+        &session.console_sink,
+    );
     game.frame(&session.backend, &session.setup.frame_state);
+    noteConsoleQuitRequest(session);
+    deliverConsoleOutput(session);
     // Import Game completed this frame - the re-boot happens NOW, between
     // frames: nothing renders or reads input against the old history by
     // construction (see DESIGN → File System & IO → Web storage model).
@@ -111,6 +140,12 @@ fn bootSession(session: *WebSession) void {
     // Fix up the history's weapon_type_definitions pointer to point at
     // the SessionSetup's field (now in its stable heap location).
     session.setup.fixupPointers();
+    // The web console channel: point the FRESH queue's write sites at the
+    // session-owned sink (a re-boot recreates the queue; the sink survives
+    // so undelivered output carries over), and re-arm the once-per-boot
+    // quit note (the fresh session's quit_requested is false again).
+    session.setup.frame_state.console_queue.output_sink = &session.console_sink;
+    session.console_quit_noted = false;
     (&session.backend).initAudio(session.setup.frame_state.history.settings);
     crash_dump.install(&session.setup.frame_state.history);
     // The audio queue watchdog (see installAudioLeadWatchdog) - after
@@ -163,6 +198,123 @@ fn rebootSession(session: *WebSession) void {
     session_setup.freeSessionSetup(&session.setup);
     bootSession(session);
     tryResumeWebAudio();
+}
+
+// ============================================================
+// The web console channel (the drivable surface)
+// ============================================================
+
+/// Poll the console input marker: the JS shim (`window.taplopConsole`)
+/// writes staged script text to `.console_in`; finding it means "stage
+/// these bytes into the feeder" (the feeder copies - the read allocation
+/// frees right after), then delete the marker - the `pollGameImportMarker`
+/// discipline: an unreadable file is deleted so the poll cannot spin on
+/// it, and the channel self-cleans whether or not the script parses.
+/// See DESIGN → Input → Console input → Web console seam.
+fn pollConsoleInputScript(session: *WebSession) void {
+    const marker = file_source_mod.console_input_marker_path;
+    if (!session.file_source.fileExists(marker)) return;
+    const bytes = session.file_source.readFile(session.allocator, marker) catch {
+        session.file_source.deleteFile(marker) catch {};
+        return;
+    };
+    defer session.allocator.free(bytes);
+    session.file_source.deleteFile(marker) catch {};
+    session.console_feeder.stageScript(bytes);
+}
+
+/// Deliver the console sink to `.console_out` - the mailbox semantics
+/// (see DESIGN → Input → Console input → Web console seam): the delivery
+/// HOLDS while the previous delivery is unread (a present `.console_out`
+/// means the driving agent has not taken it yet - the sink retains the new
+/// bytes until then), and a delivery writes the WHOLE sink once, clearing
+/// it. Nothing is destroyed unread; nothing is sent twice. Frames with no
+/// output touch nothing. Best-effort like every console write: a failed
+/// write keeps the sink (retried next frame), never surfaces as a crash.
+fn deliverConsoleOutput(session: *WebSession) void {
+    if (session.console_sink.written().len == 0) return;
+    if (session.file_source.fileExists(file_source_mod.console_output_marker_path)) return;
+    session.file_source.writeFile(
+        file_source_mod.console_output_marker_path,
+        session.console_sink.written(),
+    ) catch return;
+    session.console_sink.clearRetainingCapacity();
+}
+
+/// `quit` on web is a noticed no-op: closing the game is closing the tab,
+/// which the tab cannot do to itself - but the command stays in the shared
+/// vocabulary (native drive scripts paste unmodified), so the first
+/// `quit_requested` per boot writes one sink note and the game keeps
+/// running. Without it, a drive script ending in `quit` is a silent
+/// mystery (did the script finish?).
+fn noteConsoleQuitRequest(session: *WebSession) void {
+    if (session.console_quit_noted) return;
+    if (!session.setup.frame_state.history.session.quit_requested) return;
+    session.console_quit_noted = true;
+    session.console_sink.writer.print(
+        "console: quit requested - on web, closing the tab ends the session\n",
+        .{},
+    ) catch {};
+}
+
+/// Install the console channel's JS shims (the audio-watchdog pattern - a
+/// page-scope `emscripten_run_script`, no shell.html change, identical on
+/// emrun / GitHub Pages / node):
+///   - `window.taplopConsole(text)`: stages script text into
+///     `/taplop/.console_in` (binary FS writes; appends to the unconsumed
+///     remainder if a second call lands before the poll consumed the
+///     first; guarantees the trailing newline the line splitter needs).
+///   - `window.taplopConsoleOutput()`: reads + unlinks
+///     `/taplop/.console_out`, returning the delivery as a string - the
+///     driving agent's read-back.
+/// BINARY FS reads on both sides of the output path: emscripten's
+/// `{encoding:'utf8'}` read has C-string semantics (stops at the first
+/// NUL - the truncated-download lesson), so the shim reads raw bytes and
+/// decodes with TextDecoder instead. Idempotent (the page-level guard
+/// flag), installed once from main() - the shims are stateless, so
+/// unlike the audio watchdog they need no per-boot re-install.
+fn installConsoleShims(allocator: std.mem.Allocator) void {
+    const script_body = std.fmt.allocPrint(
+        allocator,
+        "(function() {{" ++
+            "  if (window.taplopConsole) return;" ++
+            "  var input = '{s}/{s}';" ++
+            "  var output = '{s}/{s}';" ++
+            "  window.taplopConsole = function(text) {{" ++
+            "    var bytes = new TextEncoder().encode(text);" ++
+            "    if (bytes.length === 0 || bytes[bytes.length - 1] !== 10) {{" ++
+            "      var with_newline = new Uint8Array(bytes.length + 1);" ++
+            "      with_newline.set(bytes);" ++
+            "      with_newline[bytes.length] = 10;" ++
+            "      bytes = with_newline;" ++
+            "    }}" ++
+            "    var prev = new Uint8Array(0);" ++
+            "    try {{ prev = FS.readFile(input); }} catch (e) {{}}" ++
+            "    var combined = new Uint8Array(prev.length + bytes.length);" ++
+            "    combined.set(prev);" ++
+            "    combined.set(bytes, prev.length);" ++
+            "    FS.writeFile(input, combined);" ++
+            "  }};" ++
+            "  window.taplopConsoleOutput = function() {{" ++
+            "    try {{" ++
+            "      var data = FS.readFile(output);" ++
+            "      FS.unlink(output);" ++
+            "      return new TextDecoder().decode(data);" ++
+            "    }} catch (e) {{ return ''; }}" ++
+            "  }};" ++
+            "}})();",
+        .{
+            file_source_mod.persistent_mount_path,
+            file_source_mod.console_input_marker_path,
+            file_source_mod.persistent_mount_path,
+            file_source_mod.console_output_marker_path,
+        },
+    ) catch @panic("failed to format console shim script");
+    defer allocator.free(script_body);
+    const script = allocator.dupeSentinel(u8, script_body, 0) catch
+        @panic("failed to null-terminate console shim script");
+    defer allocator.free(script);
+    emscripten_run_script(script);
 }
 
 /// Mount the persistent virtual path as a plain in-memory (MEMFS)
@@ -341,7 +493,13 @@ pub fn main() void {
         .file_source = &file_source,
         .io = io,
         .allocator = allocator,
+        .console_sink = .init(allocator),
+        .console_feeder = .init(allocator),
     };
+
+    // The web console shims (stateless - once per page; see
+    // installConsoleShims for why they need no per-boot re-install).
+    installConsoleShims(allocator);
 
     // Build + boot the session (the shared boot sequence - the re-boot
     // after an Import Game re-runs this exact sequence; see bootSession).

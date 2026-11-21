@@ -365,8 +365,9 @@ session + the ButtonPayload migration):
 
 ## Running the Game (the Console Channel)
 
-The game is drivable from a script through the console channel (stdin) -
-the settled design lives in DESIGN → Input → Console input; this section
+The game is drivable from a script through the console channel (stdin on
+native, the JS shims on web - see Driving the web build below) - the
+settled design lives in DESIGN → Input → Console input; this section
 is the agent's OPERATING MANUAL. Every runtime verification of UI/flow
 work goes through it: the suite cannot see prompts, popups, spacing, or
 anything interactive (CONSOLE COMPILES/RUNS ≠ works - the same class as
@@ -404,6 +405,33 @@ WEB COMPILES ≠ RUNS). `zig build` first.
   personal-dir drive once deleted the author's saves). Never
   broad-glob the real dir - check mtimes before removing anything
   there.
+
+### Driving the web build
+
+The web build is drivable the same way (the JS shims riding the FS
+marker seam - DESIGN → Input → Console input → Web console seam): `zig
+build web`, serve `zig-out/web/` (`zig build emrun` or any static
+server), open the page, and drive via script evaluation:
+
+- `window.taplopConsole(text)` stages a script - the SAME command
+  vocabulary (multi-line fine; the trailing newline is optional, the
+  shim adds it). One command per frame exactly like native, so a
+  script plays out over wall-clock frames; `wait idle` holds across
+  real-clock waits.
+- `window.taplopConsoleOutput()` takes the output delivery (read +
+  clear): the MAILBOX contract - a report survives unread for however
+  many frames pass between two agent calls, so poll whenever, never
+  per-frame.
+- The tab must stay VISIBLE: a hidden tab stops rAF and the drain with
+  it.
+- `quit` is a noticed no-op on web (one sink note; close the tab to end
+  the session). No prompts on web.
+
+This is the WEB COMPILES ≠ WEB RUNS verification surface: after any
+platform-seam change (`src/raylib/`, web.zig, build.zig wiring), serve
++ drive (help → report ui → move + press/release on a reported button →
+report level) instead of trusting the compile - the console channel
+replaced the flaky synthetic-canvas-click workaround.
 
 ### The vocabulary (agent-relevant semantics)
 
