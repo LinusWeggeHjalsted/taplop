@@ -107,7 +107,12 @@ const import_max_total_bytes: usize = 2 * 1024 * 1024 * 1024;
 /// survives), shadow trees (data/ + assets/ names under the persistent dir)
 /// are the point of a restore - written through the RAW persistent-dir
 /// handle, NOT `FileSource.writeFile`, whose shipped-path write guard panics
-/// by design. The untrusted-zip rules: every name + size cap is validated
+/// by design. OS-zip handling: junk entries (macOS artifacts + directory
+/// records) are skipped and a single common root folder is stripped - an OS
+/// "compress folder" zip of the extracted game folder wraps everything in
+/// `<folder>/...` while our own exports are flat at the archive root (the
+/// mission + campaign imports' stripCommonRootFolder convention). The
+/// untrusted-zip rules: every name + size cap is validated
 /// BEFORE the first write and every entry is DECODED in a dry-run pass
 /// before the write pass, so a hostile or corrupt archive fails WHOLE,
 /// never half-imported. Streaming: one entry is in memory at a time (the
@@ -175,12 +180,25 @@ fn importGameFolder(
         return;
     }
 
-    // Pass two: validate every name BEFORE the first write. Junk entries
-    // (an OS "compress folder" zip's macOS artifacts + directory records)
-    // are skipped outright so an OS-made zip round-trips clean; everything
-    // else must pass the shared Zip-Slip rules (see zip_reader).
+    // The file-entry list: OS-zip junk (macOS artifacts + directory
+    // records) filtered out once here, then a single common root folder
+    // stripped - an OS "compress folder" zip of the extracted game folder
+    // wraps everything in `<folder>/...`, while our own exports are flat at
+    // the archive root (the mission + campaign imports' convention:
+    // stripCommonRootFolder; mixed shapes strip nothing and the overlay
+    // then writes them as nested paths, which the settings/autosave
+    // detection simply does not find). The passes below iterate this
+    // list - the junk check is not repeated per pass.
+    var file_headers: std.ArrayList(zip_reader.ZipEntryHeader) = .empty;
     for (headers) |header| {
-        if (zip_reader.isOsZipJunkEntry(header.name)) continue;
+        if (!zip_reader.isOsZipJunkEntry(header.name)) file_headers.append(scratch, header) catch
+            @panic("failed to collect zip entries");
+    }
+    zip_reader.stripCommonRootFolder(file_headers.items);
+
+    // Pass two: validate every name BEFORE the first write - everything
+    // must pass the shared Zip-Slip rules (see zip_reader).
+    for (file_headers.items) |header| {
         if (zip_reader.isUnsafeZipEntryName(header.name)) {
             const reason = std.fmt.allocPrint(
                 scratch,
@@ -192,16 +210,15 @@ fn importGameFolder(
         }
     }
 
-    // Pass three (dry run): decode every non-junk entry + free it
-    // immediately (the per-entry reset arena keeps memory at one entry).
-    // This validates the local headers, methods, CRCs, and recorded sizes
-    // WITHOUT writing, so a corrupt entry also fails whole, never
-    // half-imported - the write pass below re-extracts each entry and can
-    // then only fail at the IO level, which the popup also names.
+    // Pass three (dry run): decode every entry + free it immediately (the
+    // per-entry reset arena keeps memory at one entry). This validates the
+    // local headers, methods, CRCs, and recorded sizes WITHOUT writing, so
+    // a corrupt entry also fails whole, never half-imported - the write
+    // pass below re-extracts each entry and can then only fail at the IO
+    // level, which the popup also names.
     var entry_arena = std.heap.ArenaAllocator.init(history.backing_allocator);
     defer entry_arena.deinit();
-    for (headers) |header| {
-        if (zip_reader.isOsZipJunkEntry(header.name)) continue;
+    for (file_headers.items) |header| {
         _ = zip_reader.extractZipEntry(zip_bytes, entry_arena.allocator(), header) catch {
             const reason = std.fmt.allocPrint(
                 scratch,
@@ -217,8 +234,7 @@ fn importGameFolder(
     // Pass four (the overlay write): streamed, one entry at a time, through
     // the raw dir handle. Directories are created per entry (createDirPath is
     // idempotent), root-level files have no parent to create.
-    for (headers) |header| {
-        if (zip_reader.isOsZipJunkEntry(header.name)) continue;
+    for (file_headers.items) |header| {
         const entry = zip_reader.extractZipEntry(zip_bytes, entry_arena.allocator(), header) catch {
             // Unreachable in practice: the dry run decoded this same entry
             // from the same bytes. Kept defensive rather than a panic so an
@@ -492,6 +508,47 @@ test "importGameFolder: OS-junk entries skipped, not written" {
     try std.testing.expect(!history.file_source.fileExists("saves/._autosave"));
     try std.testing.expect(!history.file_source.fileExists(".DS_Store"));
     try std.testing.expect(!history.file_source.fileExists("missions"));
+}
+
+test "importGameFolder: an OS compress-folder zip strips the root folder" {
+    const Harness = @import("test_harness.zig").Harness;
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    const scratch = history.current_arena.allocator();
+
+    // The OS shape: the player extracts a taplop.zip, right-clicks the
+    // folder, "compress" - every entry is wrapped in `taplop/`, plus
+    // directory records + junk. Without the strip the overlay would write
+    // everything into a nested `taplop/` shadow tree and the imported
+    // settings/autosave would be invisible to the game (the "nothing
+    // happens" import bug).
+    try stageImportZip(&harness.file_source, scratch, &.{
+        .{ .name = "taplop/", .bytes = "" },
+        .{ .name = "taplop/settings.txt", .bytes = "stripped settings" },
+        .{ .name = "taplop/saves/", .bytes = "" },
+        .{ .name = "taplop/saves/autosave.txt", .bytes = "autosave" },
+        .{ .name = "taplop/.DS_Store", .bytes = "junk" },
+        .{ .name = "__MACOSX/taplop/metadata", .bytes = "junk" },
+    });
+
+    importGameFolder(&history, file_source_mod.game_import_temp_path);
+
+    // The content landed at the persistent-relative paths (the game's own
+    // export shape), nothing nested under a taplop/ subtree.
+    try std.testing.expect(history.session.pending_import_reboot);
+    try std.testing.expectEqual(@as(?[]const u8, null), history.session.pending_error);
+    try std.testing.expectEqualStrings(
+        "stripped settings",
+        try history.file_source.readFile(scratch, "settings.txt"),
+    );
+    try std.testing.expectEqualStrings(
+        "autosave",
+        try history.file_source.readFile(scratch, "saves/autosave.txt"),
+    );
+    try std.testing.expect(!history.file_source.fileExists("taplop/settings.txt"));
+    try std.testing.expect(!history.file_source.fileExists("taplop/.DS_Store"));
 }
 
 test "importGameFolder: the size caps abort before any write" {

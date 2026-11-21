@@ -437,6 +437,7 @@ working rules).
 - [Tooltip text report (the wording-review inventory)](#tooltip-text-report-the-wording-review-inventory)
 - [Mission-complete medal row - the real art + the best-achieved spotlight](#mission-complete-medal-row---the-real-art--the-best-achieved-spotlight)
 - [Padded outline masks - the medal-highlight halo cutoff fix](#padded-outline-masks---the-medal-highlight-halo-cutoff-fix)
+- [Import Game: OS compress-folder zips strip the root folder](#import-game-os-compress-folder-zips-strip-the-root-folder)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -25128,3 +25129,29 @@ emrun smoke (build + serve + the page boots, Module calledRun, rAF at
 
 Verification: 1137 tests (headless suite; the raylib seam itself is
 excluded from it - the runtime drives are the real gate for this class).
+
+## Import Game: OS compress-folder zips strip the root folder
+
+The round trip had a hole on the player side: extract a taplop.zip,
+right-click the folder, "compress" (or zip the game folder any other
+OS way) - every entry is wrapped in `<folder>/...`, and the Import
+Game overlay wrote it all into a nested `taplop/` shadow tree inside
+the persistent dir. The import SUCCEEDED (re-boot included), but the
+game then found no settings/autosave where it looks - a visually
+identical main menu, "nothing happens". Verified against the live
+GitHub Pages build by injecting a real OS-shaped zip of the author's
+persistent dir through the exact upload-leg chain (a fabricated File
+through FileReader -> the marker -> the poll): all 296 entries landed
+under `/taplop/taplop/...`, confirming the shape.
+
+The fix is the established convention, not a new policy: the mission
+import and the campaign import already filter OS junk into a file-entry
+list and strip a single common root folder
+(`zip_reader.stripCommonRootFolder`, mixed shapes strip nothing);
+Import Game simply never got it. `importGameFolder` now builds the
+filtered + stripped list once and every pass (name validation, the
+dry-run decode, the overlay write) iterates it - the per-pass junk
+checks collapsed into the single filter. A test pins the OS shape
+(`taplop/` prefix + directory records + a `.DS_Store` inside the
+wrapper): the content lands at the persistent-relative paths and
+nothing nests.

@@ -2566,8 +2566,13 @@ must be relative, `..`-free, NUL-free, non-absolute, backslash-free (a
 backslash is a malformed or hostile name outright - a superset of
 "`..`-free under both separators") - anything else ABORTS the import with
 the recoverable popup naming the entry; OS-zip junk (directory entries,
-`__MACOSX/`, `._*`, `.DS_Store`) is skipped so an OS "compress folder" zip
-round-trips clean; every name + size cap is validated BEFORE the first
+`__MACOSX/`, `._*`, `.DS_Store`) is skipped and a single common ROOT
+folder is stripped (`zip_reader.stripCommonRootFolder`, the mission +
+campaign imports' convention - an OS "compress folder" zip of the
+extracted game folder wraps everything in `<folder>/...`, and without
+the strip the overlay would write it all into a nested shadow tree the
+game never reads: the imported autosave is invisible, "nothing
+happens"), so an OS "compress folder" zip round-trips clean; every name + size cap is validated BEFORE the first
 write and a full dry-run decode pass runs before the write pass, so a
 hostile OR CORRUPT archive fails WHOLE - the first bad entry is found in
 validation, nothing is ever written (never a half-applied overlay);
