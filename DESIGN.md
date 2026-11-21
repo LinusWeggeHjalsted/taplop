@@ -6023,8 +6023,9 @@ layout + a left inspector + a right metadata sidebar:
   Tiebreaking). Controls per field:
   - name: a text input (see UI Framework → Text input widget). sprite
     id: the centered sprite picker (LANDED - the interim v1 text field
-    is gone); the Mission tab takes priority over Official (custom
-    assets over shipped ones) - see the centered sprite picker below.
+    is gone); the picker opens on the Official tab by default (shipped
+    art is the common pick; the tab is sticky within the session) - see
+    the centered sprite picker below.
   - color_index: inline swatch row (the settings screen's 6-swatch
     player-color row is the precedent) - not a picker.
   - displays_weapons: toggle.

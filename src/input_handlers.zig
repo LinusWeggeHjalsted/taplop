@@ -2263,7 +2263,6 @@ pub fn handleAnytimeInput(
                         .{ .entity_sprite = {} }
                     else
                         .{ .decoration_sprite = {} };
-                    history.session.ui_state.editor_picker_sprite_tab = .mission_local;
                     pushPlayerActionAndDrain(history, .{ .player_open_editor_picker = .{
                         .target = picker_target,
                     } });
@@ -2335,8 +2334,9 @@ pub fn handleAnytimeInput(
             // IO lives at open time, never in the view or handlers; the
             // list is cached on SessionState, re-scanned on every open so
             // a png dropped into the mission dir appears on the next
-            // open). The tab resets to Mission (custom assets take
-            // priority over shipped ones). The picker KIND follows the
+            // open). The tab is STICKY (the select_tab arm is the only
+            // writer - the session default is Official; see
+            // ui/state.zig's field doc). The picker KIND follows the
             // inspector target: the decoration content's row opens the
             // decoration picker (registry-fed Official tab, prefab-adopting
             // commits) - the same panel, target-resolved inside the builder.
@@ -2356,7 +2356,6 @@ pub fn handleAnytimeInput(
                     // never opened one, so ensure it here (the same
                     // loader, idempotent per open).
                     editor_handlers.loadEditorDecorationRegistry(history, history.current_arena.allocator());
-                    history.session.ui_state.editor_picker_sprite_tab = .mission_local;
                     pushPlayerActionAndDrain(history, .{ .player_open_hub_picker = .{
                         .target = .{ .decoration_sprite = {} },
                     } });
@@ -2371,19 +2370,17 @@ pub fn handleAnytimeInput(
                     // opens nothing.
                     .item_type => return,
                 };
-                history.session.ui_state.editor_picker_sprite_tab = .mission_local;
                 pushPlayerActionAndDrain(history, .{ .player_open_editor_picker = .{
                     .target = picker_target,
                 } });
             },
             // A Layers-section sprite button (add + per-layer re-pick): the
-            // same open path - the mission rescan, the Mission-tab reset -
-            // with the picker kind fixed by the button's content and the
-            // layer index riding the payload (null = add mode).
+            // same open path - the mission rescan - with the picker kind
+            // fixed by the button's content and the layer index riding the
+            // payload (null = add mode).
             .open_editor_entity_layer_picker => {
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 mission_io.rescanEditorMissionSprites(history, editor.*);
-                history.session.ui_state.editor_picker_sprite_tab = .mission_local;
                 pushPlayerActionAndDrain(history, .{ .player_open_editor_picker = .{
                     .target = .{ .entity_layer = payloadAs(.editor_layer, clicked_payload) },
                 } });
@@ -2398,7 +2395,6 @@ pub fn handleAnytimeInput(
                     const campaign_editor_state = current.campaign_editor orelse return;
                     rescanHubSprites(history, campaign_editor_state, hub_editor_state);
                     editor_handlers.loadEditorDecorationRegistry(history, history.current_arena.allocator());
-                    history.session.ui_state.editor_picker_sprite_tab = .mission_local;
                     pushPlayerActionAndDrain(history, .{ .player_open_hub_picker = .{
                         .target = .{ .decoration_layer = payloadAs(.editor_layer, clicked_payload) },
                     } });
@@ -2406,7 +2402,6 @@ pub fn handleAnytimeInput(
                 }
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 mission_io.rescanEditorMissionSprites(history, editor.*);
-                history.session.ui_state.editor_picker_sprite_tab = .mission_local;
                 pushPlayerActionAndDrain(history, .{ .player_open_editor_picker = .{
                     .target = .{ .decoration_layer = payloadAs(.editor_layer, clicked_payload) },
                 } });
@@ -3214,15 +3209,13 @@ pub fn handleAnytimeInput(
                 history.session.ui_state.hub_palette_scroll[2] =
                     @intCast(group_size -| ui.editor_palette_max_tools);
                 // Open the picker on the new type (the sprite-row open
-                // branch's rescan + registry ensure; the local tab - the
-                // mission convention).
+                // branch's rescan + registry ensure).
                 rescanHubSprites(
                     history,
                     history.current_state.campaign_editor orelse return,
                     history.current_state.hub_editor orelse return,
                 );
                 editor_handlers.loadEditorDecorationRegistry(history, history.current_arena.allocator());
-                history.session.ui_state.editor_picker_sprite_tab = .mission_local;
                 pushPlayerActionAndDrain(history, .{ .player_open_hub_picker = .{
                     .target = .{ .decoration_sprite = {} },
                 } });

@@ -3234,8 +3234,8 @@ pub const EditorMode = enum {
 /// active. Indices are into the corresponding Editor palette arrays.
 /// Which tab the editor's centered sprite picker is showing (see
 /// DESIGN → Architecture → Level Editor → Editor UI layout - the centered
-/// sprite picker). Mission-local first: custom assets take priority over
-/// shipped ones.
+/// sprite picker). Starts on `.official` (shipped art is the common pick)
+/// and is sticky within the session - the tab select is the only writer.
 pub const EditorSpritePickerTab = enum {
     mission_local,
     official,

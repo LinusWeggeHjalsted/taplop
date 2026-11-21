@@ -224,10 +224,10 @@ pub const UiState = struct {
     editor_inventory_selected_slot: ?u32 = null,
 
     /// Which tab the sprite picker is showing (Mission / Official). View
-    /// affordance - a direct UiState write, off the undo timeline. Reset
-    /// to `.mission_local` on every open (custom assets take priority over
-    /// shipped ones).
-    editor_picker_sprite_tab: types.EditorSpritePickerTab = .mission_local,
+    /// affordance - a direct UiState write, off the undo timeline. Sticky
+    /// across opens within the session (the select_tab arm is the only
+    /// writer); starts on `.official` - the common pick is shipped art.
+    editor_picker_sprite_tab: types.EditorSpritePickerTab = .official,
 
     /// Which editor kind the browser is showing (the kind tab row -
     /// Mission today; Hub / Campaign append when those editors land).

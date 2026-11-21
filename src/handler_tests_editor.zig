@@ -3494,14 +3494,14 @@ test "sprite picker: open scans the mission dir, pick sets the base sprite, same
     runToIdle(&history);
 
     // Open the picker: the mission dir scan lands on SessionState (the
-    // .txt is filtered out), the tab resets to Mission, the target rides
-    // UiState.
+    // .txt is filtered out), the tab is the sticky default (Official for a
+    // fresh session - no per-open reset), the target rides UiState.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_sprite_picker,
     }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.current_state.editor.?.picker != null);
     try testing.expectEqual(types.EditorPickerTarget.entity_sprite, history.current_state.editor.?.picker.?);
-    try testing.expectEqual(types.EditorSpritePickerTab.mission_local, history.session.ui_state.editor_picker_sprite_tab);
+    try testing.expectEqual(types.EditorSpritePickerTab.official, history.session.ui_state.editor_picker_sprite_tab);
     try testing.expectEqual(@as(usize, 1), history.session.editor_mission_sprites.len);
     try testing.expectEqualStrings("boss.png", history.session.editor_mission_sprites[0].file_name);
     // The scan MINTS the namespaced id (session-owned - the pick payload
@@ -3563,12 +3563,17 @@ test "sprite picker: open scans the mission dir, pick sets the base sprite, same
     }, null, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_sprite_tab,
-    }, .{ .editor_sprite_tab = .official }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expectEqual(types.EditorSpritePickerTab.official, history.session.ui_state.editor_picker_sprite_tab);
+    }, .{ .editor_sprite_tab = .mission_local }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(types.EditorSpritePickerTab.mission_local, history.session.ui_state.editor_picker_sprite_tab);
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .close_editor_picker,
     }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.current_state.editor.?.picker == null);
+    // Sticky: the tab survives close + reopen (no per-open reset).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_sprite_picker,
+    }, null, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(types.EditorSpritePickerTab.mission_local, history.session.ui_state.editor_picker_sprite_tab);
 }
 
 test "sprite pick backstop: a wrong-dims custom entity sprite no-ops" {
@@ -3652,7 +3657,7 @@ test "palette + click: default type creation, tool switch, picker routing" {
         history.current_state.editor.?.picker.?,
     );
     try testing.expectEqual(
-        types.EditorSpritePickerTab.mission_local,
+        types.EditorSpritePickerTab.official,
         history.session.ui_state.editor_picker_sprite_tab,
     );
     try testing.expectEqual(@as(usize, 1), history.session.editor_mission_sprites.len);

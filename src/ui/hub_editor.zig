@@ -1799,6 +1799,9 @@ test "buildHubSpritePicker layer mode: local cells match the base dims, add mode
         .{ .file_name = "bush.png", .stored_id = "custom/campaigns/c/hubs/h/bush", .pixel_dims = .{ .x = 512, .y = 256 } },
     };
     var ui_state = ui_state_mod.UiState{};
+    // Both blocks below assert the LOCAL tab's layer filtering, so select
+    // it explicitly rather than leaning on the session default.
+    ui_state.editor_picker_sprite_tab = .mission_local;
 
     // Layer-ADD mode (a null layer index): the local tab offers only the
     // matching sprite; the mismatch is counted in the hidden note;
