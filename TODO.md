@@ -155,22 +155,8 @@ via the session log (logging has landed).
 
 ## Playtest Feedback (friends' reports, post-GitHub-migration)
 
-Six issues reported by friends playing the shipped builds. Five have
-landed (DONE.md); the sixth - momentum out of combat - is implemented
-(see DESIGN → Architecture → Momentum decay), with only its shipped
-validation-replay re-record remaining below.
-
-- **Forest Outskirts validation replay: re-record under the momentum
-      decay (the momentum fix's last part; the decay itself landed -
-      DONE.md, DESIGN → Architecture → Momentum decay).** The shipped
-      recording carries out-of-combat momentum into a later attack, so
-      the decay build's checking replay rejects it (recorded event 97,
-      a bash whose outgoing_damage no longer reproduces). The other
-      four Polpat replays revalidate clean. Re-record = a fresh
-      Validate run of the mission under the new build (the Logging &
-      Replay pre-release policy: re-record, no migration); the fresh
-      run's turn count resets the author medal targets, so it should
-      be a real author playthrough, not a scripted crawl.
+Six issues reported by friends playing the shipped builds. All six have
+landed (DONE.md).
 
 ## Skill Logic
 

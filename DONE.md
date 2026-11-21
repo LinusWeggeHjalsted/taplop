@@ -428,6 +428,7 @@ working rules).
 - [Playtest feedback 2: the mission announcements are ordinary overlay-stack members](#playtest-feedback-2-the-mission-announcements-are-ordinary-overlay-stack-members)
 - [Playtest feedback 1: hidden tabs pause web audio cleanly](#playtest-feedback-1-hidden-tabs-pause-web-audio-cleanly)
 - [Playtest feedback 5: momentum decays out of combat (recent-combat tempo)](#playtest-feedback-5-momentum-decays-out-of-combat-recent-combat-tempo)
+- [Forest Outskirts validation replay re-recorded under the momentum decay](#forest-outskirts-validation-replay-re-recorded-under-the-momentum-decay)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -24823,3 +24824,38 @@ and the fresh run's turn count will reset the author medal targets, so
 it should be a real author playthrough. Rider in the same work: the
 stale DESIGN AI-threat example naming Daze (a removed skill) was fixed
 in the preceding docs commit.
+
+## Forest Outskirts validation replay re-recorded under the momentum decay
+
+The momentum fix's (playtest feedback 5's) last part: the shipped Forest
+Outskirts recording diverged under the decay build (it carried
+out-of-combat momentum into a later bash, recorded event 97), and the
+pre-release policy is re-record, no migration.
+
+The re-record: an author playthrough via the CAMPAIGN-context Validate
+(the persistent-dir campaign copy, not a standalone mission dir). The
+run derived 15 turns - IDENTICAL to the old recording, so the
+personal-best rule did not auto-write (only a strictly-better run
+does); it offered the manual Overwrite Replay button, whose click
+wrote the stashed bytes back to the mission dir the run itself named
+(the self-describing-stash contract - here the CAMPAIGN's missions
+dir, not the standalone missions root, which is why the artifact was
+not where the first disk check looked; the button is functional, the
+check just ran before the click). Mechanism worth the record: under a
+handler-behavior change the personal-best benchmark is the stale
+artifact itself, so an equal-or-slower re-record must ride the manual
+Overwrite button - the designed escape hatch.
+
+The moved artifact: same mission uuid, content hash binding mission
+files byte-identical to the shipped repo copy (diff-verified), recorded
+mission_path rebasing at load (self-contained modulo location). 15
+turns keeps the medal targets unchanged (gold 18 / silver 30 /
+bronze 75). The artifact's `game_version` carries a -dirty dev-build
+stamp - advisory metadata by design (DESIGN → Versioning); no gate
+reads it.
+
+Final verification: the throwaway revalidation diagnostic re-run
+against all five embedded Polpat mission dirs - all VALID under the
+decay build, i.e. the checking replay replays every shipped recording
+end-to-end through the new handler math. With that, all six playtest
+reports are landed.

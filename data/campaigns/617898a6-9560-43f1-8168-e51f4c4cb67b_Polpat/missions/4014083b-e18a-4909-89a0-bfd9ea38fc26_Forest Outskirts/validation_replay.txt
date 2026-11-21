@@ -1,7 +1,7 @@
 Metadata
 file_format_version 3
-game_version 2026.11.242-dirty
-created 20261118_134259
+game_version 2026.11.285-dirty
+created 20261121_123528
 mission_uuid 4014083b-e18a-4909-89a0-bfd9ea38fc26
 content_hash 28504d4363b219fbe84328adb2cf3f1f60576e0f4ab9089a52e722ed442b5244
 
@@ -38,7 +38,7 @@ event level_event player_turn_move
 event_index 7
 event player_input_event player_move_action
 destination -1 1
-force_attack_step false
+force_attack_step true
 
 event_index 8
 event level_event move_entity
@@ -61,273 +61,299 @@ event level_event clear_highlights
 
 event_index 13
 event level_event player_turn_attack
-force_attack_step false
+force_attack_step true
 
 event_index 14
+event player_input_event player_skip_attack
+
+event_index 15
+event level_event clear_prepared_skill
+
+event_index 16
+event level_event clear_highlights
+
+event_index 17
 event level_event turn_end
 entity_index 0
 
-event_index 15
+event_index 18
 event level_event turn_start
 entity_index 0
 
-event_index 16
+event_index 19
 event level_event player_turn_move
 
-event_index 17
+event_index 20
 event player_input_event player_move_action
 destination 0 2
 force_attack_step true
 
-event_index 18
+event_index 21
 event level_event move_entity
 entity_index 0
 destination 0 2
 is_forced false
 
-event_index 19
+event_index 22
 event sub_level_event pickup_around
 entity_index 0
 
-event_index 20
+event_index 23
 event sub_level_event pickup_items
 entity_index 0
 position 0 2
 
-event_index 21
+event_index 24
 event sub_level_event aggro_check
 
-event_index 22
+event_index 25
 event sub_level_event check_level_end
 
-event_index 23
+event_index 26
 event level_event clear_highlights
 
-event_index 24
+event_index 27
 event level_event player_turn_attack
 force_attack_step true
 
-event_index 25
-event player_input_event player_toggle_ui_surface
-surface inventory
-
-event_index 26
-event meta_event toggle_ui_surface
-surface inventory
-
-event_index 27
-event player_input_event player_use_inventory_item
-inventory_slot_index 0
-off_hand false
-
 event_index 28
-event player_event equip_item
-inventory_slot_index 0
-gear_slot boots
-
-event_index 29
-event player_input_event player_toggle_ui_surface
-surface inventory
-
-event_index 30
-event meta_event toggle_ui_surface
-surface inventory
-
-event_index 31
 event player_input_event swap_hands
 
-event_index 32
+event_index 29
 event player_input_event player_prepare_skill
 caster_index 0
 skill_id flash_strike
 
-event_index 33
+event_index 30
 event level_event highlight_tiles
 tile_positions 1 -1 2 -1 3 -1 0 0 3 0 -1 1 3 1
 
-event_index 34
+event_index 31
 event player_input_event player_use_skill
 skill_id flash_strike
 target 3 1
 
-event_index 35
+event_index 32
 event level_event clear_prepared_skill
 
-event_index 36
+event_index 33
 event level_event clear_highlights
 
-event_index 37
+event_index 34
 event level_event use_skill
 caster_index 0
 skill_id flash_strike
 target 3 1
 
-event_index 38
+event_index 35
 event level_event move_entity
 entity_index 0
 destination 3 1
 is_forced false
 
-event_index 39
+event_index 36
 event sub_level_event pickup_around
+entity_index 0
+
+event_index 37
+event sub_level_event aggro_check
+
+event_index 38
+event sub_level_event check_level_end
+
+event_index 39
+event level_event turn_end
 entity_index 0
 
 event_index 40
-event sub_level_event aggro_check
-
-event_index 41
-event sub_level_event check_level_end
-
-event_index 42
-event level_event turn_end
-entity_index 0
-
-event_index 43
 event level_event turn_start
 entity_index 0
 
-event_index 44
+event_index 41
 event level_event player_turn_move
 
+event_index 42
+event player_input_event player_toggle_ui_surface
+surface inventory
+
+event_index 43
+event meta_event toggle_ui_surface
+surface inventory
+
+event_index 44
+event player_input_event player_use_inventory_item
+inventory_slot_index 0
+off_hand false
+
 event_index 45
-event player_input_event player_move_action
-destination 5 0
-force_attack_step false
+event player_event equip_item
+inventory_slot_index 0
+gear_slot boots
 
 event_index 46
+event player_input_event player_salvage_inventory_item
+inventory_slot_index 0
+
+event_index 47
+event player_event salvage_item
+inventory_slot_index 0
+
+event_index 48
+event player_input_event player_toggle_ui_surface
+surface inventory
+
+event_index 49
+event meta_event toggle_ui_surface
+surface inventory
+
+event_index 50
+event player_input_event player_move_action
+destination 5 0
+force_attack_step true
+
+event_index 51
 event level_event move_entity
 entity_index 0
 destination 5 0
 is_forced false
 
-event_index 47
-event sub_level_event pickup_around
-entity_index 0
-
-event_index 48
-event sub_level_event aggro_check
-
-event_index 49
-event sub_level_event check_level_end
-
-event_index 50
-event level_event clear_highlights
-
-event_index 51
-event level_event player_turn_attack
-force_attack_step false
-
 event_index 52
-event level_event turn_end
+event sub_level_event pickup_around
 entity_index 0
 
 event_index 53
+event sub_level_event aggro_check
+
+event_index 54
+event sub_level_event check_level_end
+
+event_index 55
+event level_event clear_highlights
+
+event_index 56
+event level_event player_turn_attack
+force_attack_step true
+
+event_index 57
+event player_input_event player_skip_attack
+
+event_index 58
+event level_event clear_prepared_skill
+
+event_index 59
+event level_event clear_highlights
+
+event_index 60
+event level_event turn_end
+entity_index 0
+
+event_index 61
 event level_event turn_start
 entity_index 0
 
-event_index 54
+event_index 62
 event level_event player_turn_move
 
-event_index 55
+event_index 63
 event player_input_event player_move_action
 destination 7 0
 force_attack_step true
 
-event_index 56
+event_index 64
 event level_event move_entity
 entity_index 0
 destination 7 0
 is_forced false
 
-event_index 57
+event_index 65
 event sub_level_event pickup_around
 entity_index 0
 
-event_index 58
+event_index 66
 event sub_level_event aggro_check
 
-event_index 59
+event_index 67
 event sub_level_event check_level_end
 
-event_index 60
+event_index 68
 event level_event clear_highlights
 
-event_index 61
+event_index 69
 event level_event player_turn_attack
 force_attack_step true
 
-event_index 62
+event_index 70
 event player_input_event swap_hands
 
-event_index 63
+event_index 71
 event player_input_event player_use_skill
 skill_id reflect
 
-event_index 64
+event_index 72
 event level_event clear_prepared_skill
 
-event_index 65
+event_index 73
 event level_event clear_highlights
 
-event_index 66
+event_index 74
 event level_event use_skill
 caster_index 0
 skill_id reflect
 
-event_index 67
+event_index 75
 event sub_level_event create_effect
 caster_index 0
 receiver_index 0
 effect_id reflect
 duration 1
 
-event_index 68
+event_index 76
 event level_event turn_end
 entity_index 0
 
-event_index 69
+event_index 77
 event level_event turn_start
 entity_index 2
 
-event_index 70
+event_index 78
 event level_event enemy_turn_move
 entity_index 2
 
-event_index 71
+event_index 79
 event meta_event wait
 duration_milliseconds 500
 
-event_index 72
+event_index 80
 event level_event move_entity
 entity_index 2
 destination 8 -1
 is_forced false
 
-event_index 73
+event_index 81
 event sub_level_event pickup_around
 entity_index 2
 
-event_index 74
+event_index 82
 event sub_level_event aggro_check
 
-event_index 75
+event_index 83
 event sub_level_event check_level_end
 
-event_index 76
+event_index 84
 event level_event enemy_turn_attack
 entity_index 2
 
-event_index 77
+event_index 85
 event meta_event wait
 duration_milliseconds 500
 
-event_index 78
+event_index 86
 event level_event use_skill
 caster_index 2
 skill_id impale
 target 7 0
 
-event_index 79
+event_index 87
 event sub_level_event attack
 attacker_index 2
 defender_index 0
@@ -335,10 +361,10 @@ outgoing_damage 7
 triggers_effects true
 heals_attacker false
 
-event_index 80
+event_index 88
 event meta_event accelerating_wait
 
-event_index 81
+event_index 89
 event sub_level_event damage
 attacker_index 2
 defender_index 0
@@ -346,7 +372,7 @@ amount 0
 triggers_effects true
 heals_attacker false
 
-event_index 82
+event_index 90
 event sub_level_event attack
 attacker_index 0
 defender_index 2
@@ -354,10 +380,10 @@ outgoing_damage 7
 triggers_effects false
 heals_attacker false
 
-event_index 83
+event_index 91
 event meta_event accelerating_wait
 
-event_index 84
+event_index 92
 event sub_level_event damage
 attacker_index 0
 defender_index 2
@@ -365,148 +391,113 @@ amount 7
 triggers_effects false
 heals_attacker false
 
-event_index 85
+event_index 93
 event level_event turn_end
 entity_index 2
 
-event_index 86
+event_index 94
 event level_event turn_start
 entity_index 0
 
-event_index 87
+event_index 95
 event level_event player_turn_move
 
-event_index 88
+event_index 96
 event sub_level_event end_effect
 entity_index 0
 effect_id reflect
 
-event_index 89
-event player_input_event swap_hands
-
-event_index 90
+event_index 97
 event player_input_event player_skip_move_to_skill
-skill_id bash
+skill_id slice
 target 8 -1
 prepare false
 
-event_index 91
+event_index 98
 event level_event clear_highlights
 
-event_index 92
+event_index 99
 event level_event player_turn_attack
 force_attack_step true
 
-event_index 93
-event player_input_event player_use_skill
-skill_id bash
-target 8 -1
-
-event_index 94
+event_index 100
 event level_event clear_prepared_skill
 
-event_index 95
+event_index 101
 event level_event clear_highlights
 
-event_index 96
+event_index 102
 event level_event use_skill
 caster_index 0
-skill_id bash
+skill_id slice
 target 8 -1
 
-event_index 97
+event_index 103
 event sub_level_event attack
 attacker_index 0
 defender_index 2
-outgoing_damage 6
+outgoing_damage 4
 triggers_effects true
 heals_attacker false
-
-event_index 98
-event meta_event accelerating_wait
-
-event_index 99
-event sub_level_event damage
-attacker_index 0
-defender_index 2
-amount 6
-triggers_effects true
-heals_attacker false
-
-event_index 100
-event meta_event accelerating_wait
-
-event_index 101
-event sub_level_event knockback
-attacker_index 0
-defender_index 2
-distance 1
-knockback_damage 3
-
-event_index 102
-event sub_level_event collision
-attacker_index 0
-defender_index 2
-damage 3
-
-event_index 103
-event meta_event accelerating_wait
 
 event_index 104
+event meta_event accelerating_wait
+
+event_index 105
 event sub_level_event damage
 attacker_index 0
 defender_index 2
-amount 3
+amount 4
 triggers_effects true
 heals_attacker false
 
-event_index 105
+event_index 106
 event level_event turn_end
 entity_index 0
 
-event_index 106
+event_index 107
 event level_event turn_start
 entity_index 2
 
-event_index 107
+event_index 108
 event level_event enemy_turn_move
 entity_index 2
 
-event_index 108
+event_index 109
 event meta_event wait
 duration_milliseconds 500
 
-event_index 109
+event_index 110
 event level_event move_entity
 entity_index 2
 destination 8 -2
 is_forced false
 
-event_index 110
+event_index 111
 event sub_level_event pickup_around
 entity_index 2
 
-event_index 111
+event_index 112
 event sub_level_event aggro_check
 
-event_index 112
+event_index 113
 event sub_level_event check_level_end
 
-event_index 113
+event_index 114
 event level_event enemy_turn_attack
 entity_index 2
 
-event_index 114
+event_index 115
 event meta_event wait
 duration_milliseconds 500
 
-event_index 115
+event_index 116
 event level_event use_skill
 caster_index 2
 skill_id toss
 target 7 0
 
-event_index 116
+event_index 117
 event sub_level_event attack
 attacker_index 2
 defender_index 0
@@ -514,10 +505,10 @@ outgoing_damage 5
 triggers_effects true
 heals_attacker false
 
-event_index 117
+event_index 118
 event meta_event accelerating_wait
 
-event_index 118
+event_index 119
 event sub_level_event damage
 attacker_index 2
 defender_index 0
@@ -525,55 +516,52 @@ amount 5
 triggers_effects true
 heals_attacker false
 
-event_index 119
+event_index 120
 event meta_event accelerating_wait
 
-event_index 120
+event_index 121
 event sub_level_event change_momentum
 entity_index 2
 delta 1
 
-event_index 121
+event_index 122
 event level_event turn_end
 entity_index 2
 
-event_index 122
+event_index 123
 event level_event turn_start
 entity_index 0
 
-event_index 123
+event_index 124
 event level_event player_turn_move
 
-event_index 124
+event_index 125
 event player_input_event player_move_action
 destination 8 -1
 force_attack_step false
 
-event_index 125
+event_index 126
 event level_event move_entity
 entity_index 0
 destination 8 -1
 is_forced false
 
-event_index 126
+event_index 127
 event sub_level_event pickup_around
 entity_index 0
 
-event_index 127
+event_index 128
 event sub_level_event aggro_check
 
-event_index 128
+event_index 129
 event sub_level_event check_level_end
 
-event_index 129
+event_index 130
 event level_event clear_highlights
 
-event_index 130
+event_index 131
 event level_event player_turn_attack
 force_attack_step false
-
-event_index 131
-event player_input_event swap_hands
 
 event_index 132
 event player_input_event player_use_skill
@@ -596,7 +584,7 @@ event_index 136
 event sub_level_event attack
 attacker_index 0
 defender_index 2
-outgoing_damage 9
+outgoing_damage 7
 triggers_effects true
 heals_attacker false
 
@@ -607,153 +595,163 @@ event_index 138
 event sub_level_event damage
 attacker_index 0
 defender_index 2
-amount 9
+amount 7
 triggers_effects true
 heals_attacker false
 
 event_index 139
-event sub_level_event death
-entity_index 2
-
-event_index 140
-event sub_level_event check_level_end
-
-event_index 141
 event level_event turn_end
 entity_index 0
 
+event_index 140
+event level_event turn_start
+entity_index 2
+
+event_index 141
+event level_event enemy_turn_move
+entity_index 2
+
 event_index 142
+event level_event enemy_turn_attack
+entity_index 2
+
+event_index 143
+event meta_event wait
+duration_milliseconds 500
+
+event_index 144
+event level_event use_skill
+caster_index 2
+skill_id impale
+target 8 -1
+
+event_index 145
+event sub_level_event attack
+attacker_index 2
+defender_index 0
+outgoing_damage 10
+triggers_effects true
+heals_attacker false
+
+event_index 146
+event meta_event accelerating_wait
+
+event_index 147
+event sub_level_event damage
+attacker_index 2
+defender_index 0
+amount 10
+triggers_effects true
+heals_attacker false
+
+event_index 148
+event level_event turn_end
+entity_index 2
+
+event_index 149
 event level_event turn_start
 entity_index 0
 
-event_index 143
+event_index 150
 event level_event player_turn_move
 
-event_index 144
+event_index 151
+event player_input_event player_skip_move_to_skill
+skill_id slice
+target 8 -2
+prepare false
+
+event_index 152
+event level_event clear_highlights
+
+event_index 153
+event level_event player_turn_attack
+force_attack_step true
+
+event_index 154
+event level_event clear_prepared_skill
+
+event_index 155
+event level_event clear_highlights
+
+event_index 156
+event level_event use_skill
+caster_index 0
+skill_id slice
+target 8 -2
+
+event_index 157
+event sub_level_event attack
+attacker_index 0
+defender_index 2
+outgoing_damage 7
+triggers_effects true
+heals_attacker false
+
+event_index 158
+event meta_event accelerating_wait
+
+event_index 159
+event sub_level_event damage
+attacker_index 0
+defender_index 2
+amount 7
+triggers_effects true
+heals_attacker false
+
+event_index 160
+event sub_level_event death
+entity_index 2
+
+event_index 161
+event sub_level_event check_level_end
+
+event_index 162
+event level_event turn_end
+entity_index 0
+
+event_index 163
+event level_event turn_start
+entity_index 0
+
+event_index 164
+event level_event player_turn_move
+
+event_index 165
 event player_input_event player_move_action
 destination 8 -2
 force_attack_step true
 
-event_index 145
+event_index 166
 event level_event move_entity
 entity_index 0
 destination 8 -2
 is_forced false
 
-event_index 146
+event_index 167
 event sub_level_event pickup_around
 entity_index 0
 
-event_index 147
+event_index 168
 event sub_level_event pickup_items
 entity_index 0
 position 8 -2
 
-event_index 148
+event_index 169
 event sub_level_event aggro_check
 
-event_index 149
+event_index 170
 event sub_level_event check_level_end
 
-event_index 150
+event_index 171
 event level_event clear_highlights
 
-event_index 151
+event_index 172
 event level_event player_turn_attack
 force_attack_step true
 
-event_index 152
-event player_input_event swap_hands
-
-event_index 153
-event player_input_event player_toggle_ui_surface
-surface inventory
-
-event_index 154
-event meta_event toggle_ui_surface
-surface inventory
-
-event_index 155
-event player_input_event player_use_inventory_item
-inventory_slot_index 2
-off_hand false
-
-event_index 156
-event player_event equip_item
-inventory_slot_index 2
-gear_slot pants
-
-event_index 157
-event player_input_event player_swap_inventory_items
-slot_a_index 1
-slot_b_index 95
-
-event_index 158
-event player_event swap_inventory_items
-slot_a_index 1
-slot_b_index 95
-
-event_index 159
-event player_input_event player_use_skill
-skill_id flash_strike
-target 8 -3
-
-event_index 160
-event level_event clear_prepared_skill
-
-event_index 161
-event level_event clear_highlights
-
-event_index 162
-event level_event use_skill
-caster_index 0
-skill_id flash_strike
-target 8 -3
-
-event_index 163
-event level_event move_entity
-entity_index 0
-destination 8 -3
-is_forced false
-
-event_index 164
-event sub_level_event pickup_around
-entity_index 0
-
-event_index 165
-event sub_level_event aggro_check
-
-event_index 166
-event sub_level_event check_level_end
-
-event_index 167
-event meta_event end_level
-continuation default
-suppress_return_hub false
-
-event_index 168
-event super_event build_data_from_player
-entity_index 0
-
-event_index 169
-event meta_event start_level
-mission_path campaigns/617898a6-9560-43f1-8168-e51f4c4cb67b_Polpat/missions/4014083b-e18a-4909-89a0-bfd9ea38fc26_Forest Outskirts
-level_index 2
-sets_checkpoint true
-
-event_index 170
-event super_event build_player_from_data
-entity_index 0
-
-event_index 171
-event sub_level_event aggro_check
-
-event_index 172
-event level_event turn_start
-entity_index 0
-
 event_index 173
-event level_event player_turn_move
+event player_input_event swap_hands
 
 event_index 174
 event player_input_event player_toggle_ui_surface
@@ -764,113 +762,181 @@ event meta_event toggle_ui_surface
 surface inventory
 
 event_index 176
-event player_input_event player_salvage_inventory_item
-inventory_slot_index 2
+event player_input_event player_use_inventory_item
+inventory_slot_index 1
+off_hand false
 
 event_index 177
-event player_event salvage_item
-inventory_slot_index 2
+event player_event equip_item
+inventory_slot_index 1
+gear_slot pants
 
 event_index 178
-event player_input_event player_salvage_inventory_item
-inventory_slot_index 0
+event player_input_event player_swap_inventory_items
+slot_a_index 0
+slot_b_index 95
 
 event_index 179
-event player_event salvage_item
-inventory_slot_index 0
+event player_event swap_inventory_items
+slot_a_index 0
+slot_b_index 95
 
 event_index 180
-event player_input_event player_toggle_ui_surface
-surface inventory
+event player_input_event player_use_inventory_item
+inventory_slot_index 95
+off_hand false
 
 event_index 181
-event meta_event toggle_ui_surface
-surface inventory
+event player_event equip_item
+inventory_slot_index 95
+gear_slot main_hand
 
 event_index 182
-event player_input_event player_move_action
-destination 2 -2
-force_attack_step false
+event player_input_event player_use_skill
+skill_id flash_strike
+target 8 -3
 
 event_index 183
+event level_event clear_prepared_skill
+
+event_index 184
+event level_event clear_highlights
+
+event_index 185
+event level_event use_skill
+caster_index 0
+skill_id flash_strike
+target 8 -3
+
+event_index 186
+event level_event move_entity
+entity_index 0
+destination 8 -3
+is_forced false
+
+event_index 187
+event sub_level_event pickup_around
+entity_index 0
+
+event_index 188
+event sub_level_event aggro_check
+
+event_index 189
+event sub_level_event check_level_end
+
+event_index 190
+event meta_event end_level
+continuation default
+suppress_return_hub false
+
+event_index 191
+event super_event build_data_from_player
+entity_index 0
+
+event_index 192
+event meta_event start_level
+mission_path campaigns/617898a6-9560-43f1-8168-e51f4c4cb67b_Polpat/missions/4014083b-e18a-4909-89a0-bfd9ea38fc26_Forest Outskirts
+level_index 2
+sets_checkpoint true
+
+event_index 193
+event super_event build_player_from_data
+entity_index 0
+
+event_index 194
+event sub_level_event aggro_check
+
+event_index 195
+event level_event turn_start
+entity_index 0
+
+event_index 196
+event level_event player_turn_move
+
+event_index 197
+event player_input_event player_move_action
+destination 2 -2
+force_attack_step true
+
+event_index 198
 event level_event move_entity
 entity_index 0
 destination 2 -2
 is_forced false
 
-event_index 184
+event_index 199
 event sub_level_event pickup_around
 entity_index 0
 
-event_index 185
+event_index 200
 event sub_level_event aggro_check
 
-event_index 186
+event_index 201
 event sub_level_event check_level_end
 
-event_index 187
+event_index 202
 event level_event clear_highlights
 
-event_index 188
+event_index 203
 event level_event player_turn_attack
-force_attack_step false
+force_attack_step true
 
-event_index 189
+event_index 204
 event player_input_event player_skip_attack
 
-event_index 190
+event_index 205
 event level_event clear_prepared_skill
 
-event_index 191
+event_index 206
 event level_event clear_highlights
 
-event_index 192
+event_index 207
 event level_event turn_end
 entity_index 0
 
-event_index 193
+event_index 208
 event level_event turn_start
 entity_index 2
 
-event_index 194
+event_index 209
 event level_event enemy_turn_move
 entity_index 2
 
-event_index 195
+event_index 210
 event meta_event wait
 duration_milliseconds 500
 
-event_index 196
+event_index 211
 event level_event move_entity
 entity_index 2
 destination 3 -8
 is_forced false
 
-event_index 197
+event_index 212
 event sub_level_event pickup_around
 entity_index 2
 
-event_index 198
+event_index 213
 event sub_level_event aggro_check
 
-event_index 199
+event_index 214
 event sub_level_event check_level_end
 
-event_index 200
+event_index 215
 event level_event enemy_turn_attack
 entity_index 2
 
-event_index 201
+event_index 216
 event meta_event wait
 duration_milliseconds 500
 
-event_index 202
+event_index 217
 event level_event use_skill
 caster_index 2
 skill_id toss
 target 5 -8
 
-event_index 203
+event_index 218
 event sub_level_event attack
 attacker_index 2
 defender_index 1
@@ -878,10 +944,10 @@ outgoing_damage 4
 triggers_effects true
 heals_attacker false
 
-event_index 204
+event_index 219
 event meta_event accelerating_wait
 
-event_index 205
+event_index 220
 event sub_level_event damage
 attacker_index 2
 defender_index 1
@@ -889,109 +955,109 @@ amount 4
 triggers_effects true
 heals_attacker false
 
-event_index 206
+event_index 221
 event meta_event accelerating_wait
 
-event_index 207
+event_index 222
 event sub_level_event change_momentum
 entity_index 2
 delta 1
 
-event_index 208
+event_index 223
 event level_event turn_end
 entity_index 2
 
-event_index 209
+event_index 224
 event level_event turn_start
 entity_index 1
 
-event_index 210
+event_index 225
 event level_event enemy_turn_move
 entity_index 1
 
-event_index 211
+event_index 226
 event meta_event wait
 duration_milliseconds 500
 
-event_index 212
+event_index 227
 event level_event move_entity
 entity_index 1
 destination 4 -8
 is_forced false
 
-event_index 213
+event_index 228
 event sub_level_event pickup_around
 entity_index 1
 
-event_index 214
+event_index 229
 event sub_level_event aggro_check
 
-event_index 215
+event_index 230
 event sub_level_event check_level_end
 
-event_index 216
+event_index 231
 event level_event enemy_turn_attack
 entity_index 1
 
-event_index 217
+event_index 232
 event meta_event wait
 duration_milliseconds 500
 
-event_index 218
+event_index 233
 event level_event use_skill
 caster_index 1
 skill_id howl
 
-event_index 219
+event_index 234
 event sub_level_event aggro_in_radius
 entity_index 1
 radius 16
 
-event_index 220
+event_index 235
 event level_event enemy_turn_attack
 entity_index 1
 
-event_index 221
+event_index 236
 event meta_event wait
 duration_milliseconds 500
 
-event_index 222
+event_index 237
 event level_event use_skill
 caster_index 1
 skill_id blink
 target 4 -9
 
-event_index 223
+event_index 238
 event level_event move_entity
 entity_index 1
 destination 4 -9
 is_forced false
 
-event_index 224
+event_index 239
 event sub_level_event pickup_around
 entity_index 1
 
-event_index 225
+event_index 240
 event sub_level_event aggro_check
 
-event_index 226
+event_index 241
 event sub_level_event check_level_end
 
-event_index 227
+event_index 242
 event level_event enemy_turn_attack
 entity_index 1
 
-event_index 228
+event_index 243
 event meta_event wait
 duration_milliseconds 500
 
-event_index 229
+event_index 244
 event level_event use_skill
 caster_index 1
 skill_id slice
 target 3 -8
 
-event_index 230
+event_index 245
 event sub_level_event attack
 attacker_index 1
 defender_index 2
@@ -999,10 +1065,10 @@ outgoing_damage 5
 triggers_effects true
 heals_attacker false
 
-event_index 231
+event_index 246
 event meta_event accelerating_wait
 
-event_index 232
+event_index 247
 event sub_level_event damage
 attacker_index 1
 defender_index 2
@@ -1010,202 +1076,136 @@ amount 5
 triggers_effects true
 heals_attacker false
 
-event_index 233
+event_index 248
 event level_event turn_end
 entity_index 1
 
-event_index 234
+event_index 249
 event level_event turn_start
 entity_index 0
 
-event_index 235
+event_index 250
 event level_event player_turn_move
 
-event_index 236
+event_index 251
 event player_input_event player_move_action
-destination 4 -3
-force_attack_step false
+destination 4 -4
+force_attack_step true
 
-event_index 237
+event_index 252
 event level_event move_entity
 entity_index 0
-destination 4 -3
+destination 4 -4
 is_forced false
 
-event_index 238
+event_index 253
 event sub_level_event pickup_around
 entity_index 0
 
-event_index 239
+event_index 254
 event sub_level_event aggro_check
 
-event_index 240
+event_index 255
 event sub_level_event check_level_end
 
-event_index 241
+event_index 256
 event level_event clear_highlights
 
-event_index 242
+event_index 257
 event level_event player_turn_attack
-force_attack_step false
+force_attack_step true
 
-event_index 243
+event_index 258
+event player_input_event player_prepare_skill
+caster_index 0
+skill_id flash_strike
+
+event_index 259
+event level_event highlight_tiles
+tile_positions 2 -7 3 -7 4 -7 3 -6 3 -5 4 -5 3 -4 5 -4 2 -3 3 -3 4 -3 6 -3 1 -2 2 -2 5 -2 6 -2 1 -1 2 -1
+
+event_index 260
 event player_input_event player_use_skill
 skill_id flash_strike
-target 6 -3
+target 2 -7
 
-event_index 244
+event_index 261
 event level_event clear_prepared_skill
 
-event_index 245
+event_index 262
 event level_event clear_highlights
 
-event_index 246
+event_index 263
 event level_event use_skill
 caster_index 0
 skill_id flash_strike
-target 6 -3
-
-event_index 247
-event level_event move_entity
-entity_index 0
-destination 6 -3
-is_forced false
-
-event_index 248
-event sub_level_event pickup_around
-entity_index 0
-
-event_index 249
-event sub_level_event aggro_check
-
-event_index 250
-event sub_level_event check_level_end
-
-event_index 251
-event meta_event accelerating_wait
-
-event_index 252
-event sub_level_event attack
-attacker_index 0
-defender_index 3
-outgoing_damage 4
-triggers_effects true
-heals_attacker false
-
-event_index 253
-event meta_event accelerating_wait
-
-event_index 254
-event sub_level_event damage
-attacker_index 0
-defender_index 3
-amount 4
-triggers_effects true
-heals_attacker false
-
-event_index 255
-event level_event turn_end
-entity_index 0
-
-event_index 256
-event level_event turn_start
-entity_index 3
-
-event_index 257
-event level_event enemy_turn_move
-entity_index 3
-
-event_index 258
-event level_event enemy_turn_attack
-entity_index 3
-
-event_index 259
-event meta_event wait
-duration_milliseconds 500
-
-event_index 260
-event level_event use_skill
-caster_index 3
-skill_id blink
-target 5 -4
-
-event_index 261
-event level_event move_entity
-entity_index 3
-destination 5 -4
-is_forced false
-
-event_index 262
-event sub_level_event pickup_around
-entity_index 3
-
-event_index 263
-event sub_level_event aggro_check
+target 2 -7
 
 event_index 264
-event sub_level_event check_level_end
+event level_event move_entity
+entity_index 0
+destination 2 -7
+is_forced false
 
 event_index 265
-event level_event enemy_turn_attack
-entity_index 3
+event sub_level_event pickup_around
+entity_index 0
 
 event_index 266
-event meta_event wait
-duration_milliseconds 500
+event sub_level_event aggro_check
 
 event_index 267
-event level_event use_skill
-caster_index 3
-skill_id slice
-target 6 -3
+event sub_level_event check_level_end
 
 event_index 268
+event meta_event accelerating_wait
+
+event_index 269
 event sub_level_event attack
-attacker_index 3
-defender_index 0
+attacker_index 0
+defender_index 2
 outgoing_damage 4
 triggers_effects true
 heals_attacker false
 
-event_index 269
+event_index 270
 event meta_event accelerating_wait
 
-event_index 270
+event_index 271
 event sub_level_event damage
-attacker_index 3
-defender_index 0
+attacker_index 0
+defender_index 2
 amount 4
 triggers_effects true
 heals_attacker false
 
-event_index 271
-event level_event turn_end
-entity_index 3
-
 event_index 272
-event level_event turn_start
-entity_index 2
+event level_event turn_end
+entity_index 0
 
 event_index 273
-event level_event enemy_turn_move
+event level_event turn_start
 entity_index 2
 
 event_index 274
-event level_event enemy_turn_attack
+event level_event enemy_turn_move
 entity_index 2
 
 event_index 275
+event level_event enemy_turn_attack
+entity_index 2
+
+event_index 276
 event meta_event wait
 duration_milliseconds 500
 
-event_index 276
+event_index 277
 event level_event use_skill
 caster_index 2
 skill_id impale
 target 4 -9
 
-event_index 277
+event_index 278
 event sub_level_event attack
 attacker_index 2
 defender_index 1
@@ -1213,10 +1213,10 @@ outgoing_damage 10
 triggers_effects true
 heals_attacker false
 
-event_index 278
+event_index 279
 event meta_event accelerating_wait
 
-event_index 279
+event_index 280
 event sub_level_event damage
 attacker_index 2
 defender_index 1
@@ -1224,20 +1224,16 @@ amount 10
 triggers_effects true
 heals_attacker false
 
-event_index 280
+event_index 281
 event level_event turn_end
 entity_index 2
 
-event_index 281
+event_index 282
 event level_event turn_start
 entity_index 1
 
-event_index 282
-event level_event enemy_turn_move
-entity_index 1
-
 event_index 283
-event level_event enemy_turn_attack
+event level_event enemy_turn_move
 entity_index 1
 
 event_index 284
@@ -1245,143 +1241,136 @@ event meta_event wait
 duration_milliseconds 500
 
 event_index 285
-event level_event use_skill
-caster_index 1
-skill_id slice
-target 3 -8
+event level_event move_entity
+entity_index 1
+destination 3 -7
+is_forced false
 
 event_index 286
-event sub_level_event attack
-attacker_index 1
-defender_index 2
-outgoing_damage 5
-triggers_effects true
-heals_attacker false
+event sub_level_event pickup_around
+entity_index 1
 
 event_index 287
-event meta_event accelerating_wait
+event sub_level_event aggro_check
 
 event_index 288
-event sub_level_event damage
-attacker_index 1
-defender_index 2
-amount 5
-triggers_effects true
-heals_attacker false
+event sub_level_event check_level_end
 
 event_index 289
-event level_event turn_end
+event level_event enemy_turn_attack
 entity_index 1
 
 event_index 290
-event level_event turn_start
-entity_index 0
+event meta_event wait
+duration_milliseconds 500
 
 event_index 291
-event level_event player_turn_move
+event level_event use_skill
+caster_index 1
+skill_id spinblade
 
 event_index 292
-event player_input_event player_move_action
-destination 4 -3
-force_attack_step false
-
-event_index 293
-event level_event move_entity
-entity_index 0
-destination 4 -3
-is_forced false
-
-event_index 294
-event sub_level_event pickup_around
-entity_index 0
-
-event_index 295
-event sub_level_event aggro_check
-
-event_index 296
-event sub_level_event check_level_end
-
-event_index 297
-event level_event clear_highlights
-
-event_index 298
-event level_event player_turn_attack
-force_attack_step false
-
-event_index 299
-event player_input_event player_use_skill
-skill_id bash
-target 5 -4
-
-event_index 300
-event level_event clear_prepared_skill
-
-event_index 301
-event level_event clear_highlights
-
-event_index 302
-event level_event use_skill
-caster_index 0
-skill_id bash
-target 5 -4
-
-event_index 303
 event sub_level_event attack
-attacker_index 0
-defender_index 3
+attacker_index 1
+defender_index 2
 outgoing_damage 5
 triggers_effects true
 heals_attacker false
 
-event_index 304
+event_index 293
 event meta_event accelerating_wait
 
-event_index 305
+event_index 294
 event sub_level_event damage
-attacker_index 0
-defender_index 3
+attacker_index 1
+defender_index 2
 amount 5
 triggers_effects true
 heals_attacker false
 
-event_index 306
+event_index 295
 event meta_event accelerating_wait
 
-event_index 307
-event sub_level_event knockback
-attacker_index 0
-defender_index 3
-distance 1
-knockback_damage 2
-
-event_index 308
-event sub_level_event collision
-attacker_index 0
-defender_index 3
-damage 2
-
-event_index 309
-event meta_event accelerating_wait
-
-event_index 310
-event sub_level_event damage
-attacker_index 0
-defender_index 3
-amount 2
+event_index 296
+event sub_level_event attack
+attacker_index 1
+defender_index 0
+outgoing_damage 5
 triggers_effects true
 heals_attacker false
 
-event_index 311
-event level_event turn_end
-entity_index 0
+event_index 297
+event meta_event accelerating_wait
 
-event_index 312
+event_index 298
+event sub_level_event damage
+attacker_index 1
+defender_index 0
+amount 5
+triggers_effects true
+heals_attacker false
+
+event_index 299
+event level_event turn_end
+entity_index 1
+
+event_index 300
 event level_event turn_start
 entity_index 3
 
-event_index 313
+event_index 301
 event level_event enemy_turn_move
 entity_index 3
+
+event_index 302
+event meta_event wait
+duration_milliseconds 500
+
+event_index 303
+event level_event move_entity
+entity_index 3
+destination 5 -4
+is_forced false
+
+event_index 304
+event sub_level_event pickup_around
+entity_index 3
+
+event_index 305
+event sub_level_event aggro_check
+
+event_index 306
+event sub_level_event check_level_end
+
+event_index 307
+event level_event enemy_turn_attack
+entity_index 3
+
+event_index 308
+event meta_event wait
+duration_milliseconds 500
+
+event_index 309
+event level_event use_skill
+caster_index 3
+skill_id blink
+target 4 -7
+
+event_index 310
+event level_event move_entity
+entity_index 3
+destination 4 -7
+is_forced false
+
+event_index 311
+event sub_level_event pickup_around
+entity_index 3
+
+event_index 312
+event sub_level_event aggro_check
+
+event_index 313
+event sub_level_event check_level_end
 
 event_index 314
 event level_event enemy_turn_attack
@@ -1395,13 +1384,13 @@ event_index 316
 event level_event use_skill
 caster_index 3
 skill_id slice
-target 4 -3
+target 3 -8
 
 event_index 317
 event sub_level_event attack
 attacker_index 3
-defender_index 0
-outgoing_damage 5
+defender_index 2
+outgoing_damage 7
 triggers_effects true
 heals_attacker false
 
@@ -1411,328 +1400,311 @@ event meta_event accelerating_wait
 event_index 319
 event sub_level_event damage
 attacker_index 3
-defender_index 0
-amount 5
+defender_index 2
+amount 7
 triggers_effects true
 heals_attacker false
 
 event_index 320
+event sub_level_event death
+entity_index 2
+
+event_index 321
+event sub_level_event check_level_end
+
+event_index 322
 event level_event turn_end
 entity_index 3
 
-event_index 321
-event level_event turn_start
-entity_index 2
-
-event_index 322
-event level_event enemy_turn_move
-entity_index 2
-
 event_index 323
-event meta_event wait
-duration_milliseconds 500
+event level_event turn_start
+entity_index 0
 
 event_index 324
-event level_event move_entity
-entity_index 2
-destination 2 -7
-is_forced false
-
-event_index 325
-event sub_level_event pickup_around
-entity_index 2
-
-event_index 326
-event sub_level_event aggro_check
-
-event_index 327
-event sub_level_event check_level_end
-
-event_index 328
-event level_event enemy_turn_attack
-entity_index 2
-
-event_index 329
-event meta_event wait
-duration_milliseconds 500
-
-event_index 330
-event level_event use_skill
-caster_index 2
-skill_id toss
-target 4 -9
-
-event_index 331
-event sub_level_event attack
-attacker_index 2
-defender_index 1
-outgoing_damage 5
-triggers_effects true
-heals_attacker false
-
-event_index 332
-event meta_event accelerating_wait
-
-event_index 333
-event sub_level_event damage
-attacker_index 2
-defender_index 1
-amount 5
-triggers_effects true
-heals_attacker false
-
-event_index 334
-event meta_event accelerating_wait
-
-event_index 335
-event sub_level_event change_momentum
-entity_index 2
-delta 1
-
-event_index 336
-event level_event turn_end
-entity_index 2
-
-event_index 337
-event level_event turn_start
-entity_index 1
-
-event_index 338
-event level_event enemy_turn_move
-entity_index 1
-
-event_index 339
-event meta_event wait
-duration_milliseconds 500
-
-event_index 340
-event level_event move_entity
-entity_index 1
-destination 3 -8
-is_forced false
-
-event_index 341
-event sub_level_event pickup_around
-entity_index 1
-
-event_index 342
-event sub_level_event aggro_check
-
-event_index 343
-event sub_level_event check_level_end
-
-event_index 344
-event level_event enemy_turn_attack
-entity_index 1
-
-event_index 345
-event meta_event wait
-duration_milliseconds 500
-
-event_index 346
-event level_event use_skill
-caster_index 1
-skill_id slice
-target 2 -7
-
-event_index 347
-event sub_level_event attack
-attacker_index 1
-defender_index 2
-outgoing_damage 6
-triggers_effects true
-heals_attacker false
-
-event_index 348
-event meta_event accelerating_wait
-
-event_index 349
-event sub_level_event damage
-attacker_index 1
-defender_index 2
-amount 6
-triggers_effects true
-heals_attacker false
-
-event_index 350
-event level_event turn_end
-entity_index 1
-
-event_index 351
-event level_event turn_start
-entity_index 0
-
-event_index 352
 event level_event player_turn_move
 
-event_index 353
+event_index 325
+event player_input_event swap_hands
+
+event_index 326
+event player_input_event player_toggle_ui_surface
+surface inventory
+
+event_index 327
+event meta_event toggle_ui_surface
+surface inventory
+
+event_index 328
+event player_input_event player_use_inventory_item
+inventory_slot_index 95
+off_hand true
+
+event_index 329
+event player_event equip_item
+inventory_slot_index 95
+gear_slot off_hand
+
+event_index 330
 event player_input_event player_move_action
-destination 4 -4
+destination 4 -8
 force_attack_step false
 
-event_index 354
+event_index 331
 event level_event move_entity
 entity_index 0
-destination 4 -4
+destination 4 -8
 is_forced false
 
-event_index 355
+event_index 332
 event sub_level_event pickup_around
 entity_index 0
 
-event_index 356
+event_index 333
+event sub_level_event pickup_items
+entity_index 0
+position 3 -8
+
+event_index 334
 event sub_level_event aggro_check
 
-event_index 357
+event_index 335
 event sub_level_event check_level_end
 
-event_index 358
+event_index 336
 event level_event clear_highlights
 
-event_index 359
+event_index 337
 event level_event player_turn_attack
 force_attack_step false
 
-event_index 360
-event player_input_event player_use_skill
-skill_id bash
-target 5 -4
+event_index 338
+event player_input_event swap_hands
 
-event_index 361
+event_index 339
+event player_input_event player_use_skill
+skill_id slam
+
+event_index 340
 event level_event clear_prepared_skill
 
-event_index 362
+event_index 341
 event level_event clear_highlights
 
-event_index 363
+event_index 342
 event level_event use_skill
 caster_index 0
-skill_id bash
-target 5 -4
+skill_id slam
 
-event_index 364
-event sub_level_event attack
-attacker_index 0
-defender_index 3
-outgoing_damage 6
-triggers_effects true
-heals_attacker false
-
-event_index 365
-event meta_event accelerating_wait
-
-event_index 366
-event sub_level_event damage
-attacker_index 0
-defender_index 3
-amount 6
-triggers_effects true
-heals_attacker false
-
-event_index 367
-event meta_event accelerating_wait
-
-event_index 368
+event_index 343
 event sub_level_event knockback
 attacker_index 0
 defender_index 3
-distance 1
-knockback_damage 3
+distance 2
+knockback_damage 5
 
-event_index 369
+event_index 344
 event sub_level_event collision
 attacker_index 0
 defender_index 3
-damage 3
+damage 5
 
-event_index 370
+event_index 345
 event meta_event accelerating_wait
 
-event_index 371
+event_index 346
 event sub_level_event damage
 attacker_index 0
 defender_index 3
-amount 3
-triggers_effects true
-heals_attacker false
-
-event_index 372
-event level_event turn_end
-entity_index 0
-
-event_index 373
-event level_event turn_start
-entity_index 3
-
-event_index 374
-event level_event enemy_turn_move
-entity_index 3
-
-event_index 375
-event level_event enemy_turn_attack
-entity_index 3
-
-event_index 376
-event meta_event wait
-duration_milliseconds 500
-
-event_index 377
-event level_event use_skill
-caster_index 3
-skill_id slice
-target 4 -4
-
-event_index 378
-event sub_level_event attack
-attacker_index 3
-defender_index 0
-outgoing_damage 5
-triggers_effects true
-heals_attacker false
-
-event_index 379
-event meta_event accelerating_wait
-
-event_index 380
-event sub_level_event damage
-attacker_index 3
-defender_index 0
 amount 5
 triggers_effects true
 heals_attacker false
 
-event_index 381
+event_index 347
+event meta_event accelerating_wait
+
+event_index 348
+event sub_level_event stun
+attacker_index 0
+defender_index 3
+stun_duration 1
+
+event_index 349
+event meta_event accelerating_wait
+
+event_index 350
+event sub_level_event knockback
+attacker_index 0
+defender_index 1
+distance 2
+knockback_damage 5
+
+event_index 351
+event sub_level_event collision
+attacker_index 0
+defender_index 1
+damage 5
+
+event_index 352
+event meta_event accelerating_wait
+
+event_index 353
+event sub_level_event damage
+attacker_index 0
+defender_index 1
+amount 5
+triggers_effects true
+heals_attacker false
+
+event_index 354
+event meta_event accelerating_wait
+
+event_index 355
+event sub_level_event stun
+attacker_index 0
+defender_index 1
+stun_duration 1
+
+event_index 356
+event level_event turn_end
+entity_index 0
+
+event_index 357
+event level_event turn_start
+entity_index 1
+
+event_index 358
+event level_event turn_end
+entity_index 1
+
+event_index 359
+event level_event turn_start
+entity_index 3
+
+event_index 360
 event level_event turn_end
 entity_index 3
 
-event_index 382
+event_index 361
 event level_event turn_start
-entity_index 2
+entity_index 0
 
-event_index 383
+event_index 362
+event level_event player_turn_move
+
+event_index 363
+event player_input_event swap_hands
+
+event_index 364
+event player_input_event player_skip_move_to_skill
+skill_id reflect
+prepare false
+
+event_index 365
+event level_event clear_highlights
+
+event_index 366
+event level_event player_turn_attack
+force_attack_step true
+
+event_index 367
+event level_event clear_prepared_skill
+
+event_index 368
+event level_event clear_highlights
+
+event_index 369
+event level_event use_skill
+caster_index 0
+skill_id reflect
+
+event_index 370
+event sub_level_event create_effect
+caster_index 0
+receiver_index 0
+effect_id reflect
+duration 1
+
+event_index 371
+event level_event turn_end
+entity_index 0
+
+event_index 372
+event level_event turn_start
+entity_index 1
+
+event_index 373
 event level_event enemy_turn_move
-entity_index 2
+entity_index 1
 
-event_index 384
+event_index 374
 event level_event enemy_turn_attack
-entity_index 2
+entity_index 1
 
-event_index 385
+event_index 375
 event meta_event wait
 duration_milliseconds 500
 
-event_index 386
+event_index 376
 event level_event use_skill
-caster_index 2
-skill_id impale
-target 3 -8
+caster_index 1
+skill_id blink
+target 4 -9
+
+event_index 377
+event level_event move_entity
+entity_index 1
+destination 4 -9
+is_forced false
+
+event_index 378
+event sub_level_event pickup_around
+entity_index 1
+
+event_index 379
+event sub_level_event aggro_check
+
+event_index 380
+event sub_level_event check_level_end
+
+event_index 381
+event level_event enemy_turn_attack
+entity_index 1
+
+event_index 382
+event meta_event wait
+duration_milliseconds 500
+
+event_index 383
+event level_event use_skill
+caster_index 1
+skill_id slice
+target 4 -8
+
+event_index 384
+event sub_level_event attack
+attacker_index 1
+defender_index 0
+outgoing_damage 6
+triggers_effects true
+heals_attacker false
+
+event_index 385
+event meta_event accelerating_wait
+
+event_index 386
+event sub_level_event damage
+attacker_index 1
+defender_index 0
+amount 0
+triggers_effects true
+heals_attacker false
 
 event_index 387
 event sub_level_event attack
-attacker_index 2
+attacker_index 0
 defender_index 1
-outgoing_damage 13
-triggers_effects true
+outgoing_damage 6
+triggers_effects false
 heals_attacker false
 
 event_index 388
@@ -1740,10 +1712,10 @@ event meta_event accelerating_wait
 
 event_index 389
 event sub_level_event damage
-attacker_index 2
+attacker_index 0
 defender_index 1
-amount 13
-triggers_effects true
+amount 6
+triggers_effects false
 heals_attacker false
 
 event_index 390
@@ -1755,405 +1727,266 @@ event sub_level_event check_level_end
 
 event_index 392
 event level_event turn_end
-entity_index 2
+entity_index 1
 
 event_index 393
 event level_event turn_start
-entity_index 1
+entity_index 3
 
 event_index 394
-event level_event turn_start
-entity_index 0
+event level_event enemy_turn_move
+entity_index 3
 
 event_index 395
-event level_event player_turn_move
+event level_event enemy_turn_attack
+entity_index 3
 
 event_index 396
-event player_input_event player_skip_move_to_skill
-skill_id replenish
-prepare false
+event meta_event wait
+duration_milliseconds 500
 
 event_index 397
-event level_event clear_highlights
+event level_event use_skill
+caster_index 3
+skill_id slice
+target 4 -8
 
 event_index 398
-event level_event player_turn_attack
-force_attack_step true
+event sub_level_event attack
+attacker_index 3
+defender_index 0
+outgoing_damage 5
+triggers_effects true
+heals_attacker false
 
 event_index 399
-event player_input_event player_use_skill
-skill_id replenish
+event meta_event accelerating_wait
 
 event_index 400
-event level_event clear_prepared_skill
+event sub_level_event damage
+attacker_index 3
+defender_index 0
+amount 0
+triggers_effects true
+heals_attacker false
 
 event_index 401
-event level_event clear_highlights
-
-event_index 402
-event level_event use_skill
-caster_index 0
-skill_id replenish
-
-event_index 403
-event sub_level_event heal
-entity_index 0
-amount 24
-
-event_index 404
-event player_input_event player_use_skill
-skill_id bash
-target 5 -4
-
-event_index 405
-event level_event clear_prepared_skill
-
-event_index 406
-event level_event clear_highlights
-
-event_index 407
-event level_event use_skill
-caster_index 0
-skill_id bash
-target 5 -4
-
-event_index 408
 event sub_level_event attack
 attacker_index 0
 defender_index 3
-outgoing_damage 6
-triggers_effects true
+outgoing_damage 5
+triggers_effects false
 heals_attacker false
 
-event_index 409
+event_index 402
 event meta_event accelerating_wait
 
-event_index 410
+event_index 403
 event sub_level_event damage
 attacker_index 0
 defender_index 3
-amount 6
-triggers_effects true
+amount 5
+triggers_effects false
 heals_attacker false
 
-event_index 411
-event sub_level_event death
+event_index 404
+event level_event turn_end
 entity_index 3
+
+event_index 405
+event level_event turn_start
+entity_index 0
+
+event_index 406
+event level_event player_turn_move
+
+event_index 407
+event sub_level_event end_effect
+entity_index 0
+effect_id reflect
+
+event_index 408
+event player_input_event player_move_action
+destination 3 -7
+force_attack_step false
+
+event_index 409
+event level_event move_entity
+entity_index 0
+destination 3 -7
+is_forced false
+
+event_index 410
+event sub_level_event pickup_around
+entity_index 0
+
+event_index 411
+event sub_level_event aggro_check
 
 event_index 412
 event sub_level_event check_level_end
 
 event_index 413
-event meta_event accelerating_wait
-
-event_index 414
-event sub_level_event knockback
-attacker_index 0
-defender_index 3
-distance 1
-knockback_damage 3
-
-event_index 415
-event level_event turn_end
-entity_index 0
-
-event_index 416
-event level_event turn_start
-entity_index 2
-
-event_index 417
-event level_event enemy_turn_move
-entity_index 2
-
-event_index 418
-event level_event enemy_turn_attack
-entity_index 2
-
-event_index 419
-event meta_event wait
-duration_milliseconds 500
-
-event_index 420
-event level_event use_skill
-caster_index 2
-skill_id toss
-target 4 -4
-
-event_index 421
-event sub_level_event attack
-attacker_index 2
-defender_index 0
-outgoing_damage 6
-triggers_effects true
-heals_attacker false
-
-event_index 422
-event meta_event accelerating_wait
-
-event_index 423
-event sub_level_event damage
-attacker_index 2
-defender_index 0
-amount 6
-triggers_effects true
-heals_attacker false
-
-event_index 424
-event meta_event accelerating_wait
-
-event_index 425
-event sub_level_event change_momentum
-entity_index 2
-delta 1
-
-event_index 426
-event level_event turn_end
-entity_index 2
-
-event_index 427
-event level_event turn_start
-entity_index 0
-
-event_index 428
-event level_event player_turn_move
-
-event_index 429
-event player_input_event player_move_action
-destination 5 -4
-force_attack_step false
-
-event_index 430
-event level_event move_entity
-entity_index 0
-destination 5 -4
-is_forced false
-
-event_index 431
-event sub_level_event pickup_around
-entity_index 0
-
-event_index 432
-event sub_level_event pickup_items
-entity_index 0
-position 5 -4
-
-event_index 433
-event sub_level_event aggro_check
-
-event_index 434
-event sub_level_event check_level_end
-
-event_index 435
 event level_event clear_highlights
 
-event_index 436
+event_index 414
 event level_event player_turn_attack
 force_attack_step false
 
-event_index 437
-event player_input_event player_toggle_ui_surface
-surface inventory
-
-event_index 438
-event meta_event toggle_ui_surface
-surface inventory
-
-event_index 439
+event_index 415
 event player_input_event player_use_inventory_item
 inventory_slot_index 95
 off_hand false
 
-event_index 440
+event_index 416
 event player_event equip_item
 inventory_slot_index 95
 gear_slot main_hand
 
-event_index 441
-event player_input_event player_prepare_skill
-caster_index 0
-skill_id toss
+event_index 417
+event player_input_event swap_hands
 
-event_index 442
-event level_event highlight_tiles
-tile_positions 2 -7
-
-event_index 443
+event_index 418
 event player_input_event player_use_skill
-skill_id toss
-target 2 -7
+skill_id skewer
+target 4 -7
 
-event_index 444
+event_index 419
 event level_event clear_prepared_skill
 
-event_index 445
+event_index 420
 event level_event clear_highlights
 
-event_index 446
+event_index 421
 event level_event use_skill
 caster_index 0
-skill_id toss
-target 2 -7
+skill_id skewer
+target 4 -7
 
-event_index 447
+event_index 422
 event sub_level_event attack
 attacker_index 0
-defender_index 2
-outgoing_damage 6
+defender_index 3
+outgoing_damage 18
 triggers_effects true
 heals_attacker false
 
-event_index 448
+event_index 423
 event meta_event accelerating_wait
 
-event_index 449
+event_index 424
 event sub_level_event damage
 attacker_index 0
-defender_index 2
-amount 6
+defender_index 3
+amount 18
 triggers_effects true
 heals_attacker false
 
-event_index 450
+event_index 425
 event sub_level_event death
-entity_index 2
+entity_index 3
 
-event_index 451
+event_index 426
 event sub_level_event check_level_end
 
-event_index 452
-event meta_event accelerating_wait
-
-event_index 453
-event sub_level_event change_momentum
-entity_index 0
-delta 1
-
-event_index 454
+event_index 427
 event level_event turn_end
 entity_index 0
 
-event_index 455
+event_index 428
 event level_event turn_start
 entity_index 0
 
-event_index 456
+event_index 429
 event level_event player_turn_move
 
-event_index 457
-event player_input_event player_move_action
-destination 3 -6
-force_attack_step false
-
-event_index 458
-event level_event move_entity
-entity_index 0
-destination 3 -6
-is_forced false
-
-event_index 459
-event sub_level_event pickup_around
-entity_index 0
-
-event_index 460
-event sub_level_event pickup_items
-entity_index 0
-position 2 -7
-
-event_index 461
-event sub_level_event aggro_check
-
-event_index 462
-event sub_level_event check_level_end
-
-event_index 463
-event level_event clear_highlights
-
-event_index 464
-event level_event player_turn_attack
-force_attack_step false
-
-event_index 465
-event level_event turn_end
-entity_index 0
-
-event_index 466
-event level_event turn_start
-entity_index 0
-
-event_index 467
-event level_event player_turn_move
-
-event_index 468
+event_index 430
 event player_input_event player_move_action
 destination 4 -8
 force_attack_step true
 
-event_index 469
+event_index 431
 event level_event move_entity
 entity_index 0
 destination 4 -8
 is_forced false
 
-event_index 470
+event_index 432
 event sub_level_event pickup_around
 entity_index 0
 
-event_index 471
+event_index 433
 event sub_level_event pickup_items
 entity_index 0
-position 3 -8
+position 4 -7
 
-event_index 472
+event_index 434
+event sub_level_event pickup_items
+entity_index 0
+position 4 -9
+
+event_index 435
 event sub_level_event aggro_check
 
-event_index 473
+event_index 436
 event sub_level_event check_level_end
 
-event_index 474
+event_index 437
 event level_event clear_highlights
 
-event_index 475
+event_index 438
 event level_event player_turn_attack
 force_attack_step true
 
-event_index 476
-event player_input_event player_use_skill
-skill_id flash_strike
-target 4 -9
+event_index 439
+event player_input_event swap_hands
 
-event_index 477
+event_index 440
+event player_input_event player_skip_attack
+
+event_index 441
 event level_event clear_prepared_skill
 
-event_index 478
+event_index 442
 event level_event clear_highlights
 
-event_index 479
-event level_event use_skill
-caster_index 0
-skill_id flash_strike
-target 4 -9
+event_index 443
+event level_event turn_end
+entity_index 0
 
-event_index 480
+event_index 444
+event level_event turn_start
+entity_index 0
+
+event_index 445
+event level_event player_turn_move
+
+event_index 446
+event player_input_event player_move_action
+destination 4 -9
+force_attack_step false
+
+event_index 447
 event level_event move_entity
 entity_index 0
 destination 4 -9
 is_forced false
 
-event_index 481
+event_index 448
 event sub_level_event pickup_around
 entity_index 0
 
-event_index 482
+event_index 449
 event sub_level_event aggro_check
 
-event_index 483
+event_index 450
 event sub_level_event check_level_end
 
-event_index 484
+event_index 451
 event meta_event end_level
 continuation default
 suppress_return_hub false
 
-event_index 485
+event_index 452
 event meta_event end_validation
 success true
