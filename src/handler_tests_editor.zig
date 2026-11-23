@@ -5803,9 +5803,9 @@ test "player_import_editor_player: copies the session player data, undo reverts,
     var history = harness.newHistory(editorStartingState(&levels));
     runToIdle(&history);
 
-    // The session's player data: a name, a main-hand weapon, one skill,
-    // one inventory item.
-    var player_data: types.PlayerData = .{ .player_name = "Tester" };
+    // The session's player data: a live campaign (the uuid marker), a
+    // main-hand weapon, one skill, one inventory item.
+    var player_data: types.PlayerData = .{ .current_campaign_uuid = "campaign" };
     player_data.main_hand_weapon = .{
         .name = "Test Sword",
         .weapon_type = .sword,
@@ -5826,7 +5826,7 @@ test "player_import_editor_player: copies the session player data, undo reverts,
     runToIdle(&history);
 
     const template = history.current_state.editor.?.player_def.template;
-    try testing.expectEqualStrings("Tester", template.name);
+    try testing.expectEqualStrings("Player", template.name);
     try testing.expectEqualStrings("Test Sword", template.main_hand_weapon.?.name);
     try testing.expectEqual(types.SkillId.replenish, template.equipped_utility_skills[0]);
     try testing.expectEqualStrings("Spare Dagger", template.inventory.slots[0].?.weapon.name);
@@ -5847,7 +5847,7 @@ test "player_import_editor_player: copies the session player data, undo reverts,
     );
     runToIdle(&history);
     const player_entity = &history.current_state.level.?.entities[0];
-    try testing.expectEqualStrings("Tester", player_entity.name);
+    try testing.expectEqualStrings("Player", player_entity.name);
     try testing.expectEqualStrings("Spare Dagger", player_entity.inventory.slots[0].?.weapon.name);
 }
 
@@ -5859,9 +5859,9 @@ test "player_import_editor_player: no session data imports the new-game default 
     const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStartingState(&levels));
     runToIdle(&history);
-    // Fresh session: player_data empty (no name) - the import falls back
+    // Fresh session: player_data empty (no campaign uuid) - the import falls back
     // to data/new_player.txt.
-    try testing.expectEqual(@as(usize, 0), history.current_state.player_data.player_name.len);
+    try testing.expectEqual(@as(usize, 0), history.current_state.player_data.current_campaign_uuid.len);
 
     event_push.pushEvents(
         &history.current_state,
@@ -5871,12 +5871,12 @@ test "player_import_editor_player: no session data imports the new-game default 
     runToIdle(&history);
 
     const template = history.current_state.editor.?.player_def.template;
-    try testing.expectEqualStrings("New Player", template.name);
+    try testing.expectEqualStrings("Player", template.name);
     try testing.expectEqualStrings("Starter Sword", template.main_hand_weapon.?.name);
     try testing.expectEqual(types.SkillId.replenish, template.equipped_utility_skills[0]);
     // The session's (empty) player data is untouched - the default save is
     // a READ source, not a session load.
-    try testing.expectEqual(@as(usize, 0), history.current_state.player_data.player_name.len);
+    try testing.expectEqual(@as(usize, 0), history.current_state.player_data.current_campaign_uuid.len);
 }
 
 test "start_playtest builds its own player_data (all skills learned), end_playtest restores the session's" {
@@ -5896,7 +5896,7 @@ test "start_playtest builds its own player_data (all skills learned), end_playte
     runToIdle(&history);
 
     // The session's real campaign data.
-    var campaign: types.PlayerData = .{ .player_name = "Campaign Player" };
+    var campaign: types.PlayerData = .{ .current_campaign_uuid = "campaign" };
     campaign.learned_skills = &.{.replenish};
     history.current_state.player_data = campaign;
 
@@ -5907,10 +5907,10 @@ test "start_playtest builds its own player_data (all skills learned), end_playte
     );
     runToIdle(&history);
 
-    // The run's player_data is BUILT from the loadout: the editor player's
-    // name + every utility skill learned (tome pickups read
+    // The run's player_data is BUILT from the loadout (no campaign uuid):
+    // every utility skill learned (tome pickups read
     // already-learned; nothing is gated).
-    try testing.expectEqualStrings("Editor Player", history.current_state.player_data.player_name);
+    try testing.expectEqual(@as(usize, 0), history.current_state.player_data.current_campaign_uuid.len);
     try testing.expectEqual(
         @as(usize, utility_skills.utility_skill_ids.len),
         history.current_state.player_data.learned_skills.len,
@@ -5923,20 +5923,20 @@ test "start_playtest builds its own player_data (all skills learned), end_playte
     }
     // The session's real data is backed up on the Editor.
     try testing.expectEqualStrings(
-        "Campaign Player",
-        history.current_state.editor.?.pre_playtest_player_data.?.player_name,
+        "campaign",
+        history.current_state.editor.?.pre_playtest_player_data.?.current_campaign_uuid,
     );
 
     // In-level events mutate player_data directly (use_skill_tome,
     // salvage) - simulate one, then end the playtest.
-    history.current_state.player_data.player_name = "Mutated In Playtest";
+    history.current_state.player_data.current_campaign_uuid = "mutated-in-playtest";
     event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .end_playtest }},
         history.current_arena.allocator(),
     );
     runToIdle(&history);
-    try testing.expectEqualStrings("Campaign Player", history.current_state.player_data.player_name);
+    try testing.expectEqualStrings("campaign", history.current_state.player_data.current_campaign_uuid);
     try testing.expect(history.current_state.editor.?.pre_playtest_player_data == null);
     try testing.expect(history.current_state.editor.?.mode == .edit);
 }
@@ -5948,8 +5948,8 @@ test "start_playtest builds its own player_data (all skills learned), end_playte
 /// editor memory. Level 1's player starts at x=0 ('!='), level 2's at
 /// x=2 ('..!='), so a test can tell which level file instantiated the
 /// current level; the player.txt loadout carries a distinctive
-/// damage-7 sword (the loadout format carries no name, so it reads back
-/// as "Player").
+/// damage-7 sword (the save carries no player name - the run entity
+/// reads back as the constant "Player").
 const validation_fixture_path = "missions/validation_fixture";
 
 fn writeValidationFixtureMission(harness: *Harness) !void {
@@ -6019,7 +6019,7 @@ test "start_validation runs the SAVED mission files, not the editor memory" {
         .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
     }));
     runToIdle(&history);
-    history.current_state.player_data = .{ .player_name = "Campaign Player" };
+    history.current_state.player_data = .{ .current_campaign_uuid = "campaign" };
 
     event_push.pushEvents(
         &history.current_state,
@@ -6051,12 +6051,12 @@ test "start_validation runs the SAVED mission files, not the editor memory" {
         history.current_state.editor.?.player_def.template.name,
     );
 
-    // The run's player data was built from the SAVED player.txt: the
-    // loadout name reads back as "Player" (the format carries no name)
-    // and the fixture's damage-7 sword synced onto the level player via
+    // The run's player data was built from the SAVED player.txt (fresh
+    // data - no campaign uuid) and the fixture's damage-7 sword synced
+    // onto the level player via
     // the chained start_level's build_player_from_data. Learned = every
     // utility skill (the validation player knows everything).
-    try testing.expectEqualStrings("Player", history.current_state.player_data.player_name);
+    try testing.expectEqual(@as(usize, 0), history.current_state.player_data.current_campaign_uuid.len);
     try testing.expectEqual(@as(u32, 7), history.current_state.player_data.main_hand_weapon.?.weapon_damage);
     try testing.expectEqual(
         @as(u32, 7),
@@ -6070,8 +6070,8 @@ test "start_validation runs the SAVED mission files, not the editor memory" {
 
     // The session's real data is backed up on the Editor.
     try testing.expectEqualStrings(
-        "Campaign Player",
-        history.current_state.editor.?.pre_playtest_player_data.?.player_name,
+        "campaign",
+        history.current_state.editor.?.pre_playtest_player_data.?.current_campaign_uuid,
     );
 }
 
@@ -6087,7 +6087,7 @@ test "player_start_playtest starts the active level; the exit returns to the edi
         .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
     }));
     runToIdle(&history);
-    history.current_state.player_data = .{ .player_name = "Campaign Player" };
+    history.current_state.player_data = .{ .current_campaign_uuid = "campaign" };
 
     // The Test button's orchestrator: playtest of the ACTIVE level (1).
     event_push.pushPlayerAction(
@@ -6101,7 +6101,7 @@ test "player_start_playtest starts the active level; the exit returns to the edi
     try testing.expect(history.current_state.level != null);
     // 1-based gameplay index of the instantiated level: active 1 → 2.
     try testing.expectEqual(@as(u32, 2), history.current_state.mission.?.current_level_index);
-    try testing.expectEqualStrings("Editor Player", history.current_state.player_data.player_name);
+    try testing.expectEqual(@as(usize, 0), history.current_state.player_data.current_campaign_uuid.len);
 
     // Natural level completion (end_level, default continuation) exits
     // back to the editor + restores the session's real player data.
@@ -6115,7 +6115,7 @@ test "player_start_playtest starts the active level; the exit returns to the edi
     try testing.expect(history.current_state.editor.?.mode == .edit);
     try testing.expect(history.current_state.level == null);
     try testing.expect(history.current_state.mission == null);
-    try testing.expectEqualStrings("Campaign Player", history.current_state.player_data.player_name);
+    try testing.expectEqualStrings("campaign", history.current_state.player_data.current_campaign_uuid);
 }
 
 test "a validation run chains the mission's levels (turns accumulate) and completes back in the editor" {
@@ -6132,7 +6132,7 @@ test "a validation run chains the mission's levels (turns accumulate) and comple
         .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
     }));
     runToIdle(&history);
-    history.current_state.player_data = .{ .player_name = "Campaign Player" };
+    history.current_state.player_data = .{ .current_campaign_uuid = "campaign" };
 
     event_push.pushEvents(
         &history.current_state,
@@ -6202,8 +6202,8 @@ test "a validation run chains the mission's levels (turns accumulate) and comple
     );
     try testing.expect(history.current_state.player_data.main_hand_weapon == null);
     try testing.expectEqualStrings(
-        "Campaign Player",
-        history.current_state.editor.?.pre_playtest_player_data.?.player_name,
+        "campaign",
+        history.current_state.editor.?.pre_playtest_player_data.?.current_campaign_uuid,
     );
 
     // Spend a turn + complete the LAST level: the run ends - editor, edit
@@ -6224,7 +6224,7 @@ test "a validation run chains the mission's levels (turns accumulate) and comple
     try testing.expect(history.current_state.editor.?.mode == .edit);
     try testing.expect(history.current_state.level == null);
     try testing.expect(history.current_state.mission == null);
-    try testing.expectEqualStrings("Campaign Player", history.current_state.player_data.player_name);
+    try testing.expectEqualStrings("campaign", history.current_state.player_data.current_campaign_uuid);
     try testing.expect(history.current_state.editor.?.pre_playtest_player_data == null);
 }
 
@@ -6240,7 +6240,7 @@ test "a validation run's exit continuation aborts to the editor (success=false)"
         .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
     }));
     runToIdle(&history);
-    history.current_state.player_data = .{ .player_name = "Campaign Player" };
+    history.current_state.player_data = .{ .current_campaign_uuid = "campaign" };
 
     event_push.pushEvents(
         &history.current_state,
@@ -6264,7 +6264,7 @@ test "a validation run's exit continuation aborts to the editor (success=false)"
     try testing.expect(history.current_state.editor.?.mode == .edit);
     try testing.expect(history.current_state.level == null);
     try testing.expect(history.current_state.mission == null);
-    try testing.expectEqualStrings("Campaign Player", history.current_state.player_data.player_name);
+    try testing.expectEqualStrings("campaign", history.current_state.player_data.current_campaign_uuid);
     try testing.expect(history.current_state.editor.?.pre_playtest_player_data == null);
 }
 
@@ -6280,7 +6280,7 @@ test "a playtest restart continuation re-runs the same level fresh" {
         .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
     }));
     runToIdle(&history);
-    history.current_state.player_data = .{ .player_name = "Campaign Player" };
+    history.current_state.player_data = .{ .current_campaign_uuid = "campaign" };
 
     event_push.pushPlayerAction(
         &history.current_state,
@@ -6292,7 +6292,7 @@ test "a playtest restart continuation re-runs the same level fresh" {
 
     // Mid-run mutation, then the restart (the mission-fail overlay's
     // "Restart Playtest"): end + fresh re-entry of the SAME level.
-    history.current_state.player_data.player_name = "Mutated In Run";
+    history.current_state.player_data.current_campaign_uuid = "mutated-in-run";
     event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .{ .end_level = .{ .continuation = .restart_mission } } }},
@@ -6304,10 +6304,10 @@ test "a playtest restart continuation re-runs the same level fresh" {
     try testing.expectEqual(@as(u32, 2), history.current_state.mission.?.current_level_index);
     // The run data was REBUILT from the loadout (fresh run) - and the
     // session's real data is still what's backed up.
-    try testing.expectEqualStrings("Editor Player", history.current_state.player_data.player_name);
+    try testing.expectEqual(@as(usize, 0), history.current_state.player_data.current_campaign_uuid.len);
     try testing.expectEqualStrings(
-        "Campaign Player",
-        history.current_state.editor.?.pre_playtest_player_data.?.player_name,
+        "campaign",
+        history.current_state.editor.?.pre_playtest_player_data.?.current_campaign_uuid,
     );
 }
 
@@ -6323,7 +6323,7 @@ test "a validation restart re-runs the whole mission from level 1 via the orches
         .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
     }));
     runToIdle(&history);
-    history.current_state.player_data = .{ .player_name = "Campaign Player" };
+    history.current_state.player_data = .{ .current_campaign_uuid = "campaign" };
 
     event_push.pushEvents(
         &history.current_state,
@@ -6356,7 +6356,7 @@ test "a validation restart re-runs the whole mission from level 1 via the orches
     // seedable-top-level rule for the validation-replay slice), which
     // re-reads the files fresh: mission counter reset (then the
     // re-entry's level start begins the first turn → 1), loadout rebuilt.
-    history.current_state.player_data.player_name = "Mutated In Run";
+    history.current_state.player_data.current_campaign_uuid = "mutated-in-run";
     event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .{ .end_level = .{ .continuation = .restart_mission } } }},
@@ -6368,14 +6368,14 @@ test "a validation restart re-runs the whole mission from level 1 via the orches
     try testing.expectEqualStrings("Fixture Level One", history.current_state.level.?.name);
     try testing.expectEqual(@as(u32, 1), history.current_state.mission.?.current_level_index);
     try testing.expectEqual(@as(u32, 1), history.current_state.mission.?.turns_spent);
-    try testing.expectEqualStrings("Player", history.current_state.player_data.player_name);
+    try testing.expectEqual(@as(usize, 0), history.current_state.player_data.current_campaign_uuid.len);
     try testing.expectEqual(
         @as(u32, 7),
         history.current_state.player_data.main_hand_weapon.?.weapon_damage,
     );
     try testing.expectEqualStrings(
-        "Campaign Player",
-        history.current_state.editor.?.pre_playtest_player_data.?.player_name,
+        "campaign",
+        history.current_state.editor.?.pre_playtest_player_data.?.current_campaign_uuid,
     );
 }
 
@@ -6398,7 +6398,7 @@ test "exit to main menu during an editor run ends the run and closes the editor"
             .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
         }));
         runToIdle(&history);
-        history.current_state.player_data = .{ .player_name = "Campaign Player" };
+        history.current_state.player_data = .{ .current_campaign_uuid = "campaign" };
 
         event_push.pushPlayerAction(
             &history.current_state,
@@ -6411,7 +6411,7 @@ test "exit to main menu during an editor run ends the run and closes the editor"
         // Mid-run mutation, then the options menu's Exit to Main Menu:
         // the run ends (data restored) AND the editor session is gone -
         // the button means the main menu, not the editor.
-        history.current_state.player_data.player_name = "Mutated In Run";
+        history.current_state.player_data.current_campaign_uuid = "mutated-in-run";
         event_push.pushEvents(
             &history.current_state,
             &.{.{ .meta_event = .{ .end_level = .{ .continuation = .exit_to_menu } } }},
@@ -6422,7 +6422,7 @@ test "exit to main menu during an editor run ends the run and closes the editor"
         try testing.expect(history.current_state.editor == null);
         try testing.expect(history.current_state.level == null);
         try testing.expect(history.current_state.mission == null);
-        try testing.expectEqualStrings("Campaign Player", history.current_state.player_data.player_name);
+        try testing.expectEqualStrings("campaign", history.current_state.player_data.current_campaign_uuid);
     }
 }
 
@@ -7354,10 +7354,10 @@ test "open_editor: a mission without player.txt falls back to the maxed default 
 
     try testing.expect(history.current_state.editor != null);
     const template = history.current_state.editor.?.player_def.template;
-    // The maxed default (data/max_player.txt): the save's name, armor at
+    // The maxed default (data/max_player.txt): armor at
     // the max bounds, no equipped weapons or skills, the 12-weapon
     // arsenal in the inventory.
-    try testing.expectEqualStrings("New Player", template.name);
+    try testing.expectEqualStrings("Player", template.name);
     try testing.expect(template.main_hand_weapon == null);
     try testing.expect(template.off_hand_weapon == null);
     try testing.expectEqual(types.max_spell_damage, template.amulet.?.spell_damage);
@@ -8864,7 +8864,7 @@ test "player_import_editor_max_player: loads the shipped max loadout, undo rever
 
     // The session's data is POPULATED - the max import ignores it (unlike
     // the Player data import, the source is the file, not the session).
-    var player_data: types.PlayerData = .{ .player_name = "Tester" };
+    var player_data: types.PlayerData = .{ .current_campaign_uuid = "campaign" };
     player_data.main_hand_weapon = .{
         .name = "Test Sword",
         .weapon_type = .sword,
@@ -8879,7 +8879,7 @@ test "player_import_editor_max_player: loads the shipped max loadout, undo rever
 
     {
         const template = history.current_state.editor.?.player_def.template;
-        try testing.expectEqualStrings("New Player", template.name);
+        try testing.expectEqualStrings("Player", template.name);
         // The maxed gear set: every piece equipped, the authored stats.
         try testing.expectEqualStrings("Max Amulet", template.amulet.?.name);
         try testing.expectEqual(@as(u32, 10), template.amulet.?.spell_damage);

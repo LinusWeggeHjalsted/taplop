@@ -44,7 +44,6 @@ fn writePlayerSave(
     try buffer.appendSlice(allocator, "Metadata\n");
     try buffer.print(allocator, "file_format_version {d}\n", .{player_save_file_format_version});
     try buffer.appendSlice(allocator, "\nInfo\n");
-    try buffer.print(allocator, "player_name {s}\n", .{player_data.player_name});
     try buffer.print(allocator, "current_campaign_uuid {s}\n", .{player_data.current_campaign_uuid});
     try buffer.print(allocator, "current_hub {s}\n", .{player_data.current_hub});
     try buffer.print(allocator, "turns {d}\n", .{player_data.turns});
@@ -441,14 +440,13 @@ pub fn writeEditorMission(
 
 /// Write the mission's player.txt - the PlayerLoadout format (the loadout
 /// sections of a player save; no Info/stats/hubs - base stats aren't
-/// authorable and the NAME is not part of the format, so a reloaded
-/// loadout reads back as "Player" regardless of the template's name).
+/// authorable and the save carries no player name, so the entity name
+/// reads back as the constant "Player" regardless of the template's name).
 fn writePlayerLoadout(
     template: types.Entity,
     allocator: std.mem.Allocator,
 ) ![]const u8 {
     const loadout_data = PlayerData{
-        .player_name = template.name,
         .main_hand_weapon = template.main_hand_weapon,
         .off_hand_weapon = template.off_hand_weapon,
         .amulet = template.amulet,
@@ -855,7 +853,6 @@ test "writePlayerSave round-trips through loadPlayerSave" {
 
     // Build a PlayerData with values in every field
     const original = PlayerData{
-        .player_name = "Round Trip Player",
         .current_campaign_uuid = "8ecb3f44-9a3d-497c-95a9-a000b8517b7d",
         .current_hub = "test_hub",
         .materials = .{
@@ -955,7 +952,6 @@ test "writePlayerSave round-trips through loadPlayerSave" {
     defer allocator.free(loaded.clones);
 
     // Info
-    try std.testing.expectEqualStrings("Round Trip Player", loaded.player_name);
     try std.testing.expectEqualStrings("8ecb3f44-9a3d-497c-95a9-a000b8517b7d", loaded.current_campaign_uuid);
     try std.testing.expectEqualStrings("test_hub", loaded.current_hub);
     try std.testing.expectEqual(200, loaded.turns);
@@ -1035,7 +1031,6 @@ test "new_player.txt parses and round-trips correctly" {
     defer allocator.free(player_data.clones);
 
     // Verify new player defaults
-    try std.testing.expectEqualStrings("New Player", player_data.player_name);
     try std.testing.expectEqual(0, player_data.turns);
     try std.testing.expectEqual(0, player_data.deaths);
     try std.testing.expectEqual(1, player_data.learned_skills.len);
@@ -1063,7 +1058,6 @@ test "new_player.txt parses and round-trips correctly" {
     defer allocator.free(reloaded.learned_skills);
     defer allocator.free(reloaded.clones);
 
-    try std.testing.expectEqualStrings("New Player", reloaded.player_name);
     try std.testing.expectEqualStrings("Starter Sword", reloaded.main_hand_weapon.?.name);
     try std.testing.expectEqual(.replenish, reloaded.equipped_utility_skills[0]);
 }

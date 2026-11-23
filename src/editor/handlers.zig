@@ -46,7 +46,6 @@ pub fn buildPlaytestPlayerData(
     template: types.Entity,
 ) types.PlayerData {
     var player_data: types.PlayerData = .{
-        .player_name = deepCopy([]const u8, template.name, allocator),
         .main_hand_weapon = deepCopy(?types.Weapon, template.main_hand_weapon, allocator),
         .off_hand_weapon = deepCopy(?types.Weapon, template.off_hand_weapon, allocator),
         .amulet = deepCopy(?types.Amulet, template.amulet, allocator),
@@ -80,10 +79,10 @@ pub fn restorePrePlaytestPlayerData(current: *GameState) void {
 }
 
 /// The player inspector's Import: copy the session's player data - or,
-/// when the session has none (an empty `player_name` - a fresh editor
+/// when the session has none (no `current_campaign_uuid` - a fresh editor
 /// launch from the main menu), the new-game default save - into the
 /// editor player loadout. The copied field set mirrors
-/// `build_player_from_data`'s (name, gear, inventory, utility skills;
+/// `build_player_from_data`'s (gear, inventory, utility skills;
 /// PlayerData carries no base stats, so the template keeps its own). The
 /// copy is a DEEP one: the source's name slices stay owned by their own
 /// graph. The default-save read goes through the reconstruction cache -
@@ -103,7 +102,7 @@ pub fn importEditorPlayer(
     const loadout: types.Entity = switch (source) {
         .session => blk: {
             var source_data: types.PlayerData = current.player_data;
-            if (source_data.player_name.len == 0) {
+            if (source_data.current_campaign_uuid.len == 0) {
                 const bytes = history.readReconstructionFile("data/new_player.txt") catch {
                     failReconstructionRead(history, "failed to read new_player.txt");
                     return;

@@ -1539,15 +1539,15 @@ test "loadAndReconstructSession: resumes at the end of a loaded bundle" {
     // later session). Under the old lazy-disk fallback the replay would
     // read the shadow and diverge (verifyReplayMatch panic); the bundle's
     // embedded copy keeps the replay exact. The shadow must stay parseable,
-    // so it's derived from the real bytes (the name field differs).
+    // so it's derived from the real bytes (the turns stat differs).
     const real_new_player = file_source.readFile(arena, "data/new_player.txt") catch
         @panic("read new_player for shadow");
     const shadow_new_player = try std.mem.replaceOwned(
         u8,
         arena,
         real_new_player,
-        "player_name New Player",
-        "player_name Shadow Player",
+        "turns 0",
+        "turns 123",
     );
     try std.testing.expect(shadow_new_player.len != real_new_player.len);
     try scratch_dir.createDirPath(io, "data");
@@ -2264,8 +2264,8 @@ test "fresh editor open: empty New Mission, template level, playtest round-trip"
     try std.testing.expectEqual(@as(usize, 0), editor.decoration_types.len);
     try std.testing.expectEqual(@as(usize, 0), editor.item_types.len);
 
-    // player_def is the max-player seed (max_player.txt's player_name).
-    try std.testing.expectEqualStrings("New Player", editor.player_def.template.name);
+    // player_def is the max-player seed (data/max_player.txt's loadout).
+    try std.testing.expectEqualStrings("Player", editor.player_def.template.name);
     try std.testing.expectEqualStrings("player", editor.player_def.template.sprite);
 
     // Playtest the template level: just the player at the '!', the '=' at
@@ -2597,7 +2597,7 @@ test "write_save failure: sets pending_error, no crash, no state corruption" {
     const starting_state = GameState{
         .screen = .main_menu,
         .event_stack = &.{.{ .meta_event = .open_main_menu }},
-        .player_data = .{ .player_name = "Test" },
+        .player_data = .{ .turns = 123 },
         .camera = null,
         .editor = null,
         .replay_viewer = null,
@@ -2632,7 +2632,7 @@ test "write_save failure: sets pending_error, no crash, no state corruption" {
     try std.testing.expect(!history.load_error);
 
     // State is unchanged - the save didn't happen, but player_data is intact.
-    try std.testing.expectEqualStrings("Test", history.current_state.player_data.player_name);
+    try std.testing.expectEqual(@as(u32, 123), history.current_state.player_data.turns);
 
     history.session.clearPendingError();
 }

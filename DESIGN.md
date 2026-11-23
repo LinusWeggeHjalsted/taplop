@@ -6848,9 +6848,9 @@ stats / sprite / color sections (strictly enemy-authorable; the player
 template keeps its `player.txt` stats). The Import (`player_import_editor_player`
 → `editor_import_player`, handled inline in processEvent - the default
 read needs the reconstruction cache) copies the session's PlayerData
-loadout - the exact `build_player_from_data` field set: name, gear,
+loadout - the exact `build_player_from_data` field set: gear,
 inventory, utility skills (PlayerData carries no base stats) - as a DEEP
-copy; with no session data (an empty `player_name`) it parses
+copy; with no session data (no `current_campaign_uuid`) it parses
 `data/new_player.txt` instead (a read source, not a session load).
 `player_start` and `level_end` are NEVER deletable, only movable (updating
 the level's `player_start`/`level_end` via an editor event). Multi-select
@@ -7747,7 +7747,8 @@ current) then a byte copy to `settings-backup-YYYYMMDD_HHMMSS.txt` in the
 persistent root - the `backup_autosave` policy (best-effort, popup on
 failure, the reset proceeds; same-second overwrite accepted - see File
 System & IO). Then the whole `Settings` (every preference + bindings - no
-identity data; the player name lives in the player save) is replaced by
+identity data; the save carries no player name - identity will come
+from server auth, see TODO → Online Services) is replaced by
 the embedded `data/default_settings.txt` + `markSettingsDirty`; the
 active edit + keybinds scroll clear.
 

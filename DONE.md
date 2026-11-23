@@ -446,6 +446,7 @@ working rules).
 - [Toast system slices 2-3 - the firing sites + the re-boot bridge](#toast-system-slices-2-3---the-firing-sites--the-re-boot-bridge)
 - [Mission + hub save toasts; the "Open Mission" label rename](#mission--hub-save-toasts-the-open-mission-label-rename)
 - [The hub-editor exit crash - the record-time trap catches a validator gap](#the-hub-editor-exit-crash---the-record-time-trap-catches-a-validator-gap)
+- [Player name removal - the save carries no identity](#player-name-removal---the-save-carries-no-identity)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -25421,3 +25422,43 @@ after the fix still crashed with the OLD message - the driving binary
 was stale (the test build compiles the test binary only; the AGENTS
 "rebuild before driving" rule exists for exactly that), and the stale
 message text itself is what made the diagnosis instant.
+
+## Player name removal - the save carries no identity
+
+`PlayerData.player_name` is gone, along with its whole surface: the
+`Info` save key (parser whitelist, loader, writer), the two name lines
+of the `build_player_from_data` / `build_data_from_player` sync pair,
+and the editor's name copies (`buildPlaytestPlayerData`,
+`writePlayerLoadout`). The three template saves
+(`new_player`/`max_player`/`autosave`) no longer carry the key.
+
+Why: leaderboards will identify players via server auth, so a locally
+authored free-text name is exactly the wrong thing to keep adjacent to
+a leaderboard record - and nothing else consumed it. The only user-
+visible reader was the inspect-panel header via the entity name, which
+is now the display constant `"Player"` everywhere (`loadLevel` and
+`loadHub` already authored that default; `playerLoadoutEntity` now
+returns it unconditionally). The editor keeps its player-entity name
+as generic entity flavor (`Entity.name`, same field enemies use) -
+never persisted, since PlayerData no longer has the field.
+
+The one real semantic use was `importEditorPlayer`'s "session has no
+player data" guard (`player_name.len == 0`). Replaced with
+`current_campaign_uuid.len == 0` - the established "PlayerData carries
+a live game" idiom, already used for the same populated-vs-fresh
+distinction by `player_continue` and the Continue-button visibility.
+Every real-game path writes the uuid (save load, campaign install);
+run-built playtest/validation data never does.
+
+Compatibility is free: unknown keys only WARN (validateKeys), so an
+old local save surfaces one advisory and self-heals on the next write.
+No `file_format_version` bump.
+
+Test migration: the playtest save/restore tests in
+handler_tests_editor used the name as their observable marker
+("Campaign Player" vs "Editor Player" vs "Mutated In Run") - they now
+use `current_campaign_uuid` ("campaign" vs empty vs "mutated-in-run"),
+which matches production semantics instead of a deleted field. The
+round-trip/save fixtures dropped their name lines; the main.zig
+bundle-shadow test diverges on `turns` instead of the name. 1150
+tests pass.

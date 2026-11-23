@@ -735,14 +735,14 @@ pub fn loadPlayerLoadout(
 }
 
 /// Map a PlayerData's loadout onto the editor player template - the
-/// `build_player_from_data` field set (name, gear, inventory, utility
-/// skills). BORROWS the source's slices; the caller owns both graphs (the
+/// `build_player_from_data` field set (gear, inventory, utility skills).
+/// BORROWS the source's slices; the caller owns both graphs (the
 /// loaders parse into the same arena, the import handler deep-copies
-/// first). A nameless source (a mission player.txt - the loadout sections
-/// carry no name) defaults to "Player".
+/// first). The entity name is the display constant "Player" - the save
+/// carries no player name (identity is a future server-auth concern).
 pub fn playerLoadoutEntity(player_data: PlayerData) types.Entity {
     return .{
-        .name = if (player_data.player_name.len > 0) player_data.player_name else "Player",
+        .name = "Player",
         .sprite = "player",
         .team = 0,
         .main_hand_weapon = player_data.main_hand_weapon,
@@ -3784,7 +3784,6 @@ pub fn loadPlayerSave(
     if (findSection(sections, "Info")) |section| {
         if (section.entry_groups.len > 0) {
             const pairs = section.entry_groups[0].pairs;
-            if (findValue(pairs, "player_name")) |value| player_data.player_name = value;
             if (findValue(pairs, "current_campaign_uuid")) |value| player_data.current_campaign_uuid = value;
             if (findValue(pairs, "current_hub")) |value| player_data.current_hub = value;
             if (findValue(pairs, "turns")) |value| player_data.turns = asU32(value) orelse 0;
@@ -6086,7 +6085,6 @@ test "loadPlayerSave parses a save file" {
         \\file_format_version 3
         \\
         \\Info
-        \\player_name Test Player
         \\turns 100
         \\deaths 3
         \\defeated_enemies 42
@@ -6173,7 +6171,6 @@ test "loadPlayerSave parses a save file" {
     }
 
     // Info
-    try std.testing.expectEqualStrings("Test Player", player_data.player_name);
     try std.testing.expectEqual(100, player_data.turns);
     try std.testing.expectEqual(3, player_data.deaths);
     try std.testing.expectEqual(42, player_data.defeated_enemies);
@@ -7391,7 +7388,6 @@ test "data/max_player.txt parses: max gear equipped, weapons in inventory, all s
         allocator.free(player_data.discovered_hubs);
     }
 
-    try std.testing.expectEqualStrings("New Player", player_data.player_name);
     // No weapons or utility skills EQUIPPED - the arsenal is inventory + learned.
     try std.testing.expect(player_data.main_hand_weapon == null);
     try std.testing.expect(player_data.off_hand_weapon == null);
@@ -7430,7 +7426,7 @@ test "data/max_player.txt parses: max gear equipped, weapons in inventory, all s
 
     // The editor fallback maps it onto the player template.
     const template = playerLoadoutEntity(player_data);
-    try std.testing.expectEqualStrings("New Player", template.name);
+    try std.testing.expectEqualStrings("Player", template.name);
     try std.testing.expect(template.main_hand_weapon == null);
     try std.testing.expectEqual(types.max_spell_damage, template.amulet.?.spell_damage);
     try std.testing.expectEqual(@as(u32, 12), blk: {

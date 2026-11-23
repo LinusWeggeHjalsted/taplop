@@ -225,7 +225,6 @@ pub fn handleSuperEvent(
             const player_data = &current.player_data;
             const player_entity = getPlayerEntity(current, sync.entity_index);
 
-            player_entity.name = player_data.player_name;
             player_entity.main_hand_weapon = player_data.main_hand_weapon;
             player_entity.off_hand_weapon = player_data.off_hand_weapon;
             player_entity.amulet = player_data.amulet;
@@ -242,7 +241,6 @@ pub fn handleSuperEvent(
             const player_data = &current.player_data;
             const player_entity = getPlayerEntity(current, sync.entity_index);
 
-            player_data.player_name = player_entity.name;
             player_data.main_hand_weapon = player_entity.main_hand_weapon;
             player_data.off_hand_weapon = player_entity.off_hand_weapon;
             player_data.amulet = player_entity.amulet;

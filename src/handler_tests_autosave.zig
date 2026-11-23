@@ -320,7 +320,7 @@ test "backup_autosave: copies existing autosave to a timestamped backup" {
     harness.file_source = FileSource.init(io, temp_dir);
 
     // Seed a fake autosave in the temp dir.
-    const autosave_contents = "Metadata\nfile_format_version 1\nplayer_name Old Save\n";
+    const autosave_contents = "Metadata\nfile_format_version 1\ncurrent_hub Old Save\n";
     harness.file_source.writeFile(writers.autosave_path, autosave_contents) catch @panic("seed autosave");
 
     var history = harness.newHistory(null);
@@ -420,7 +420,7 @@ test "start_new_game: backs up existing autosave before start_hub clears the sta
     harness.file_source = FileSource.init(io, temp_dir);
 
     // Seed a fake autosave in the temp dir.
-    const autosave_contents = "Metadata\nfile_format_version 1\nplayer_name Old Save\n";
+    const autosave_contents = "Metadata\nfile_format_version 1\ncurrent_hub Old Save\n";
     harness.file_source.writeFile(writers.autosave_path, autosave_contents) catch @panic("seed autosave");
 
     var history = harness.newHistory(null);

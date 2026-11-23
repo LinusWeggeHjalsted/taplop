@@ -3000,7 +3000,6 @@ pub const DiscoveredCampaignHubs = struct {
 };
 
 pub const PlayerData = struct {
-    player_name: []const u8 = &.{},
     /// The active campaign's identity (PlayerData references identity
     /// only - the resume path resolves the uuid to a dir by scan; see
     /// DESIGN → Campaigns & the Campaign Editor → Uuid→dir resolution).
