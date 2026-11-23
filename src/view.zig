@@ -111,7 +111,7 @@ pub fn view(
         buildTiles(&tiles, frame_allocator, level.level_tiles, active_theme, camera, camera_zoom);
         buildHighlightOverlays(&tile_overlays, frame_allocator, level.highlighted_tiles, active_theme, camera, camera_zoom);
         buildCursorOverlay(&tile_overlays, frame_allocator, level.level_tiles, session, active_theme, camera, camera_zoom);
-        buildPreparedSkillRadiusOutline(&tile_overlays, frame_allocator, level, session, active_theme, camera, camera_zoom);
+        buildPreparedSkillRadiusOutline(&tile_overlays, frame_allocator, current_state, level, session, active_theme, camera, camera_zoom);
         buildInspectedAggroOutline(&tile_overlays, frame_allocator, level, &current_state.ui_surfaces, active_theme, camera, camera_zoom);
         if (level.level_end) |end_position| {
             ground_entries.append(frame_allocator, .{
@@ -3521,8 +3521,12 @@ fn appendRegionEdge(
 
 /// Range/radius outline: when the pointer hovers a skill button on the
 /// bottom bar, preview that skill's reach as a single square outline
-/// centered on the player. The square's half-side is the skill's `range`
-/// (preferred) or `radius` (fallback); a skill with neither draws nothing.
+/// centered on the player. The square's half-side is the skill's
+/// EFFECTIVE range (preferred) or radius (fallback) - the caster's
+/// additive modifiers included (e.g. That Which Reaches +1), via the
+/// same `getEffectiveRange`/`getEffectiveRadius` helpers the skill
+/// recipes read, so the preview and the actual cast can never disagree;
+/// a skill with neither draws nothing.
 /// Drawn in full (may extend past level edges / over gaps) at Chebyshev
 /// ≤ N - a geometric preview, not pathfinding reachability. Tinted with
 /// `active_theme.lightest`, same as the cursor. Suppressed while dragging
@@ -3551,8 +3555,13 @@ fn buildSkillRangeOutline(
     const skill_id = player.skillInSlot(slot, weapon_type_definitions) orelse return;
     const definition = lookups.getSkillDefinition(skill_id) orelse return;
 
-    const n: u32 = if (definition.range) |r| r else if (definition.radius) |rad| rad else return;
     const overlay_type: types.TileOverlayType = if (definition.range != null) .range_outline else .radius_outline;
+    const n: u32 = if (definition.range) |base_range|
+        player.getEffectiveRange(base_range)
+    else if (definition.radius) |base_radius|
+        player.getEffectiveRadius(base_radius)
+    else
+        return;
 
     const top_left = types.Vector2{ .x = player.position.x - @as(i32, @intCast(n)), .y = player.position.y - @as(i32, @intCast(n)) };
     list.append(allocator, .{
@@ -3567,14 +3576,18 @@ fn buildSkillRangeOutline(
 /// radius is prepared (e.g. Flash Strike: teleport to a target tile within
 /// range, then attack within radius of the landing). The valid-target
 /// highlights show where the player can land; this previews the AoE that
-/// will hit around the cursor's current tile as the player aims. Drawn in
-/// full (may extend past level edges / over gaps) at Chebyshev ≤ radius -
-/// a geometric preview. Tinted with `active_theme.lightest`. Levels only
+/// will hit around the cursor's current tile as the player aims - the
+/// EFFECTIVE radius (the caster's additive modifiers, e.g. That Which
+/// Reaches +1, via the same `getEffectiveRadius` the skill recipes read,
+/// so the preview and the actual cast can never disagree). Drawn in full
+/// (may extend past level edges / over gaps) at Chebyshev ≤ radius - a
+/// geometric preview. Tinted with `active_theme.lightest`. Levels only
 /// (`prepared_skill` is null in a hub). Pure over SessionState (off the
 /// undoable GameState) → replay-safe by construction.
 fn buildPreparedSkillRadiusOutline(
     list: *std.ArrayList(types.TileOverlayDrawable),
     allocator: std.mem.Allocator,
+    current_state: *const GameState,
     level: *const types.Level,
     session: *const state.SessionState,
     active_theme: types.ActiveColorTheme,
@@ -3584,9 +3597,11 @@ fn buildPreparedSkillRadiusOutline(
     const prepared = level.prepared_skill orelse return;
     const definition = lookups.getSkillDefinition(prepared) orelse return;
     if (!definition.uses_targeting) return;
-    const radius = definition.radius orelse return;
+    const base_radius = definition.radius orelse return;
+    const player = ui.playerEntity(current_state) orelse return;
     const cursor = session.tile_cursor orelse return;
 
+    const radius = player.getEffectiveRadius(base_radius);
     const n: i32 = @intCast(radius);
     const top_left = types.Vector2{ .x = cursor.x - n, .y = cursor.y - n };
     list.append(allocator, .{
@@ -4075,7 +4090,54 @@ test "skill range outline: range/radius/none/drag" {
         try std.testing.expectEqual(@as(usize, 0), overlays.items.len);
     }
 
-    // Case 4: drag suppresses the outline even for a range skill.
+    // Case 4: That Which Reaches active (+1 range, +1 radius) - the hover
+    // preview must show the EFFECTIVE reach, the same value the cast would
+    // use (Slice: range 1 -> 2, extent 5; Slam: radius 1 -> 2, extent 5).
+    {
+        var p4 = player;
+        p4.active_effects = &.{.{
+            .effect_id = .that_which_reaches,
+            .duration = 1,
+            .additive_effect_modifiers = .{ .range = 1, .radius = 1 },
+        }};
+        {
+            const state_ = test_harness.levelStateWithEntities(arena, &.{p4}, &.{});
+            var session = state.SessionState{};
+            session.input_state.mouse_screen_position = .{ .x = 200, .y = 200 };
+            const ui_elements = [_]ui.UiElement{.{ .button = .{
+                .action = .skill_slot_1,
+                .screen_position = .{ .x = 100, .y = 100 },
+                .width = 256,
+                .height = 256,
+            } }};
+            var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
+            buildSkillRangeOutline(&overlays, arena, &ui_elements, &session, &state_, &harness.weapon_type_definitions, dummy_theme, camera, 1.0);
+            try std.testing.expectEqual(@as(usize, 1), overlays.items.len);
+            const ov = overlays.items[0];
+            try std.testing.expectEqual(types.TileOverlayType.range_outline, ov.overlay_type);
+            try std.testing.expectEqual(@as(u32, 5), ov.extent);
+        }
+        {
+            p4.equipped_utility_skills[0] = .slam;
+            const state_ = test_harness.levelStateWithEntities(arena, &.{p4}, &.{});
+            var session = state.SessionState{};
+            session.input_state.mouse_screen_position = .{ .x = 200, .y = 200 };
+            const ui_elements = [_]ui.UiElement{.{ .button = .{
+                .action = .skill_slot_4,
+                .screen_position = .{ .x = 100, .y = 100 },
+                .width = 256,
+                .height = 256,
+            } }};
+            var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
+            buildSkillRangeOutline(&overlays, arena, &ui_elements, &session, &state_, &harness.weapon_type_definitions, dummy_theme, camera, 1.0);
+            try std.testing.expectEqual(@as(usize, 1), overlays.items.len);
+            const ov = overlays.items[0];
+            try std.testing.expectEqual(types.TileOverlayType.radius_outline, ov.overlay_type);
+            try std.testing.expectEqual(@as(u32, 5), ov.extent);
+        }
+    }
+
+    // Case 5: drag suppresses the outline even for a range skill.
     {
         const state_ = test_harness.levelStateWithEntities(arena, &.{player}, &.{});
         var session = state.SessionState{};
@@ -4120,12 +4182,33 @@ test "prepared skill radius outline: follows cursor while targeting" {
         var session = state.SessionState{};
         session.tile_cursor = .{ .x = 5, .y = 5 };
         var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
-        buildPreparedSkillRadiusOutline(&overlays, arena, &state_.level.?, &session, dummy_theme, camera, 1.0);
+        buildPreparedSkillRadiusOutline(&overlays, arena, &state_, &state_.level.?, &session, dummy_theme, camera, 1.0);
         try std.testing.expectEqual(@as(usize, 1), overlays.items.len);
         const ov = overlays.items[0];
         try std.testing.expectEqual(types.TileOverlayType.radius_outline, ov.overlay_type);
         try std.testing.expectEqual(@as(u32, 3), ov.extent);
         try std.testing.expectEqual(dummy_theme.lightest, ov.color);
+    }
+
+    // Case 1b: That Which Reaches active (+1 radius) - the aiming preview
+    // shows the EFFECTIVE AoE (radius 1 -> 2, extent 5), matching what the
+    // cast would actually hit.
+    {
+        const player = types.Entity{ .active_effects = &.{.{
+            .effect_id = .that_which_reaches,
+            .duration = 1,
+            .additive_effect_modifiers = .{ .range = 1, .radius = 1 },
+        }} };
+        var state_ = test_harness.levelStateWithEntities(arena, &.{player}, &.{});
+        state_.level.?.prepared_skill = .flash_strike;
+        var session = state.SessionState{};
+        session.tile_cursor = .{ .x = 5, .y = 5 };
+        var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
+        buildPreparedSkillRadiusOutline(&overlays, arena, &state_, &state_.level.?, &session, dummy_theme, camera, 1.0);
+        try std.testing.expectEqual(@as(usize, 1), overlays.items.len);
+        const ov = overlays.items[0];
+        try std.testing.expectEqual(types.TileOverlayType.radius_outline, ov.overlay_type);
+        try std.testing.expectEqual(@as(u32, 5), ov.extent);
     }
 
     // Case 2: no skill prepared -> no overlay.
@@ -4134,7 +4217,7 @@ test "prepared skill radius outline: follows cursor while targeting" {
         var session = state.SessionState{};
         session.tile_cursor = .{ .x = 5, .y = 5 };
         var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
-        buildPreparedSkillRadiusOutline(&overlays, arena, &state_.level.?, &session, dummy_theme, camera, 1.0);
+        buildPreparedSkillRadiusOutline(&overlays, arena, &state_, &state_.level.?, &session, dummy_theme, camera, 1.0);
         try std.testing.expectEqual(@as(usize, 0), overlays.items.len);
     }
 
@@ -4147,7 +4230,7 @@ test "prepared skill radius outline: follows cursor while targeting" {
         var session = state.SessionState{};
         session.tile_cursor = .{ .x = 5, .y = 5 };
         var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
-        buildPreparedSkillRadiusOutline(&overlays, arena, &state_.level.?, &session, dummy_theme, camera, 1.0);
+        buildPreparedSkillRadiusOutline(&overlays, arena, &state_, &state_.level.?, &session, dummy_theme, camera, 1.0);
         try std.testing.expectEqual(@as(usize, 0), overlays.items.len);
     }
 
@@ -4157,7 +4240,7 @@ test "prepared skill radius outline: follows cursor while targeting" {
         state_.level.?.prepared_skill = .flash_strike;
         var session = state.SessionState{};
         var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
-        buildPreparedSkillRadiusOutline(&overlays, arena, &state_.level.?, &session, dummy_theme, camera, 1.0);
+        buildPreparedSkillRadiusOutline(&overlays, arena, &state_, &state_.level.?, &session, dummy_theme, camera, 1.0);
         try std.testing.expectEqual(@as(usize, 0), overlays.items.len);
     }
 }
