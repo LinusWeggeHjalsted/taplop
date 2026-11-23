@@ -241,7 +241,7 @@ test "save_game: pushes timestamped write + autosave write after sync" {
 // `export_game` (the autosave half - the zip + download are an input-path
 // side effect, not an event): with a level live, the orchestrator pushes
 // the autosave write after the sync - mid-level progress rides in the
-// exported zip. No timestamped write (Export Save's spam-free sibling).
+// exported zip. No timestamped write (Save Game's spam-free sibling).
 test "export_game: a live level pushes the autosave write after sync" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
@@ -456,12 +456,12 @@ test "start_new_game: backs up existing autosave before start_hub clears the sta
     try testing.expect(found);
 }
 
-// The timestamped export's confirmation toast (the options Export Save +
+// The timestamped save's confirmation toast (the options Save Game +
 // its ctrl+S chord both land in the write_save arm): the toast fires on
 // the timestamped write and the AUTOSAVE write in the same cascade never
 // clears or overwrites it (the in-session resume path is not a player
 // action). See DESIGN → Error Handling → Toast surface.
-test "write_save: the timestamped export toasts; the autosave write in the same cascade does not" {
+test "write_save: the timestamped save toasts; the autosave write in the same cascade does not" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
@@ -483,7 +483,7 @@ test "write_save: the timestamped export toasts; the autosave write in the same 
 
     try testing.expectEqual(@as(?[]const u8, null), history.session.pending_error);
     const toast = history.session.active_toast orelse return error.TestUnexpectedResult;
-    try testing.expectEqualStrings("Save exported", toast.text);
+    try testing.expectEqualStrings("Game saved", toast.text);
 
     // The write actually landed (the toast is the SUCCESS signal, not a
     // facade over a swallowed failure).

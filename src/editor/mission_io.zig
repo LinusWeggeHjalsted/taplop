@@ -666,7 +666,7 @@ fn appendExportFile(
 /// save itself writes elsewhere) + a validation_replay.txt when one
 /// exists (it lands with the validation slice) into a STORE archive at
 /// `exported_missions/<uuid>_<name>.zip` in the persistent dir. On web
-/// that file is then offered as a browser download (the Export Save seam -
+/// that file is then offered as a browser download (the Save Game seam -
 /// triggerBrowserDownload reads it back from the mounted FS; a comptime
 /// no-op on native). A pure side effect like the save (the dump_event_log
 /// class). See DESIGN → Level Editor (the export flow).

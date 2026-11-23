@@ -808,7 +808,7 @@ pub fn view(
 
     // The active editor run (playtest/validate), if any: the options menu
     // and the mission-fail overlay label their restart/exit buttons for
-    // the run, and the campaign Export Save path stays hidden (the run's
+    // the run, and the campaign Save Game path stays hidden (the run's
     // player_data is temporary). Null on every other screen/context.
     const editor_run: ?types.EditorMode = if (current_state.editor) |editor|
         (if (editor.mode != .edit) editor.mode else null)

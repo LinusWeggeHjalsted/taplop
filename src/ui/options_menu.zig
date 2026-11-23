@@ -48,7 +48,7 @@ pub fn buildOptionsMenu(
     /// The active editor run, if any (.playtest / .validate while the
     /// editor sits dormant behind the level screen). Relabels the level
     /// screen's restart/exit buttons for the run ("Restart Playtest" etc.)
-    /// and hides the campaign Export Save path - the run's player_data is
+    /// and hides the campaign Save Game path - the run's player_data is
     /// temporary, rebuilt from the editor loadout (see DESIGN → Level
     /// Editor → Playtest/validate framing).
     editor_run: ?types.EditorMode,
@@ -57,7 +57,7 @@ pub fn buildOptionsMenu(
     /// adds the World Map return entry (the hub editor variant's twin).
     mission_campaign_context: bool,
     button_color: Color,
-    /// Where the exported save lands, for the Export Save tooltip. Native:
+    /// Where the saved game lands, for the Save Game tooltip. Native:
     /// the resolved persistent dir (tooltip: "Saves to <dir>/saves/"). Web:
     /// null - the export IS a browser download (tooltip: "Triggers a file
     /// download"). Threaded from `SessionState.persistent_dir_path` (set
@@ -117,20 +117,20 @@ pub fn buildOptionsMenu(
         current_screen != .hub_editor and
         current_screen != .main_menu and editor_run == null)
     {
-        const export_save_body = if (persistent_dir_path) |dir|
+        const save_game_body = if (persistent_dir_path) |dir|
             try std.fmt.allocPrint(allocator, "Saves to {s}/saves/", .{dir})
         else
             "Triggers a file download";
         buttons[button_count] = .{
-            .label = "Export Save",
+            .label = "Save Game",
             .action = .save_game,
-            .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(export_save_body))}) },
+            .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(save_game_body))}) },
         };
         button_count += 1;
     }
 
     // The editor's own save (the mission being edited) - replaces the
-    // campaign Export Save path above, which is hidden in the editor.
+    // campaign Save Game path above, which is hidden in the editor.
     // Also on ctrl+S (the binding ships in default_settings.txt).
     if (current_screen == .editor) {
         // The campaign-context hand-off saves into the campaign's
@@ -311,7 +311,7 @@ pub fn buildOptionsMenu(
     }
 
     // Export Game (web only - the persistent-dir-path-null signal, the
-    // same web case the Export Save tooltip uses): downloads taplop.zip,
+    // same web case the Save Game tooltip uses): downloads taplop.zip,
     // the FULL game folder (settings, saves, custom missions) - the web
     // build's cross-session backup path (browser storage never persists
     // sessions). Present in EVERY variant (the options menu is the only
@@ -526,7 +526,7 @@ test "buildOptionsMenu: the main-menu variant carries the meta entries, not the 
     }
 }
 
-test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
+test "buildOptionsMenu: Save Game tooltip reflects the save destination" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -542,8 +542,8 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
         const button = (for (elements.items) |element| switch (element) {
             .button => |b| if (b.action == .save_game) break b,
             else => {},
-        } else @panic("no Export Save button"));
-        const tooltip = button.tooltip orelse @panic("Export Save button has no tooltip");
+        } else @panic("no Save Game button"));
+        const tooltip = button.tooltip orelse @panic("Save Game button has no tooltip");
         try std.testing.expectEqual(@as(usize, 1), tooltip.body.len);
         try std.testing.expectEqual(@as(usize, 1), tooltip.body[0].len);
         try std.testing.expectEqualStrings("Saves to /home/tester/.taplop/saves/", tooltip.body[0][0].text);
@@ -556,8 +556,8 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
         const button = (for (elements.items) |element| switch (element) {
             .button => |b| if (b.action == .save_game) break b,
             else => {},
-        } else @panic("no Export Save button"));
-        const tooltip = button.tooltip orelse @panic("Export Save button has no tooltip");
+        } else @panic("no Save Game button"));
+        const tooltip = button.tooltip orelse @panic("Save Game button has no tooltip");
         try std.testing.expectEqual(@as(usize, 1), tooltip.body.len);
         try std.testing.expectEqualStrings("Triggers a file download", tooltip.body[0][0].text);
     }
@@ -574,7 +574,7 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
         };
     }
 
-    // Editor context: no Export Save button (the editor's save target is
+    // Editor context: no Save Game button (the editor's save target is
     // the mission being edited). Settings + Exit to Main Menu remain -
     // and no close button, per the no-Continue convention.
     {
@@ -662,7 +662,7 @@ test "buildOptionsMenu: Export Game on every variant, web only (null persistent 
     }
 }
 
-test "buildOptionsMenu + buildMissionFail during an editor run: run labels, no Export Save" {
+test "buildOptionsMenu + buildMissionFail during an editor run: run labels, no Save Game" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -676,7 +676,7 @@ test "buildOptionsMenu + buildMissionFail during an editor run: run labels, no E
         const exit_label = if (run_mode == .playtest) "Exit Playtest" else "Exit Validation";
 
         // The options menu names the RUN on the restart/exit buttons and
-        // offers NO campaign Export Save (the run's player_data is
+        // offers NO campaign Save Game (the run's player_data is
         // temporary - rebuilt from the editor loadout, discarded on exit).
         {
             var elements: UiElementList = .empty;
@@ -739,13 +739,13 @@ test "buildOptionsMenu: the campaign editor variant - browser + new campaign, no
     var found_browser = false;
     var found_new_campaign = false;
     var found_exit = false;
-    var found_export_save = false;
+    var found_save_game = false;
     for (elements.items) |element| switch (element) {
         .button => |button| {
             if (button.action == .toggle_editor_browser) found_browser = true;
             if (button.action == .new_editor_campaign) found_new_campaign = true;
             if (button.action == .exit_to_menu) found_exit = true;
-            if (button.action == .save_game) found_export_save = true;
+            if (button.action == .save_game) found_save_game = true;
         },
         else => {},
     };
@@ -753,7 +753,7 @@ test "buildOptionsMenu: the campaign editor variant - browser + new campaign, no
     try std.testing.expect(found_new_campaign);
     try std.testing.expect(found_exit);
     // The campaign save path is hidden on editor screens (the mission
-    // editor's Export Save discipline) - the campaign save lands with its
+    // editor's Save Game discipline) - the campaign save lands with its
     // slice.
-    try std.testing.expect(!found_export_save);
+    try std.testing.expect(!found_save_game);
 }

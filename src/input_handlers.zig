@@ -1770,7 +1770,7 @@ pub fn handleAnytimeInput(
                 // player_data is temporary (rebuilt from the editor loadout,
                 // restored on exit), so a save would write the throwaway run
                 // data as a campaign save - the same reason buildOptionsMenu
-                // hides the Export Save button mid-run. The button half of
+                // hides the Save Game button mid-run. The button half of
                 // the gate lives in the view; THIS half is load-bearing for
                 // the ctrl+S chord (game context): a playtest/validation run
                 // makes the screen `.level`, the chord fires, and the run's

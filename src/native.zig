@@ -71,7 +71,7 @@ pub fn main(init: std.process.Init.Minimal) void {
     const replay_path = parseStringFlag(init.args, allocator, "--replay");
     const diagnostics_requested = parseBoolFlag(init.args, allocator, "--diagnostics");
     // The resolved path outlives the Dir handle: it's stored on the session
-    // for user-facing messages (the Export Save tooltip). Process-lifetime
+    // for user-facing messages (the Save Game tooltip). Process-lifetime
     // allocation, never freed.
     const persistent_dir_path = resolvePersistentPath(allocator, data_dir_override) catch
         @panic("could not resolve persistent data path: pass --data-dir, or set $TAPLOP_DATA, $XDG_DATA_HOME, or $HOME");
@@ -103,7 +103,7 @@ pub fn main(init: std.process.Init.Minimal) void {
 
     var setup = session_setup.createSessionSetup(allocator, &file_source, io, &backend);
     setup.fixupPointers();
-    // User-facing persistent path (Export Save tooltip). Web leaves this
+    // User-facing persistent path (Save Game tooltip). Web leaves this
     // null (see SessionState.persistent_dir_path).
     setup.frame_state.history.session.persistent_dir_path = persistent_dir_path;
     // Replay a session-log bundle from the command line (--replay <path>):

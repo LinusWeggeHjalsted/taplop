@@ -1648,7 +1648,7 @@ that true (`src/session_log_bundle.zig`):
   special cases (`save_editor_mission` is editor-only so ctrl+S is dead
   mid-run; `save_game` is game-context and additionally handler-gated
   against editor runs - the run's player_data is throwaway, same reasoning
-  as the view hiding Export Save mid-run). The editor-browser family
+  as the view hiding Save Game mid-run). The editor-browser family
   (toggle_editor_browser, tabs, rows, import, new mission, new campaign)
   fires on BOTH editor screens (editor + campaign_editor contexts): the
   browser still OPENS from the main menu via its buttons
@@ -5842,7 +5842,7 @@ EXPORT (the options menu's Export Mission button) saves first, then
 bundles the saved configs + the mission dir's custom sprites + a
 validation_replay.txt (once validation writes one) into a STORE-method
 zip (`zip_writer.zig`) at `exported_missions/<uuid>_<name>.zip` - on web
-the file is also offered as a browser download (the Export Save seam).
+the file is also offered as a browser download (the Save Game seam).
 
 **The editor browser (LANDED).** One full-screen modal is the editor
 front door - browsing AND creating editor content - from both the main
@@ -6050,9 +6050,9 @@ No other gameplay handler knows about the editor.
 **Run-context UI (options menu + mission-fail overlay).** While a run is
 active, both surfaces label their restart/exit buttons for the RUN
 ("Restart Playtest" / "Exit Playtest", or the Validation nouns) instead of
-the mission, and the campaign Export Save button is HIDDEN in the options
+the mission, and the campaign Save Game button is HIDDEN in the options
 menu - the run's `player_data` is temporary (rebuilt from the editor
-loadout, discarded on exit), so an export mid-run would write throwaway
+loadout, discarded on exit), so a save mid-run would write throwaway
 data as a campaign save. `save_game` also ships on the ctrl+S chord
 (game context), so the button's hiding is only HALF the gate - the
 consumption arm's editor-run check blocks the chord's half. The menu's
