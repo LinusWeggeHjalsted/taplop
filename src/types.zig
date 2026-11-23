@@ -74,7 +74,7 @@ pub const ItemActionSound = enum {
 pub const SoundLayer = union(enum) {
     skill: SkillId,
     action: Action,
-    /// Item-action layer (equip / salvage / learn_skill), keyed by
+    /// Item-action layer (equip / salvage / learn_skill / upgrade), keyed by
     /// `ItemActionSound`. The cue's base is the shared `item_base`.
     item: ItemActionSound,
 };

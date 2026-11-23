@@ -335,7 +335,7 @@ fn baseDescription(sound: types.SoundId) []const u8 {
         .cantrip_base => "every cantrip cast",
         .enchantment_base => "every enchantment cast",
         .curse_base => "every curse cast",
-        .item_base => "every equip / salvage / learn action",
+        .item_base => "every equip / salvage / learn / upgrade action",
         .button_base_down => "every button press (never layered)",
         .button_base_up => "every button release, except skill slots",
         else => "",
@@ -370,5 +370,6 @@ fn itemActionDescription(item_action: types.ItemActionSound) []const u8 {
         .equip => "an item is equipped",
         .salvage => "an item is salvaged",
         .learn_skill => "a skill tome is learned",
+        .upgrade => "an item stat is upgraded (hub vendor purchase)",
     };
 }
